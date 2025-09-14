@@ -6,74 +6,89 @@
 :root {
   /* Updated color tokens to match Congress Accountability Tracker design brief */
   --background: #ffffff;
-  --foreground: #475569;
-  --card: #ecfeff;
-  --card-foreground: #164e63;
+  --foreground: #1e293b;
+  --card: #f8fafc;
+  --card-foreground: #1e293b;
   --popover: #ffffff;
-  --popover-foreground: #475569;
-  --primary: #164e63;
+  --popover-foreground: #1e293b;
+  --primary: #0f172a;
   --primary-foreground: #ffffff;
-  --secondary: #f59e0b;
+  --secondary: #0ea5e9;
   --secondary-foreground: #ffffff;
-  --muted: #ecfeff;
-  --muted-foreground: #475569;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
   --accent: #f59e0b;
-  --accent-foreground: #164e63;
+  --accent-foreground: #0f172a;
   --destructive: #dc2626;
   --destructive-foreground: #ffffff;
-  --border: #d1d5db;
+  --border: #e2e8f0;
   --input: #ffffff;
-  --ring: rgba(22, 78, 99, 0.5);
-  --chart-1: #dc2626;
-  --chart-2: #ea580c;
-  --chart-3: #f59e0b;
-  --chart-4: #164e63;
-  --chart-5: #475569;
-  --radius: 0.5rem;
-  --sidebar: #ecfeff;
-  --sidebar-foreground: #475569;
-  --sidebar-primary: #164e63;
+  --ring: rgba(15, 23, 42, 0.2);
+  --chart-1: #0ea5e9;
+  --chart-2: #f59e0b;
+  --chart-3: #10b981;
+  --chart-4: #8b5cf6;
+  --chart-5: #f97316;
+  --radius: 0.75rem;
+  --sidebar: #f8fafc;
+  --sidebar-foreground: #1e293b;
+  --sidebar-primary: #0f172a;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #f59e0b;
-  --sidebar-accent-foreground: #164e63;
-  --sidebar-border: #d1d5db;
-  --sidebar-ring: rgba(22, 78, 99, 0.5);
+  --sidebar-accent: #0ea5e9;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #e2e8f0;
+  --sidebar-ring: rgba(15, 23, 42, 0.2);
+
+  /* Added modern animation and spacing tokens */
+  --animation-duration-fast: 150ms;
+  --animation-duration-normal: 300ms;
+  --animation-duration-slow: 500ms;
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
 }
 
 .dark {
   /* Updated dark mode tokens for professional journalism aesthetic */
-  --background: #0f172a;
-  --foreground: #e2e8f0;
-  --card: #1e293b;
-  --card-foreground: #e2e8f0;
-  --popover: #1e293b;
-  --popover-foreground: #e2e8f0;
-  --primary: #0ea5e9;
+  --background: #020617;
+  --foreground: #f1f5f9;
+  --card: #0f172a;
+  --card-foreground: #f1f5f9;
+  --popover: #0f172a;
+  --popover-foreground: #f1f5f9;
+  --primary: #f1f5f9;
   --primary-foreground: #0f172a;
-  --secondary: #f59e0b;
+  --secondary: #0ea5e9;
   --secondary-foreground: #0f172a;
-  --muted: #334155;
+  --muted: #1e293b;
   --muted-foreground: #94a3b8;
   --accent: #f59e0b;
   --accent-foreground: #0f172a;
   --destructive: #ef4444;
   --destructive-foreground: #ffffff;
-  --border: #334155;
-  --input: #1e293b;
-  --ring: rgba(14, 165, 233, 0.5);
-  --chart-1: #ef4444;
-  --chart-2: #f97316;
-  --chart-3: #f59e0b;
-  --chart-4: #0ea5e9;
-  --chart-5: #64748b;
-  --sidebar: #1e293b;
-  --sidebar-foreground: #e2e8f0;
-  --sidebar-primary: #0ea5e9;
+  --border: #1e293b;
+  --input: #0f172a;
+  --ring: rgba(241, 245, 249, 0.2);
+  --chart-1: #0ea5e9;
+  --chart-2: #f59e0b;
+  --chart-3: #10b981;
+  --chart-4: #8b5cf6;
+  --chart-5: #f97316;
+  --sidebar: #0f172a;
+  --sidebar-foreground: #f1f5f9;
+  --sidebar-primary: #f1f5f9;
   --sidebar-primary-foreground: #0f172a;
-  --sidebar-accent: #f59e0b;
+  --sidebar-accent: #0ea5e9;
   --sidebar-accent-foreground: #0f172a;
-  --sidebar-border: #334155;
-  --sidebar-ring: rgba(14, 165, 233, 0.5);
+  --sidebar-border: #1e293b;
+  --sidebar-ring: rgba(241, 245, 249, 0.2);
+
+  /* Dark mode shadow adjustments */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.4), 0 2px 4px -2px rgb(0 0 0 / 0.4);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.4), 0 4px 6px -4px rgb(0 0 0 / 0.4);
+  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.4), 0 8px 10px -6px rgb(0 0 0 / 0.4);
 }
 
 @theme inline {
@@ -122,6 +137,130 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground transition-colors duration-300;
+  }
+
+  /* Added modern scroll behavior and selection styles */
+  html {
+    scroll-behavior: smooth;
+  }
+
+  ::selection {
+    @apply bg-primary/20 text-primary;
+  }
+
+  /* Enhanced focus styles for accessibility */
+  *:focus-visible {
+    @apply outline-2 outline-offset-2 outline-ring;
+  }
+}
+
+/* Added modern utility classes for animations and effects */
+@layer utilities {
+  .animate-fade-in {
+    animation: fadeIn var(--animation-duration-normal) ease-out;
+  }
+
+  .animate-slide-up {
+    animation: slideUp var(--animation-duration-normal) ease-out;
+  }
+
+  .animate-scale-in {
+    animation: scaleIn var(--animation-duration-fast) ease-out;
+  }
+
+  .glass-effect {
+    @apply bg-background/80 backdrop-blur-lg border border-border/50;
+  }
+
+  /* Fixed gradient text with proper fallbacks for accessibility */
+  .gradient-text {
+    @apply bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent;
+    /* Fallback for better accessibility */
+    color: var(--primary);
+  }
+
+  .dark .gradient-text {
+    @apply bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent;
+    /* Better fallback for dark mode */
+    color: var(--primary);
+  }
+
+  /* Enhanced gradient text that works in both modes */
+  .gradient-text-safe {
+    @apply font-bold;
+    background: linear-gradient(135deg, var(--primary), var(--secondary));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    /* Fallback colors for accessibility */
+    color: var(--primary);
+  }
+
+  /* Ensure gradient text has proper contrast in all browsers */
+  @supports not (-webkit-background-clip: text) {
+    .gradient-text,
+    .gradient-text-safe {
+      color: var(--primary) !important;
+      background: none !important;
+    }
+  }
+
+  .hover-lift {
+    @apply transition-all duration-300 hover:scale-105 hover:shadow-lg;
+  }
+
+  .card-hover {
+    @apply transition-all duration-300 hover:shadow-xl hover:-translate-y-1;
+  }
+}
+
+/* Added keyframe animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Enhanced loading states */
+.loading-shimmer {
+  background: linear-gradient(90deg, var(--muted) 25%, var(--muted-foreground) 50%, var(--muted) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
   }
 }
