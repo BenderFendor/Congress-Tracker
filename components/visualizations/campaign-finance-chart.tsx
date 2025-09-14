@@ -1,0 +1,132 @@
+"use client"
+
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts"
+
+interface CampaignFinanceData {
+  name: string
+  amount: number
+  industry?: string
+  color?: string
+}
+
+interface CampaignFinanceChartProps {
+  data: CampaignFinanceData[]
+  type?: "bar" | "pie"
+  title?: string
+  description?: string
+}
+
+export function CampaignFinanceChart({
+  data,
+  type = "bar",
+  title = "Campaign Finance Breakdown",
+  description = "Analysis of campaign contributions by source",
+}: CampaignFinanceChartProps) {
+  const COLORS = [
+    "hsl(var(--chart-1))",
+    "hsl(var(--chart-2))",
+    "hsl(var(--chart-3))",
+    "hsl(var(--chart-4))",
+    "hsl(var(--chart-5))",
+  ]
+
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="bg-card border border-border rounded-lg p-3 shadow-lg">
+          <p className="font-medium">{label}</p>
+          <p className="text-primary font-bold">${(payload[0].value / 1000).toFixed(0)}K</p>
+          {payload[0].payload.industry && (
+            <p className="text-sm text-muted-foreground">{payload[0].payload.industry}</p>
+          )}
+        </div>
+      )
+    }
+    return null
+  }
+
+  const PieTooltip = ({ active, payload }: any) => {
+    if (active && payload && payload.length) {
+      const data = payload[0]
+      return (
+        <div className="bg-card border border-border rounded-lg p-3 shadow-lg">
+          <p className="font-medium">{data.name}</p>
+          <p className="text-primary font-bold">${(data.value / 1000).toFixed(0)}K</p>
+          <p className="text-sm text-muted-foreground">{((data.value / data.payload.total) * 100).toFixed(1)}%</p>
+        </div>
+      )
+    }
+    return null
+  }
+
+  if (type === "pie") {
+    const total = data.reduce((sum, item) => sum + item.amount, 0)
+    const dataWithTotal = data.map((item) => ({ ...item, total }))
+
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>{title}</CardTitle>
+          <CardDescription>{description}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={dataWithTotal}
+                  cx="50%"
+                  cy="50%"
+                  labelLine={false}
+                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                  outerRadius={80}
+                  fill="#8884d8"
+                  dataKey="amount"
+                >
+                  {dataWithTotal.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip content={<PieTooltip />} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="h-80">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+              <XAxis
+                dataKey="name"
+                className="text-muted-foreground"
+                tick={{ fontSize: 12 }}
+                angle={-45}
+                textAnchor="end"
+                height={80}
+              />
+              <YAxis
+                className="text-muted-foreground"
+                tick={{ fontSize: 12 }}
+                tickFormatter={(value) => `$${(value / 1000).toFixed(0)}K`}
+              />
+              <Tooltip content={<CustomTooltip />} />
+              <Bar dataKey="amount" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
