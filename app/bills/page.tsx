@@ -106,6 +106,9 @@ export default function BillsPage() {
   const [memberDetails, setMemberDetails] = useState<Record<string, MemberDetails>>({})
   const [memberLoading, setMemberLoading] = useState<Record<string, boolean>>({})
   const [memberError, setMemberError] = useState<Record<string, string | null>>({})
+  const [titlesData, setTitlesData] = useState<Record<string, any>>({})
+  const [committeesData, setCommitteesData] = useState<Record<string, any>>({})
+  const [actionsData, setActionsData] = useState<Record<string, any>>({})
 
   useEffect(() => {
     const fetchBills = async () => {
@@ -294,6 +297,32 @@ export default function BillsPage() {
                               if (!res.ok) throw new Error("Failed to fetch bill details")
                               const data = await res.json()
                               setDetails((prev) => ({ ...prev, [bill.url]: data.bill }))
+                              
+                              // Auto-load titles and committees data
+                              const billDetails = data.bill
+                              if (billDetails.titles?.url) {
+                                try {
+                                  const titlesRes = await fetch(`/api/congress-proxy?url=${encodeURIComponent(billDetails.titles.url)}`)
+                                  if (titlesRes.ok) {
+                                    const titlesData = await titlesRes.json()
+                                    setTitlesData((prev) => ({ ...prev, [bill.url]: titlesData }))
+                                  }
+                                } catch (e) {
+                                  console.error('Failed to fetch titles:', e)
+                                }
+                              }
+                              
+                              if (billDetails.committees?.url) {
+                                try {
+                                  const committeesRes = await fetch(`/api/congress-proxy?url=${encodeURIComponent(billDetails.committees.url)}`)
+                                  if (committeesRes.ok) {
+                                    const committeesData = await committeesRes.json()
+                                    setCommitteesData((prev) => ({ ...prev, [bill.url]: committeesData }))
+                                  }
+                                } catch (e) {
+                                  console.error('Failed to fetch committees:', e)
+                                }
+                              }
                             } catch (e: any) {
                               setDetailsError((prev) => ({ ...prev, [bill.url]: e.message }))
                             } finally {
@@ -353,121 +382,13 @@ export default function BillsPage() {
                                             <a href="#" onClick={e => {e.preventDefault(); window.open(`/api/congress-proxy?url=${encodeURIComponent(s.url)}`,'_blank')}} className="text-blue-300 underline">API</a>
                                           </span>
                                         </span>
-                                        {/* Member subcard */}
-                                        {s.bioguideId && expanded[s.bioguideId] && (() => {
-                                          const m = memberDetails[s.bioguideId];
-                                          if (!m) return null;
-                                          let partyColor = '#374151';
-                                          const party = m.partyHistory && m.partyHistory.length > 0 ? m.partyHistory[0].partyName : '';
-                                          if (party === 'Democratic') partyColor = '#2563eb';
-                                          else if (party === 'Republican') partyColor = '#dc2626';
-                                          else if (party === 'Independent') partyColor = '#ca8a04';
-                                          return (
-                                            <div className="rounded-lg overflow-hidden shadow-xl flex items-center gap-3 max-w-md bg-black border-2 p-3 mt-2" style={{ borderColor: partyColor }}>
-                                              {/* Member Photo */}
-                                              <div className="flex-shrink-0">
-                                                {(m.depiction?.imageUrl || m.imageUrl) && (
-                                                  <img
-                                                    src={m.depiction?.imageUrl || m.imageUrl}
-                                                    alt={m.directOrderName}
-                                                    className="w-16 h-16 rounded-full border-2 shadow-lg object-cover"
-                                                    style={{ borderColor: partyColor }}
-                                                    loading="lazy"
-                                                  />
-                                                )}
-                                              </div>
-                                              
-                                              {/* Member Info */}
-                                              <div className="flex-1 min-w-0">
-                                                <div 
-                                                  className="font-bold text-lg text-white truncate"
-                                                  style={{ 
-                                                    textShadow: `2px 2px 4px ${partyColor}40, 0 0 8px ${partyColor}20`,
-                                                    color: '#fff'
-                                                  }}
-                                                >
-                                                  {m.directOrderName}
-                                                  {m.honorificName && (
-                                                    <span className="text-sm text-gray-300 ml-1">({m.honorificName})</span>
-                                                  )}
-                                                </div>
-                                                
-                                                <div 
-                                                  className="text-sm mb-1"
-                                                  style={{ 
-                                                    textShadow: `1px 1px 2px ${partyColor}60`,
-                                                    color: '#e5e7eb'
-                                                  }}
-                                                >
-                                                  {m.state} ({m.terms && m.terms.length > 0 ? m.terms[0].stateCode : 'N/A'})
-                                                </div>
-                                                
-                                                <div className="flex flex-wrap items-center gap-2">
-                                                  <span 
-                                                    className="inline-block px-2 py-1 rounded-full font-semibold text-xs text-white"
-                                                    style={{ 
-                                                      background: partyColor,
-                                                      textShadow: '1px 1px 2px rgba(0,0,0,0.8)'
-                                                    }}
-                                                  >
-                                                    {party}
-                                                  </span>
-                                                  {m.officialWebsiteUrl && (
-                                                    <a 
-                                                      href={m.officialWebsiteUrl} 
-                                                      target="_blank" 
-                                                      rel="noopener noreferrer" 
-                                                      className="text-blue-300 underline text-xs hover:text-blue-200"
-                                                      style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.8)' }}
-                                                    >
-                                                      Website
-                                                    </a>
-                                                  )}
-                                                </div>
-                                                
-                                                <div className="mt-2 space-y-1">
-                                                  <div 
-                                                    className="text-xs"
-                                                    style={{ 
-                                                      textShadow: '1px 1px 2px rgba(0,0,0,0.8)',
-                                                      color: '#d1d5db'
-                                                    }}
-                                                  >
-                                                    Born: {m.birthYear || 'N/A'}
-                                                  </div>
-                                                  <div 
-                                                    className="text-xs"
-                                                    style={{ 
-                                                      textShadow: '1px 1px 2px rgba(0,0,0,0.8)',
-                                                      color: '#d1d5db'
-                                                    }}
-                                                  >
-                                                    Current: {m.currentMember ? 'Yes' : 'No'}
-                                                  </div>
-                                                  {m.sponsoredLegislation && (
-                                                    <div className="text-xs">
-                                                      <a 
-                                                        href="#" 
-                                                        onClick={e => {e.preventDefault(); window.open(`/api/congress-proxy?url=${encodeURIComponent(m.sponsoredLegislation!.url)}`,'_blank')}} 
-                                                        className="text-blue-300 underline hover:text-blue-200"
-                                                        style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.8)' }}
-                                                      >
-                                                        Sponsored: {m.sponsoredLegislation.count}
-                                                      </a>
-                                                    </div>
-                                                  )}
-                                                </div>
-                                              </div>
-                                            </div>
-                                          );
-                                        })()}
-                                        {s.bioguideId && memberLoading[s.bioguideId] && <div>Loading member...</div>}
-                                        {s.bioguideId && memberError[s.bioguideId] && <div className="text-red-400">{memberError[s.bioguideId]}</div>}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+                                        {s.bioguideId && memberLoading[s.bioguideId] && <div className="ml-4 text-xs">Loading member...</div>}
+                                        {s.bioguideId && memberError[s.bioguideId] && <div className="ml-4 text-red-400 text-xs">{memberError[s.bioguideId]}</div>}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
                               {d.actions && d.actions.url && (
                                 <div className="mb-2">
                                   <strong>Actions:</strong> <a href="#" onClick={e => {e.preventDefault(); window.open(`/api/congress-proxy?url=${encodeURIComponent(d.actions!.url)}`,'_blank')}} className="text-blue-400 underline">View Actions ({d.actions.count})</a>
@@ -476,11 +397,10 @@ export default function BillsPage() {
                                   </span>
                                 </div>
                               )}
-                              {d.committees && d.committees.url && (
+                              {committeesData[bill.url] && (
                                 <div className="mb-2">
-                                  <strong>Committees:</strong> <a href="#" onClick={e => {e.preventDefault(); window.open(`/api/congress-proxy?url=${encodeURIComponent(d.committees!.url)}`,'_blank')}} className="text-blue-400 underline">View Committees ({d.committees.count})</a>
-                                  <span className="ml-2 text-xs">
-                                    <a href="#" onClick={e => {e.preventDefault(); window.open(`/api/congress-proxy?url=${encodeURIComponent(d.committees!.url)}`,'_blank')}} className="text-blue-300 underline">API</a>
+                                  <strong>Committees:</strong> <span className="text-sm text-blue-300">
+                                    {committeesData[bill.url].committees?.map((committee: any) => committee.name).join(', ') || 'None'}
                                   </span>
                                 </div>
                               )}
@@ -490,10 +410,7 @@ export default function BillsPage() {
                                   <ul className="list-disc ml-5">
                                     {d.committeeReports.map((r, i) => (
                                       <li key={i}>
-                                        <a href="#" onClick={e => {e.preventDefault(); window.open(`/api/congress-proxy?url=${encodeURIComponent(r.url)}`,'_blank')}} className="text-blue-400 underline">{r.citation}</a>
-                                        <span className="ml-2 text-xs">
-                                          <a href="#" onClick={e => {e.preventDefault(); window.open(`/api/congress-proxy?url=${encodeURIComponent(r.url)}`,'_blank')}} className="text-blue-300 underline">API</a>
-                                        </span>
+                                        <span className="text-blue-400">{r.citation}</span>
                                       </li>
                                     ))}
                                   </ul>
@@ -507,11 +424,10 @@ export default function BillsPage() {
                                   </span>
                                 </div>
                               )}
-                              {d.titles && d.titles.url && (
+                              {titlesData[bill.url] && (
                                 <div className="mb-2">
-                                  <strong>Titles:</strong> <a href="#" onClick={e => {e.preventDefault(); window.open(`/api/congress-proxy?url=${encodeURIComponent(d.titles!.url)}`,'_blank')}} className="text-blue-400 underline">View Titles ({d.titles.count})</a>
-                                  <span className="ml-2 text-xs">
-                                    <a href="#" onClick={e => {e.preventDefault(); window.open(`/api/congress-proxy?url=${encodeURIComponent(d.titles!.url)}`,'_blank')}} className="text-blue-300 underline">API</a>
+                                  <strong>Titles:</strong> <span className="text-sm text-blue-300">
+                                    {titlesData[bill.url].titles?.map((title: any) => title.titleType).join(', ') || 'None'}
                                   </span>
                                 </div>
                               )}
@@ -519,6 +435,117 @@ export default function BillsPage() {
                           )
                         })()}
                       </div>
+                      
+                      {/* Member subcards - outside the bill details container */}
+                      {details[bill.url]?.sponsors?.map((s, i) => (
+                        s.bioguideId && expanded[s.bioguideId] && (() => {
+                          const m = memberDetails[s.bioguideId];
+                          if (!m) return null;
+                          let partyColor = '#374151';
+                          const party = m.partyHistory && m.partyHistory.length > 0 ? m.partyHistory[0].partyName : '';
+                          if (party === 'Democratic') partyColor = '#2563eb';
+                          else if (party === 'Republican') partyColor = '#dc2626';
+                          else if (party === 'Independent') partyColor = '#ca8a04';
+                          return (
+                            <div key={s.bioguideId} className="mt-4 rounded-lg overflow-hidden shadow-xl flex items-start gap-3 min-w-80 max-w-lg bg-black border-2 p-3" style={{ borderColor: partyColor }}>
+                              {/* Member Photo */}
+                              <div className="flex-shrink-0">
+                                {m.depiction?.imageUrl && (
+                                  <img
+                                    src={m.depiction.imageUrl}
+                                    alt={m.directOrderName}
+                                    className="w-16 h-16 rounded-full border-2 shadow-lg object-cover"
+                                    style={{ borderColor: partyColor }}
+                                    loading="lazy"
+                                  />
+                                )}
+                              </div>
+                              
+                              {/* Member Info */}
+                              <div className="flex-1 min-w-0">
+                                <div 
+                                  className="font-bold text-lg text-white truncate"
+                                  style={{ 
+                                    textShadow: `2px 2px 4px ${partyColor}40, 0 0 8px ${partyColor}20`,
+                                    color: '#fff'
+                                  }}
+                                >
+                                  {m.directOrderName}
+                                  {m.honorificName && (
+                                    <span className="text-sm text-gray-300 ml-1">({m.honorificName})</span>
+                                  )}
+                                </div>
+                                
+                                <div 
+                                  className="text-sm mb-1"
+                                  style={{ 
+                                    textShadow: `1px 1px 2px ${partyColor}60`,
+                                    color: '#e5e7eb'
+                                  }}
+                                >
+                                  {m.state} ({m.terms && m.terms.length > 0 ? m.terms[0].stateCode : 'N/A'})
+                                </div>
+                                
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span 
+                                    className="inline-block px-2 py-1 rounded-full font-semibold text-xs text-white"
+                                    style={{ 
+                                      background: partyColor,
+                                      textShadow: '1px 1px 2px rgba(0,0,0,0.8)'
+                                    }}
+                                  >
+                                    {party}
+                                  </span>
+                                  {m.officialWebsiteUrl && (
+                                    <a 
+                                      href={m.officialWebsiteUrl} 
+                                      target="_blank" 
+                                      rel="noopener noreferrer" 
+                                      className="text-blue-300 underline text-xs hover:text-blue-200"
+                                      style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.8)' }}
+                                    >
+                                      Website
+                                    </a>
+                                  )}
+                                </div>
+                                
+                                <div className="mt-2 space-y-1">
+                                  <div 
+                                    className="text-xs"
+                                    style={{ 
+                                      textShadow: '1px 1px 2px rgba(0,0,0,0.8)',
+                                      color: '#d1d5db'
+                                    }}
+                                  >
+                                    Born: {m.birthYear || 'N/A'}
+                                  </div>
+                                  <div 
+                                    className="text-xs"
+                                    style={{ 
+                                      textShadow: '1px 1px 2px rgba(0,0,0,0.8)',
+                                      color: '#d1d5db'
+                                    }}
+                                  >
+                                    Current: {m.currentMember ? 'Yes' : 'No'}
+                                  </div>
+                                  {m.sponsoredLegislation && (
+                                    <div className="text-xs">
+                                      <a 
+                                        href="#" 
+                                        onClick={e => {e.preventDefault(); window.open(`/api/congress-proxy?url=${encodeURIComponent(m.sponsoredLegislation!.url)}`,'_blank')}} 
+                                        className="text-blue-300 underline hover:text-blue-200"
+                                        style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.8)' }}
+                                      >
+                                        Sponsored: {m.sponsoredLegislation.count}
+                                      </a>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()
+                      ))}
                     </div>
                   )}
                 </div>
