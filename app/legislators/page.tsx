@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Search, Filter, MapPin, Users, DollarSign, FileText, ExternalLink } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -9,79 +9,108 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 
-// Mock data for demonstration
-const mockLegislators = [
-  {
-    id: 1,
-    name: "Alexandria Ocasio-Cortez",
-    party: "Democrat",
-    state: "NY",
-    district: "14th",
-    chamber: "House",
-    avatar: "/aoc.jpg",
-    totalDonations: 8500000,
-    topDonor: "ActBlue",
-    billsSponsored: 23,
-    votingScore: 95,
-    committees: ["Financial Services", "Oversight and Reform"],
-  },
-  {
-    id: 2,
-    name: "Ted Cruz",
-    party: "Republican",
-    state: "TX",
-    district: null,
-    chamber: "Senate",
-    avatar: "/ted-cruz-portrait.png",
-    totalDonations: 12300000,
-    topDonor: "Club for Growth",
-    billsSponsored: 47,
-    votingScore: 88,
-    committees: ["Judiciary", "Commerce, Science, and Transportation"],
-  },
-  {
-    id: 3,
-    name: "Nancy Pelosi",
-    party: "Democrat",
-    state: "CA",
-    district: "11th",
-    chamber: "House",
-    avatar: "/nancy-pelosi-speaker.png",
-    totalDonations: 15600000,
-    topDonor: "EMILY's List",
-    billsSponsored: 156,
-    votingScore: 92,
-    committees: ["Speaker of the House"],
-  },
-  {
-    id: 4,
-    name: "Mitch McConnell",
-    party: "Republican",
-    state: "KY",
-    district: null,
-    chamber: "Senate",
-    avatar: "/mitch-mcconnell.jpg",
-    totalDonations: 18900000,
-    topDonor: "Senate Leadership Fund",
-    billsSponsored: 89,
-    votingScore: 85,
-    committees: ["Senate Majority Leader"],
-  },
-]
+interface Member {
+  bioguideId: string
+  name: string
+  state: string
+  district?: number
+  partyName: string
+  terms: {
+    item: Array<{
+      chamber: string
+      startYear: number
+      endYear?: number
+    }>
+  }
+  depiction?: {
+    imageUrl: string
+    attribution: string
+  }
+  sponsoredLegislation?: {
+    count: number
+    url: string
+  }
+  cosponsoredLegislation?: {
+    count: number
+    url: string
+  }
+  officialWebsiteUrl?: string
+  birthYear?: number
+  updateDate: string
+  url: string
+}
 
 export default function LegislatorsPage() {
+  const [members, setMembers] = useState<Member[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedParty, setSelectedParty] = useState("all")
   const [selectedChamber, setSelectedChamber] = useState("all")
   const [selectedState, setSelectedState] = useState("all")
 
-  const filteredLegislators = mockLegislators.filter((legislator) => {
+  useEffect(() => {
+    const fetchMembers = async () => {
+      try {
+        // Get multiple pages to have more members
+        const fetchPage = async (offset: number = 0) => {
+          const url = `https://api.congress.gov/v3/member?offset=${offset}&limit=50`
+          const res = await fetch(`/api/congress-proxy?url=${encodeURIComponent(url)}`)
+          if (!res.ok) throw new Error("Failed to fetch members")
+          return await res.json()
+        }
+
+        // Fetch first few pages
+        const [page1, page2] = await Promise.all([
+          fetchPage(0),
+          fetchPage(50)
+        ])
+        
+        const allMembers = [...page1.members, ...page2.members]
+        console.log("Fetched members:", allMembers.slice(0, 3)) // Debug first 3 members
+        
+        // Filter to only current members (those with recent terms)
+        const currentYear = new Date().getFullYear()
+        const currentMembers = allMembers.filter((member: Member) => {
+          if (!member.terms?.item || member.terms.item.length === 0) return false
+          const latestTerm = member.terms.item[member.terms.item.length - 1]
+          // Consider current if term started in last 2 years and no end year or end year is current/future
+          return latestTerm.startYear >= currentYear - 2 && (!latestTerm.endYear || latestTerm.endYear >= currentYear)
+        })
+        
+        setMembers(currentMembers)
+      } catch (e: any) {
+        setError(e.message)
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchMembers()
+  }, [])
+
+  if (loading) return <div className="p-8 text-center">Loading legislators...</div>
+  if (error) return <div className="p-8 text-center text-red-500">{error}</div>
+
+  const filteredLegislators = members.filter((member) => {
     const matchesSearch =
-      legislator.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      legislator.state.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesParty = selectedParty === "all" || legislator.party.toLowerCase() === selectedParty
-    const matchesChamber = selectedChamber === "all" || legislator.chamber.toLowerCase() === selectedChamber
-    const matchesState = selectedState === "all" || legislator.state === selectedState
+      member.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      member.state?.toLowerCase().includes(searchTerm.toLowerCase())
+    
+    const currentParty = member.partyName?.toLowerCase() || ""
+    const matchesParty = selectedParty === "all" || 
+      (selectedParty === "democrat" && (currentParty.includes("democrat") || currentParty === "d")) ||
+      (selectedParty === "republican" && (currentParty.includes("republican") || currentParty === "r")) ||
+      (selectedParty === "independent" && (currentParty.includes("independent") || currentParty === "i"))
+    
+    const currentTerm = member.terms?.item && member.terms.item.length > 0 
+      ? member.terms.item[member.terms.item.length - 1] 
+      : null
+    const chamber = currentTerm?.chamber?.toLowerCase() || ""
+    const matchesChamber = selectedChamber === "all" || 
+      (selectedChamber === "house" && chamber.includes("house")) ||
+      (selectedChamber === "senate" && chamber.includes("senate"))
+
+    const matchesState = selectedState === "all" || member.state === selectedState
 
     return matchesSearch && matchesParty && matchesChamber && matchesState
   })
@@ -160,10 +189,56 @@ export default function LegislatorsPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All States</SelectItem>
-                <SelectItem value="CA">California</SelectItem>
-                <SelectItem value="TX">Texas</SelectItem>
-                <SelectItem value="NY">New York</SelectItem>
-                <SelectItem value="KY">Kentucky</SelectItem>
+                <SelectItem value="Alabama">Alabama</SelectItem>
+                <SelectItem value="Alaska">Alaska</SelectItem>
+                <SelectItem value="Arizona">Arizona</SelectItem>
+                <SelectItem value="Arkansas">Arkansas</SelectItem>
+                <SelectItem value="California">California</SelectItem>
+                <SelectItem value="Colorado">Colorado</SelectItem>
+                <SelectItem value="Connecticut">Connecticut</SelectItem>
+                <SelectItem value="Delaware">Delaware</SelectItem>
+                <SelectItem value="Florida">Florida</SelectItem>
+                <SelectItem value="Georgia">Georgia</SelectItem>
+                <SelectItem value="Hawaii">Hawaii</SelectItem>
+                <SelectItem value="Idaho">Idaho</SelectItem>
+                <SelectItem value="Illinois">Illinois</SelectItem>
+                <SelectItem value="Indiana">Indiana</SelectItem>
+                <SelectItem value="Iowa">Iowa</SelectItem>
+                <SelectItem value="Kansas">Kansas</SelectItem>
+                <SelectItem value="Kentucky">Kentucky</SelectItem>
+                <SelectItem value="Louisiana">Louisiana</SelectItem>
+                <SelectItem value="Maine">Maine</SelectItem>
+                <SelectItem value="Maryland">Maryland</SelectItem>
+                <SelectItem value="Massachusetts">Massachusetts</SelectItem>
+                <SelectItem value="Michigan">Michigan</SelectItem>
+                <SelectItem value="Minnesota">Minnesota</SelectItem>
+                <SelectItem value="Mississippi">Mississippi</SelectItem>
+                <SelectItem value="Missouri">Missouri</SelectItem>
+                <SelectItem value="Montana">Montana</SelectItem>
+                <SelectItem value="Nebraska">Nebraska</SelectItem>
+                <SelectItem value="Nevada">Nevada</SelectItem>
+                <SelectItem value="New Hampshire">New Hampshire</SelectItem>
+                <SelectItem value="New Jersey">New Jersey</SelectItem>
+                <SelectItem value="New Mexico">New Mexico</SelectItem>
+                <SelectItem value="New York">New York</SelectItem>
+                <SelectItem value="North Carolina">North Carolina</SelectItem>
+                <SelectItem value="North Dakota">North Dakota</SelectItem>
+                <SelectItem value="Ohio">Ohio</SelectItem>
+                <SelectItem value="Oklahoma">Oklahoma</SelectItem>
+                <SelectItem value="Oregon">Oregon</SelectItem>
+                <SelectItem value="Pennsylvania">Pennsylvania</SelectItem>
+                <SelectItem value="Rhode Island">Rhode Island</SelectItem>
+                <SelectItem value="South Carolina">South Carolina</SelectItem>
+                <SelectItem value="South Dakota">South Dakota</SelectItem>
+                <SelectItem value="Tennessee">Tennessee</SelectItem>
+                <SelectItem value="Texas">Texas</SelectItem>
+                <SelectItem value="Utah">Utah</SelectItem>
+                <SelectItem value="Vermont">Vermont</SelectItem>
+                <SelectItem value="Virginia">Virginia</SelectItem>
+                <SelectItem value="Washington">Washington</SelectItem>
+                <SelectItem value="West Virginia">West Virginia</SelectItem>
+                <SelectItem value="Wisconsin">Wisconsin</SelectItem>
+                <SelectItem value="Wyoming">Wyoming</SelectItem>
               </SelectContent>
             </Select>
 
@@ -174,92 +249,142 @@ export default function LegislatorsPage() {
         {/* Results Summary */}
         <div className="mb-6">
           <p className="text-muted-foreground">
-            Showing {filteredLegislators.length} of {mockLegislators.length} legislators
+            Showing {filteredLegislators.length} of {members.length} legislators
           </p>
         </div>
 
         {/* Legislator Cards */}
         <div className="grid gap-6">
-          {filteredLegislators.map((legislator) => (
-            <Card key={legislator.id} className="hover:shadow-lg transition-shadow">
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center space-x-4">
-                    <Avatar className="h-16 w-16">
-                      <AvatarImage src={legislator.avatar || "/placeholder.svg"} alt={legislator.name} />
-                      <AvatarFallback>
-                        {legislator.name
-                          .split(" ")
-                          .map((n) => n[0])
-                          .join("")}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <CardTitle className="text-xl">{legislator.name}</CardTitle>
-                      <CardDescription className="flex items-center gap-2 mt-1">
-                        <Badge variant={legislator.party === "Democrat" ? "default" : "secondary"}>
-                          {legislator.party}
+          {filteredLegislators.map((member) => {
+            const rawPartyName = member.partyName || "Unknown"
+            // Convert party names to full party names
+            const getFullPartyName = (party: string) => {
+              const partyLower = party.toLowerCase()
+              if (partyLower.includes("democrat") || partyLower === "d") return "Democratic Party"
+              if (partyLower.includes("republican") || partyLower === "r") return "Republican Party"
+              if (partyLower.includes("independent") || partyLower === "i") return "Independent"
+              return party
+            }
+            
+            const currentParty = getFullPartyName(rawPartyName)
+            const currentTerm = member.terms?.item && member.terms.item.length > 0 
+              ? member.terms.item[member.terms.item.length - 1] 
+              : null
+            const chamber = currentTerm?.chamber || "Unknown"
+            
+            // Get party colors and styles
+            const getPartyStyle = (party: string) => {
+              if (party === "Democratic Party") {
+                return {
+                  badgeClass: "bg-blue-600 text-white hover:bg-blue-700 text-shadow-blue font-medium"
+                }
+              } else if (party === "Republican Party") {
+                return {
+                  badgeClass: "bg-red-600 text-white hover:bg-red-700 text-shadow-red font-medium"
+                }
+              } else {
+                return {
+                  badgeClass: "bg-gray-600 text-white hover:bg-gray-700 text-shadow-gray font-medium"
+                }
+              }
+            }
+            
+            const partyStyle = getPartyStyle(currentParty)
+            
+            return (
+              <Card key={member.bioguideId} className="hover:shadow-lg transition-shadow">
+                <CardHeader>
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center space-x-4">
+                      <Avatar className="h-16 w-16">
+                        <AvatarImage 
+                          src={member.depiction?.imageUrl || "/placeholder.svg"} 
+                          alt={member.name} 
+                        />
+                        <AvatarFallback>
+                          {member.name
+                            .split(" ")
+                            .map((n: string) => n[0])
+                            .join("")}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <CardTitle className="text-xl">{member.name}</CardTitle>
+                        <CardDescription className="flex items-center gap-2 mt-1">
+                          <Badge className={partyStyle.badgeClass}>
+                            {currentParty}
+                          </Badge>
+                          <span className="flex items-center">
+                            <MapPin className="h-4 w-4 mr-1" />
+                            {member.state}{member.district ? `-${member.district}` : ""} • {chamber}
+                          </span>
+                        </CardDescription>
+                      </div>
+                    </div>
+                    {member.officialWebsiteUrl && (
+                      <Button variant="outline" size="sm" asChild>
+                        <a href={member.officialWebsiteUrl} target="_blank" rel="noopener noreferrer">
+                          <ExternalLink className="h-4 w-4 mr-2" />
+                          View Profile
+                        </a>
+                      </Button>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="text-center">
+                      <div className="flex items-center justify-center mb-2">
+                        <DollarSign className="h-5 w-5 text-primary" />
+                      </div>
+                      <div className="text-2xl font-bold text-primary">
+                        N/A
+                      </div>
+                      <div className="text-sm text-muted-foreground">Campaign Finance</div>
+                      <div className="text-xs text-muted-foreground mt-1">Data not available</div>
+                    </div>
+
+                    <div className="text-center">
+                      <div className="flex items-center justify-center mb-2">
+                        <FileText className="h-5 w-5 text-primary" />
+                      </div>
+                      <div className="text-2xl font-bold text-primary">
+                        {member.sponsoredLegislation?.count || 0}
+                      </div>
+                      <div className="text-sm text-muted-foreground">Bills Sponsored</div>
+                    </div>
+
+                    <div className="text-center">
+                      <div className="flex items-center justify-center mb-2">
+                        <Users className="h-5 w-5 text-primary" />
+                      </div>
+                      <div className="text-2xl font-bold text-primary">
+                        {member.cosponsoredLegislation?.count || 0}
+                      </div>
+                      <div className="text-sm text-muted-foreground">Bills Cosponsored</div>
+                    </div>
+
+                    <div className="text-center">
+                      <div className="text-sm font-medium text-foreground mb-2">Info</div>
+                      <div className="space-y-1">
+                        <Badge variant="outline" className="text-xs">
+                          Born: {member.birthYear || 'N/A'}
                         </Badge>
-                        <span className="flex items-center">
-                          <MapPin className="h-4 w-4 mr-1" />
-                          {legislator.state}
-                          {legislator.district && `-${legislator.district}`} • {legislator.chamber}
-                        </span>
-                      </CardDescription>
-                    </div>
-                  </div>
-                  <Button variant="outline" size="sm">
-                    <ExternalLink className="h-4 w-4 mr-2" />
-                    View Profile
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div className="text-center">
-                    <div className="flex items-center justify-center mb-2">
-                      <DollarSign className="h-5 w-5 text-primary" />
-                    </div>
-                    <div className="text-2xl font-bold text-primary">
-                      ${(legislator.totalDonations / 1000000).toFixed(1)}M
-                    </div>
-                    <div className="text-sm text-muted-foreground">Total Donations</div>
-                    <div className="text-xs text-muted-foreground mt-1">Top: {legislator.topDonor}</div>
-                  </div>
-
-                  <div className="text-center">
-                    <div className="flex items-center justify-center mb-2">
-                      <FileText className="h-5 w-5 text-primary" />
-                    </div>
-                    <div className="text-2xl font-bold text-primary">{legislator.billsSponsored}</div>
-                    <div className="text-sm text-muted-foreground">Bills Sponsored</div>
-                  </div>
-
-                  <div className="text-center">
-                    <div className="flex items-center justify-center mb-2">
-                      <Users className="h-5 w-5 text-primary" />
-                    </div>
-                    <div className="text-2xl font-bold text-primary">{legislator.votingScore}%</div>
-                    <div className="text-sm text-muted-foreground">Voting Score</div>
-                  </div>
-
-                  <div className="text-center">
-                    <div className="text-sm font-medium text-foreground mb-2">Committees</div>
-                    <div className="space-y-1">
-                      {legislator.committees.slice(0, 2).map((committee, index) => (
-                        <Badge key={index} variant="outline" className="text-xs">
-                          {committee}
+                        <Badge variant="outline" className="text-xs">
+                          Term: {currentTerm?.startYear || 'N/A'}{currentTerm?.endYear ? `-${currentTerm.endYear}` : '-Present'}
                         </Badge>
-                      ))}
-                      {legislator.committees.length > 2 && (
-                        <div className="text-xs text-muted-foreground">+{legislator.committees.length - 2} more</div>
-                      )}
+                        {member.district && (
+                          <Badge variant="outline" className="text-xs">
+                            District {member.district}
+                          </Badge>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                </CardContent>
+              </Card>
+            )
+          })}
         </div>
 
         {/* Load More */}
