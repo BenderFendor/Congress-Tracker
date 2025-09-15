@@ -181,18 +181,18 @@ export default function HomePage() {
 
             <Card className="card-hover glass-effect border-0 group">
               <CardHeader className="pb-4">
-                <div className="w-16 h-16 bg-gradient-to-br from-chart-4 to-chart-4/80 rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
-                  <PieChart className="h-8 w-8 text-white" />
+                <div className="w-16 h-16 bg-gradient-to-br from-chart-5 to-chart-5/80 rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
+                  <BarChart3 className="h-8 w-8 text-white" />
                 </div>
-                <CardTitle className="text-xl">Portfolio Management</CardTitle>
+                <CardTitle className="text-xl">Data Visualizations</CardTitle>
                 <CardDescription className="text-base leading-relaxed">
-                  Build your portfolio while monitoring congressional trading patterns.
+                  Interactive charts and graphs showing patterns in government data and accountability.
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <Button variant="outline" className="w-full hover-lift group bg-transparent" asChild>
-                  <a href="/portfolio">
-                    Manage Portfolio
+                  <a href="/visualizations">
+                    View Charts
                     <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
                   </a>
                 </Button>
@@ -242,10 +242,10 @@ export default function HomePage() {
               <h4 className="font-semibold text-foreground mb-6 text-lg">Resources</h4>
               <ul className="space-y-3">
                 {[
-                  { name: "API Documentation", href: "#" },
-                  { name: "Data Sources", href: "#" },
-                  { name: "Methodology", href: "#" },
-                  { name: "About", href: "#" },
+                  { name: "API Documentation", href: "/api-docs" },
+                  { name: "Data Sources", href: "/data-sources" },
+                  { name: "Methodology", href: "/methodology" },
+                  { name: "About", href: "/about" },
                 ].map((item) => (
                   <li key={item.name}>
                     <a
