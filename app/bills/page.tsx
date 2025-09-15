@@ -298,7 +298,7 @@ export default function BillsPage() {
                               const data = await res.json()
                               setDetails((prev) => ({ ...prev, [bill.url]: data.bill }))
                               
-                              // Auto-load titles, committees, and actions data
+                              // Auto-load titles, committees, actions, and sponsor details
                               const billDetails = data.bill
                               if (billDetails.titles?.url) {
                                 try {
@@ -335,6 +335,30 @@ export default function BillsPage() {
                                   console.error('Failed to fetch actions:', e)
                                 }
                               }
+                              
+                              // Auto-load sponsor member details
+                              if (billDetails.sponsors && billDetails.sponsors.length > 0) {
+                                billDetails.sponsors.forEach(async (sponsor: any) => {
+                                  if (sponsor.bioguideId && !memberDetails[sponsor.bioguideId]) {
+                                    setMemberLoading(prev => ({ ...prev, [sponsor.bioguideId]: true }));
+                                    setMemberError(prev => ({ ...prev, [sponsor.bioguideId]: null }));
+                                    try {
+                                      const memberUrl = `https://api.congress.gov/v3/member/${sponsor.bioguideId}`;
+                                      const memberRes = await fetch(`/api/congress-proxy?url=${encodeURIComponent(memberUrl)}`);
+                                      if (memberRes.ok) {
+                                        const memberData = await memberRes.json();
+                                        setMemberDetails(prev => ({ ...prev, [sponsor.bioguideId]: memberData.member }));
+                                        // Auto-expand sponsor details
+                                        setExpanded(prev => ({ ...prev, [sponsor.bioguideId]: true }));
+                                      }
+                                    } catch (e: any) {
+                                      setMemberError(prev => ({ ...prev, [sponsor.bioguideId]: e.message }));
+                                    } finally {
+                                      setMemberLoading(prev => ({ ...prev, [sponsor.bioguideId]: false }));
+                                    }
+                                  }
+                                });
+                              }
                             } catch (e: any) {
                               setDetailsError((prev) => ({ ...prev, [bill.url]: e.message }))
                             } finally {
@@ -365,40 +389,9 @@ export default function BillsPage() {
                               </div>
                               {d.sponsors && d.sponsors.length > 0 && (
                                 <div className="mb-2">
-                                  <strong>Sponsors:</strong>
-                                  <ul className="list-none ml-0">
-                                    {d.sponsors.map((s, i) => (
-                                      <li key={i} className="mb-2">
-                                        <span className="flex items-center gap-2">
-                                          <a href="#" onClick={async e => {
-                                            e.preventDefault();
-                                            if (!s.bioguideId) return;
-                                            setMemberLoading(prev => ({ ...prev, [s.bioguideId!]: true }));
-                                            setMemberError(prev => ({ ...prev, [s.bioguideId!]: null }));
-                                            try {
-                                              const url = `https://api.congress.gov/v3/member/${s.bioguideId}`;
-                                              const res = await fetch(`/api/congress-proxy?url=${encodeURIComponent(url)}`);
-                                              if (!res.ok) throw new Error('Failed to fetch member details');
-                                              const data = await res.json();
-                                              setMemberDetails(prev => ({ ...prev, [s.bioguideId!]: data.member }));
-                                            } catch (e: any) {
-                                              setMemberError(prev => ({ ...prev, [s.bioguideId!]: e.message }));
-                                            } finally {
-                                              setMemberLoading(prev => ({ ...prev, [s.bioguideId!]: false }));
-                                            }
-                                            setExpanded(prev => ({ ...prev, [s.bioguideId!]: !prev[s.bioguideId!] }));
-                                          }} className="text-blue-400 underline cursor-pointer font-semibold hover:text-blue-300 transition-colors">
-                                            {s.fullName}
-                                          </a>
-                                          <span className="ml-2 text-xs">
-                                            <a href="#" onClick={e => {e.preventDefault(); window.open(`/api/congress-proxy?url=${encodeURIComponent(s.url)}`,'_blank')}} className="text-blue-300 underline">API</a>
-                                          </span>
-                                        </span>
-                                        {s.bioguideId && memberLoading[s.bioguideId] && <div className="ml-4 text-xs">Loading member...</div>}
-                                        {s.bioguideId && memberError[s.bioguideId] && <div className="ml-4 text-red-400 text-xs">{memberError[s.bioguideId]}</div>}
-                                      </li>
-                                    ))}
-                                  </ul>
+                                  <strong>Sponsors:</strong> <span className="text-sm text-blue-300">
+                                    {d.sponsors.map((s: any) => s.fullName).join(', ')}
+                                  </span>
                                 </div>
                               )}
                               {actionsData[bill.url] && (
@@ -447,57 +440,70 @@ export default function BillsPage() {
                         })()}
                       </div>
                       
-                      {/* Member subcards - outside the bill details container */}
-                      {details[bill.url]?.sponsors?.map((s, i) => (
-                        s.bioguideId && expanded[s.bioguideId] && (() => {
-                          const m = memberDetails[s.bioguideId];
-                          if (!m) return null;
-                          let partyColor = '#374151';
-                          const party = m.partyHistory && m.partyHistory.length > 0 ? m.partyHistory[0].partyName : '';
-                          if (party === 'Democratic') partyColor = '#2563eb';
-                          else if (party === 'Republican') partyColor = '#dc2626';
-                          else if (party === 'Independent') partyColor = '#ca8a04';
-                          return (
-                            <div key={s.bioguideId} className="mt-4 rounded-lg overflow-hidden shadow-xl flex items-start gap-3 min-w-80 max-w-lg bg-black border-2 p-3" style={{ borderColor: partyColor }}>
-                              {/* Member Photo */}
-                              <div className="flex-shrink-0">
-                                {m.depiction?.imageUrl && (
-                                  <img
-                                    src={m.depiction.imageUrl}
-                                    alt={m.directOrderName}
-                                    className="w-16 h-16 rounded-full border-2 shadow-lg object-cover"
-                                    style={{ borderColor: partyColor }}
-                                    loading="lazy"
-                                  />
-                                )}
-                              </div>
-                              
-                              {/* Member Info */}
-                              <div className="flex-1 min-w-0">
-                                <div 
-                                  className="font-bold text-lg text-white truncate"
-                                  style={{ 
-                                    textShadow: `2px 2px 4px ${partyColor}40, 0 0 8px ${partyColor}20`,
-                                    color: '#fff'
-                                  }}
-                                >
-                                  {m.directOrderName}
-                                  {m.honorificName && (
-                                    <span className="text-sm text-gray-300 ml-1">({m.honorificName})</span>
-                                  )}
+                      {/* Member subcards - automatically displayed with responsive grid */}
+                      <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                        {details[bill.url]?.sponsors?.map((s, i) => (
+                          s.bioguideId && expanded[s.bioguideId] && (() => {
+                            const m = memberDetails[s.bioguideId];
+                            if (!m) return null;
+                            let partyColor = '#374151';
+                            const party = m.partyHistory && m.partyHistory.length > 0 ? m.partyHistory[0].partyName : '';
+                            if (party === 'Democratic') partyColor = '#2563eb';
+                            else if (party === 'Republican') partyColor = '#dc2626';
+                            else if (party === 'Independent') partyColor = '#ca8a04';
+                            return (
+                              <div 
+                                key={s.bioguideId} 
+                                className="rounded-lg overflow-hidden shadow-xl flex flex-col bg-black border-2 p-3 min-h-48 w-full" 
+                                style={{ 
+                                  borderColor: partyColor,
+                                  minWidth: 'clamp(280px, 30vw, 400px)',
+                                  maxWidth: '100%'
+                                }}
+                              >
+                                {/* Member Photo */}
+                                <div className="flex items-center gap-3 mb-3">
+                                  <div className="flex-shrink-0">
+                                    {m.depiction?.imageUrl && (
+                                      <img
+                                        src={m.depiction.imageUrl}
+                                        alt={m.directOrderName}
+                                        className="w-16 h-16 rounded-full border-2 shadow-lg object-cover"
+                                        style={{ borderColor: partyColor }}
+                                        loading="lazy"
+                                      />
+                                    )}
+                                  </div>
+                                  
+                                  {/* Member Name and State */}
+                                  <div className="flex-1 min-w-0">
+                                    <div 
+                                      className="font-bold text-lg text-white truncate"
+                                      style={{ 
+                                        textShadow: `2px 2px 4px ${partyColor}40, 0 0 8px ${partyColor}20`,
+                                        color: '#fff'
+                                      }}
+                                    >
+                                      {m.directOrderName}
+                                      {m.honorificName && (
+                                        <span className="text-sm text-gray-300 ml-1">({m.honorificName})</span>
+                                      )}
+                                    </div>
+                                    
+                                    <div 
+                                      className="text-sm mb-1"
+                                      style={{ 
+                                        textShadow: `1px 1px 2px ${partyColor}60`,
+                                        color: '#e5e7eb'
+                                      }}
+                                    >
+                                      {m.state} ({m.terms && m.terms.length > 0 ? m.terms[0].stateCode : 'N/A'})
+                                    </div>
+                                  </div>
                                 </div>
                                 
-                                <div 
-                                  className="text-sm mb-1"
-                                  style={{ 
-                                    textShadow: `1px 1px 2px ${partyColor}60`,
-                                    color: '#e5e7eb'
-                                  }}
-                                >
-                                  {m.state} ({m.terms && m.terms.length > 0 ? m.terms[0].stateCode : 'N/A'})
-                                </div>
-                                
-                                <div className="flex flex-wrap items-center gap-2">
+                                {/* Party and Website */}
+                                <div className="flex flex-wrap items-center gap-2 mb-3">
                                   <span 
                                     className="inline-block px-2 py-1 rounded-full font-semibold text-xs text-white"
                                     style={{ 
@@ -520,7 +526,8 @@ export default function BillsPage() {
                                   )}
                                 </div>
                                 
-                                <div className="mt-2 space-y-1">
+                                {/* Member Details */}
+                                <div className="space-y-1 flex-1">
                                   <div 
                                     className="text-xs"
                                     style={{ 
@@ -553,10 +560,10 @@ export default function BillsPage() {
                                   )}
                                 </div>
                               </div>
-                            </div>
-                          );
-                        })()
-                      ))}
+                            );
+                          })()
+                        ))}
+                      </div>
                     </div>
                   )}
                 </div>
