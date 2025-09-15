@@ -56,11 +56,9 @@ interface MemberDetails {
   directOrderName: string
   honorificName?: string
   state: string
-  stateCode: string
   partyHistory?: Array<{
     partyName: string
   }>
-  imageUrl?: string
   officialWebsiteUrl?: string
   addressInformation?: {
     city: string
@@ -83,11 +81,13 @@ interface MemberDetails {
     memberType: string
     congress: number
     stateName: string
+    stateCode: string
     startYear: number
     endYear?: number
   }>
   depiction?: {
     attribution: string
+    imageUrl: string
   }
 }
 
@@ -363,60 +363,100 @@ export default function BillsPage() {
                                           else if (party === 'Republican') partyColor = '#dc2626';
                                           else if (party === 'Independent') partyColor = '#ca8a04';
                                           return (
-                                            <div className="rounded-xl overflow-hidden shadow-2xl flex flex-col md:flex-row items-stretch max-w-2xl bg-[#10101ab4]">
-                                              {/* Party color header */}
-                                              <div className="w-full flex items-center gap-4 px-6 py-3" style={{ background: partyColor }}>
-                                                <div className="flex-shrink-0">
-                                                  {m.imageUrl && (
-                                                    <img
-                                                      src={m.imageUrl}
-                                                      alt={m.directOrderName}
-                                                      className="w-20 h-20 rounded-full border-4 border-white shadow-lg object-cover -mt-8 md:mt-0 md:-ml-8"
-                                                      style={{ boxShadow: '0 4px 24px 0 rgba(0,0,0,0.5)' }}
-                                                      loading="lazy"
-                                                    />
+                                            <div className="rounded-lg overflow-hidden shadow-xl flex items-center gap-3 max-w-md bg-black border-2 p-3 mt-2" style={{ borderColor: partyColor }}>
+                                              {/* Member Photo */}
+                                              <div className="flex-shrink-0">
+                                                {(m.depiction?.imageUrl || m.imageUrl) && (
+                                                  <img
+                                                    src={m.depiction?.imageUrl || m.imageUrl}
+                                                    alt={m.directOrderName}
+                                                    className="w-16 h-16 rounded-full border-2 shadow-lg object-cover"
+                                                    style={{ borderColor: partyColor }}
+                                                    loading="lazy"
+                                                  />
+                                                )}
+                                              </div>
+                                              
+                                              {/* Member Info */}
+                                              <div className="flex-1 min-w-0">
+                                                <div 
+                                                  className="font-bold text-lg text-white truncate"
+                                                  style={{ 
+                                                    textShadow: `2px 2px 4px ${partyColor}40, 0 0 8px ${partyColor}20`,
+                                                    color: '#fff'
+                                                  }}
+                                                >
+                                                  {m.directOrderName}
+                                                  {m.honorificName && (
+                                                    <span className="text-sm text-gray-300 ml-1">({m.honorificName})</span>
                                                   )}
                                                 </div>
-                                                <div className="flex-1 min-w-0">
-                                                  <div className="font-bold text-2xl text-white truncate">{m.directOrderName} {m.honorificName ? <span className="text-base text-gray-200">({m.honorificName})</span> : null}</div>
-                                                  <div className="text-sm text-blue-100 mb-1">{m.state} ({m.stateCode})</div>
-                                                  <div className="flex flex-wrap items-center gap-2 mt-1">
-                                                    <span className="inline-block px-2 py-1 rounded-full font-semibold text-xs" style={{ background: partyColor, color: '#fff', border: '1px solid #fff' }}>{party}</span>
-                                                    {m.officialWebsiteUrl && <a href={m.officialWebsiteUrl} target="_blank" rel="noopener noreferrer" className="text-blue-200 underline text-xs">Official Website</a>}
-                                                  </div>
+                                                
+                                                <div 
+                                                  className="text-sm mb-1"
+                                                  style={{ 
+                                                    textShadow: `1px 1px 2px ${partyColor}60`,
+                                                    color: '#e5e7eb'
+                                                  }}
+                                                >
+                                                  {m.state} ({m.terms && m.terms.length > 0 ? m.terms[0].stateCode : 'N/A'})
                                                 </div>
-                                              </div>
-                                              {/* Card body */}
-                                              <div className="flex-1 p-6 flex flex-col gap-2 text-white bg-[#10101ab4]">
-                                                <div className="mb-1 text-xs text-gray-200">BioGuide ID: {m.bioguideId}</div>
-                                                {m.addressInformation && (
-                                                  <div className="mb-1 text-xs text-gray-200">Address: {m.addressInformation.city}{m.addressInformation.district ? `, District ${m.addressInformation.district}` : ''} {m.addressInformation.zipCode || ''}</div>
-                                                )}
-                                                <div className="mb-1 text-xs text-gray-200">Born: {m.birthYear || 'N/A'}</div>
-                                                <div className="mb-1 text-xs text-gray-200">Current Member: {m.currentMember ? 'Yes' : 'No'}</div>
-                                                <div className="mb-1 text-xs text-gray-200">Updated: {m.updateDate ? new Date(m.updateDate).toLocaleDateString() : ''}</div>
-                                                {m.sponsoredLegislation && (
-                                                  <div className="mb-1 text-xs">
-                                                    <a href="#" onClick={e => {e.preventDefault(); window.open(`/api/congress-proxy?url=${encodeURIComponent(m.sponsoredLegislation!.url)}`,'_blank')}} className="text-blue-200 underline">Sponsored Legislation ({m.sponsoredLegislation.count})</a>
+                                                
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                  <span 
+                                                    className="inline-block px-2 py-1 rounded-full font-semibold text-xs text-white"
+                                                    style={{ 
+                                                      background: partyColor,
+                                                      textShadow: '1px 1px 2px rgba(0,0,0,0.8)'
+                                                    }}
+                                                  >
+                                                    {party}
+                                                  </span>
+                                                  {m.officialWebsiteUrl && (
+                                                    <a 
+                                                      href={m.officialWebsiteUrl} 
+                                                      target="_blank" 
+                                                      rel="noopener noreferrer" 
+                                                      className="text-blue-300 underline text-xs hover:text-blue-200"
+                                                      style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.8)' }}
+                                                    >
+                                                      Website
+                                                    </a>
+                                                  )}
+                                                </div>
+                                                
+                                                <div className="mt-2 space-y-1">
+                                                  <div 
+                                                    className="text-xs"
+                                                    style={{ 
+                                                      textShadow: '1px 1px 2px rgba(0,0,0,0.8)',
+                                                      color: '#d1d5db'
+                                                    }}
+                                                  >
+                                                    Born: {m.birthYear || 'N/A'}
                                                   </div>
-                                                )}
-                                                {m.cosponsoredLegislation && (
-                                                  <div className="mb-1 text-xs">
-                                                    <a href="#" onClick={e => {e.preventDefault(); window.open(`/api/congress-proxy?url=${encodeURIComponent(m.cosponsoredLegislation!.url)}`,'_blank')}} className="text-blue-200 underline">Cosponsored Legislation ({m.cosponsoredLegislation.count})</a>
+                                                  <div 
+                                                    className="text-xs"
+                                                    style={{ 
+                                                      textShadow: '1px 1px 2px rgba(0,0,0,0.8)',
+                                                      color: '#d1d5db'
+                                                    }}
+                                                  >
+                                                    Current: {m.currentMember ? 'Yes' : 'No'}
                                                   </div>
-                                                )}
-                                                {m.terms && m.terms.length > 0 && (
-                                                  <div className="mb-1 text-xs text-gray-100">Terms:
-                                                    <ul className="ml-4 list-disc">
-                                                      {m.terms.map((t: any, ti: number) => (
-                                                        <li key={ti}>{t.chamber} ({t.memberType}), Congress {t.congress}, {t.stateName} {t.startYear}{t.endYear ? `–${t.endYear}` : ''}</li>
-                                                      ))}
-                                                    </ul>
-                                                  </div>
-                                                )}
-                                                {m.depiction && m.depiction.attribution && (
-                                                  <div className="mb-1 text-xs text-gray-300" dangerouslySetInnerHTML={{ __html: m.depiction.attribution }} />
-                                                )}
+                                                  {m.sponsoredLegislation && (
+                                                    <div className="text-xs">
+                                                      <a 
+                                                        href="#" 
+                                                        onClick={e => {e.preventDefault(); window.open(`/api/congress-proxy?url=${encodeURIComponent(m.sponsoredLegislation!.url)}`,'_blank')}} 
+                                                        className="text-blue-300 underline hover:text-blue-200"
+                                                        style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.8)' }}
+                                                      >
+                                                        Sponsored: {m.sponsoredLegislation.count}
+                                                      </a>
+                                                    </div>
+                                                  )}
+                                                </div>
                                               </div>
                                             </div>
                                           );
