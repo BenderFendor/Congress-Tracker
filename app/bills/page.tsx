@@ -298,7 +298,7 @@ export default function BillsPage() {
                               const data = await res.json()
                               setDetails((prev) => ({ ...prev, [bill.url]: data.bill }))
                               
-                              // Auto-load titles and committees data
+                              // Auto-load titles, committees, and actions data
                               const billDetails = data.bill
                               if (billDetails.titles?.url) {
                                 try {
@@ -321,6 +321,18 @@ export default function BillsPage() {
                                   }
                                 } catch (e) {
                                   console.error('Failed to fetch committees:', e)
+                                }
+                              }
+                              
+                              if (billDetails.actions?.url) {
+                                try {
+                                  const actionsRes = await fetch(`/api/congress-proxy?url=${encodeURIComponent(billDetails.actions.url)}`)
+                                  if (actionsRes.ok) {
+                                    const actionsData = await actionsRes.json()
+                                    setActionsData((prev) => ({ ...prev, [bill.url]: actionsData }))
+                                  }
+                                } catch (e) {
+                                  console.error('Failed to fetch actions:', e)
                                 }
                               }
                             } catch (e: any) {
@@ -389,11 +401,10 @@ export default function BillsPage() {
                                   </ul>
                                 </div>
                               )}
-                              {d.actions && d.actions.url && (
+                              {actionsData[bill.url] && (
                                 <div className="mb-2">
-                                  <strong>Actions:</strong> <a href="#" onClick={e => {e.preventDefault(); window.open(`/api/congress-proxy?url=${encodeURIComponent(d.actions!.url)}`,'_blank')}} className="text-blue-400 underline">View Actions ({d.actions.count})</a>
-                                  <span className="ml-2 text-xs">
-                                    <a href="#" onClick={e => {e.preventDefault(); window.open(`/api/congress-proxy?url=${encodeURIComponent(d.actions!.url)}`,'_blank')}} className="text-blue-300 underline">API</a>
+                                  <strong>Recent Actions:</strong> <span className="text-sm text-blue-300">
+                                    {actionsData[bill.url].actions?.slice(0, 3).map((action: any) => action.text).join(' • ') || 'None'}
                                   </span>
                                 </div>
                               )}
