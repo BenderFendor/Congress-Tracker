@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Search, Filter, MapPin, Users, DollarSign, FileText, ExternalLink } from "lucide-react"
+import { Search, Filter, MapPin, Users, DollarSign, FileText, ExternalLink, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -48,6 +48,8 @@ export default function LegislatorsPage() {
   const [selectedParty, setSelectedParty] = useState("all")
   const [selectedChamber, setSelectedChamber] = useState("all")
   const [selectedState, setSelectedState] = useState("all")
+  const [displayCount, setDisplayCount] = useState(12) // Initially show 12 legislators
+  const [loadingMore, setLoadingMore] = useState(false)
 
   useEffect(() => {
     const fetchMembers = async () => {
@@ -88,6 +90,41 @@ export default function LegislatorsPage() {
     fetchMembers()
   }, [])
 
+  // Reset display count when filters change
+  useEffect(() => {
+    setDisplayCount(12)
+  }, [searchTerm, selectedParty, selectedChamber, selectedState])
+
+  // Load more function
+  const loadMore = async () => {
+    if (loadingMore) return
+    
+    setLoadingMore(true)
+    // Simulate loading delay for better UX
+    await new Promise(resolve => setTimeout(resolve, 500))
+    setDisplayCount(prev => prev + 12)
+    setLoadingMore(false)
+  }
+
+  // Infinite scroll effect
+  useEffect(() => {
+    const handleScroll = () => {
+      if (loadingMore) return
+      
+      const scrollTop = window.pageYOffset || document.documentElement.scrollTop
+      const scrollHeight = document.documentElement.scrollHeight
+      const clientHeight = window.innerHeight
+      
+      // Load more when user is within 200px of bottom
+      if (scrollTop + clientHeight >= scrollHeight - 200) {
+        loadMore()
+      }
+    }
+
+    window.addEventListener('scroll', handleScroll)
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [loadingMore])
+
   if (loading) return <div className="p-8 text-center">Loading legislators...</div>
   if (error) return <div className="p-8 text-center text-red-500">{error}</div>
 
@@ -114,6 +151,12 @@ export default function LegislatorsPage() {
 
     return matchesSearch && matchesParty && matchesChamber && matchesState
   })
+
+  // Infinite scroll calculations
+  const currentLegislators = filteredLegislators.slice(0, displayCount)
+  const hasMore = displayCount < filteredLegislators.length
+
+
 
   return (
     <div className="min-h-screen bg-background">
@@ -247,15 +290,23 @@ export default function LegislatorsPage() {
         </div>
 
         {/* Results Summary */}
-        <div className="mb-6">
+        <div className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <p className="text-muted-foreground">
-            Showing {filteredLegislators.length} of {members.length} legislators
+            Showing {currentLegislators.length} of {filteredLegislators.length} legislators
+            {filteredLegislators.length !== members.length && (
+              <span className="text-sm ml-2">({members.length} total)</span>
+            )}
           </p>
+          {hasMore && (
+            <div className="text-sm text-muted-foreground">
+              Scroll down to load more
+            </div>
+          )}
         </div>
 
         {/* Legislator Cards */}
         <div className="grid gap-6">
-          {filteredLegislators.map((member) => {
+          {currentLegislators.map((member) => {
             const rawPartyName = member.partyName || "Unknown"
             // Convert party names to full party names
             const getFullPartyName = (party: string) => {
@@ -387,12 +438,35 @@ export default function LegislatorsPage() {
           })}
         </div>
 
-        {/* Load More */}
-        <div className="text-center mt-8">
-          <Button variant="outline" size="lg">
-            Load More Legislators
-          </Button>
-        </div>
+        {/* Loading More Indicator */}
+        {loadingMore && (
+          <div className="mt-8 flex justify-center">
+            <div className="flex items-center space-x-2 text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              <span>Loading more legislators...</span>
+            </div>
+          </div>
+        )}
+
+        {/* Load More Button (fallback for manual loading) */}
+        {!loadingMore && hasMore && (
+          <div className="mt-8 flex justify-center">
+            <Button 
+              variant="outline" 
+              onClick={loadMore}
+              className="px-8"
+            >
+              Load More Legislators
+            </Button>
+          </div>
+        )}
+
+        {/* End of Results */}
+        {!hasMore && filteredLegislators.length > 12 && (
+          <div className="mt-8 text-center text-muted-foreground">
+            <p>You've reached the end of the results</p>
+          </div>
+        )}
       </div>
     </div>
   )
