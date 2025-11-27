@@ -1,16 +1,11 @@
-# CapitolScraper
-A web scraper for [capitoltrades](https://www.capitoltrades.com/), a website dedicated to tracking
-Congress stock trades.
+# Capitol trades bot
 
-## Quickstart
-Install from [PyPi](https://pypi.org/project/capitolscraper/) using `pip install capitolscraper`
+# Based on [CapitolTrades](https://github.com/TommasoAmici/capitoltrades)
 
-```python
-from capitolscraper import Trades
+This takes Tommaso Amici's [CapitolTrades](https://github.com/TommasoAmici/capitoltrades) and extends it for the backend for my project. *I stripped out the Telegram bot code*
 
-scraper = Trades()
-print(scraper.trades)
-```
+## CapitolTrades API 
 
-## Authors
-* [TonyGrif](https://github.com/TonyGrif) - Creator and Maintainer
+The [capitoltrades_api](./crates/capitoltrades_api/) crate is a standalone
+client for fetching data from <https://www.capitoltrades.com>.
+It uses [reqwest](https://docs.rs/reqwest/latest/reqwest/) for synchronous HTTP requests.
