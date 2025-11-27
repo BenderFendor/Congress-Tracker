@@ -1,0 +1,25 @@
+name: Upload Release
+
+on:
+  push:
+    tags:
+    - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Build
+        run: |
+          uv sync
+          uv build
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          draft: true

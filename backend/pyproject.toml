@@ -1,0 +1,44 @@
+[project]
+name = "capitolscraper"
+version = "0.1"
+description = "Web scraper for capitoltrades.com"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "beautifulsoup4>=4.12.3",
+    "httpx>=0.28.1",
+]
+
+[dependency-groups]
+dev = [
+    "poethepoet>=0.32.0",
+    "pytest>=8.3.4",
+    "pytest-asyncio>=0.25.2",
+    "pytest-cov>=6.0.0",
+]
+lint = [
+    "mypy>=1.14.1",
+    "pylint>=3.3.3",
+    "ruff>=0.8.5",
+    "types-beautifulsoup4>=4.12.0.20241020",
+]
+
+[tool.poe.tasks]
+test = "pytest --cov --cov-report term-missing"
+
+_imports = "ruff check --select I --fix ."
+_format = "ruff format ."
+format.sequence = ["_imports", "_format"]
+
+_type = "mypy ."
+_check = "ruff check ."
+_lint = "pylint capitolscraper/"
+
+lint.sequence = ["_type", "_check", "_lint"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["capitolscraper/"]
