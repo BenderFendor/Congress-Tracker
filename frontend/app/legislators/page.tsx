@@ -3,86 +3,31 @@
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import { Search, Filter, MapPin, Users, DollarSign, FileText, ExternalLink, Loader2, ArrowRight, Grid } from "lucide-react"
-
-interface Member {
-  bioguideId: string
-  name: string
-  state: string
-  district?: number
-  partyName: string
-  terms: {
-    item: Array<{
-      chamber: string
-      startYear: number
-      endYear?: number
-    }>
-  }
-  depiction?: {
-    imageUrl: string
-    attribution: string
-  }
-  sponsoredLegislation?: {
-    count: number
-    url: string
-  }
-  cosponsoredLegislation?: {
-    count: number
-    url: string
-  }
-  officialWebsiteUrl?: string
-  birthYear?: number
-  updateDate: string
-  url: string
-}
+import { fetchPoliticians, Politician } from "@/lib/api"
 
 export default function LegislatorsPage() {
-  const [members, setMembers] = useState<Member[]>([])
+  const [members, setMembers] = useState<Politician[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedParty, setSelectedParty] = useState("all")
   const [selectedChamber, setSelectedChamber] = useState("all")
   const [selectedState, setSelectedState] = useState("all")
-  const [displayCount, setDisplayCount] = useState(12) // Initially show 12 legislators
+  const [displayCount, setDisplayCount] = useState(12)
   const [loadingMore, setLoadingMore] = useState(false)
 
   useEffect(() => {
-    const fetchMembers = async () => {
+    const loadData = async () => {
       try {
-        // Get multiple pages to have more members
-        const fetchPage = async (offset: number = 0) => {
-          const url = `https://api.congress.gov/v3/member?offset=${offset}&limit=50`
-          const res = await fetch(`/api/congress-proxy?url=${encodeURIComponent(url)}`)
-          if (!res.ok) throw new Error("Failed to fetch members")
-          return await res.json()
-        }
-
-        // Fetch first few pages
-        const [page1, page2] = await Promise.all([
-          fetchPage(0),
-          fetchPage(50)
-        ])
-
-        const allMembers = [...page1.members, ...page2.members]
-        console.log("Fetched members:", allMembers.slice(0, 3)) // Debug first 3 members
-
-        // Filter to only current members (those with recent terms)
-        const currentYear = new Date().getFullYear()
-        const currentMembers = allMembers.filter((member: Member) => {
-          if (!member.terms?.item || member.terms.item.length === 0) return false
-          const latestTerm = member.terms.item[member.terms.item.length - 1]
-          // Consider current if term started in last 2 years and no end year or end year is current/future
-          return latestTerm.startYear >= currentYear - 2 && (!latestTerm.endYear || latestTerm.endYear >= currentYear)
-        })
-
-        setMembers(currentMembers)
+        const response = await fetchPoliticians()
+        setMembers(response.data)
       } catch (e: any) {
         setError(e.message)
       } finally {
         setLoading(false)
       }
     }
-    fetchMembers()
+    loadData()
   }, [])
 
   // Reset display count when filters change
@@ -134,24 +79,21 @@ export default function LegislatorsPage() {
 
   const filteredLegislators = members.filter((member) => {
     const matchesSearch =
-      member.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      member.state?.toLowerCase().includes(searchTerm.toLowerCase())
+      member.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      member._stateId?.toLowerCase().includes(searchTerm.toLowerCase())
 
-    const currentParty = member.partyName?.toLowerCase() || ""
+    const currentParty = member.party?.toLowerCase() || ""
     const matchesParty = selectedParty === "all" ||
-      (selectedParty === "democrat" && (currentParty.includes("democrat") || currentParty === "d")) ||
-      (selectedParty === "republican" && (currentParty.includes("republican") || currentParty === "r")) ||
-      (selectedParty === "independent" && (currentParty.includes("independent") || currentParty === "i"))
+      (selectedParty === "democrat" && currentParty === "democrat") ||
+      (selectedParty === "republican" && currentParty === "republican") ||
+      (selectedParty === "independent" && currentParty === "other")
 
-    const currentTerm = member.terms?.item && member.terms.item.length > 0
-      ? member.terms.item[member.terms.item.length - 1]
-      : null
-    const chamber = currentTerm?.chamber?.toLowerCase() || ""
+    const chamber = member.chamber?.toLowerCase() || ""
     const matchesChamber = selectedChamber === "all" ||
-      (selectedChamber === "house" && chamber.includes("house")) ||
-      (selectedChamber === "senate" && chamber.includes("senate"))
+      (selectedChamber === "house" && chamber === "house") ||
+      (selectedChamber === "senate" && chamber === "senate")
 
-    const matchesState = selectedState === "all" || member.state === selectedState
+    const matchesState = selectedState === "all" || member._stateId === selectedState
 
     return matchesSearch && matchesParty && matchesChamber && matchesState
   })
@@ -212,56 +154,7 @@ export default function LegislatorsPage() {
               className="bg-[#171717] border-2 border-white/10 px-4 py-3 text-white font-mono text-sm uppercase focus:border-[#ff4d00] outline-none appearance-none"
             >
               <option value="all">All States</option>
-              <option value="Alabama">Alabama</option>
-              <option value="Alaska">Alaska</option>
-              <option value="Arizona">Arizona</option>
-              <option value="Arkansas">Arkansas</option>
-              <option value="California">California</option>
-              <option value="Colorado">Colorado</option>
-              <option value="Connecticut">Connecticut</option>
-              <option value="Delaware">Delaware</option>
-              <option value="Florida">Florida</option>
-              <option value="Georgia">Georgia</option>
-              <option value="Hawaii">Hawaii</option>
-              <option value="Idaho">Idaho</option>
-              <option value="Illinois">Illinois</option>
-              <option value="Indiana">Indiana</option>
-              <option value="Iowa">Iowa</option>
-              <option value="Kansas">Kansas</option>
-              <option value="Kentucky">Kentucky</option>
-              <option value="Louisiana">Louisiana</option>
-              <option value="Maine">Maine</option>
-              <option value="Maryland">Maryland</option>
-              <option value="Massachusetts">Massachusetts</option>
-              <option value="Michigan">Michigan</option>
-              <option value="Minnesota">Minnesota</option>
-              <option value="Mississippi">Mississippi</option>
-              <option value="Missouri">Missouri</option>
-              <option value="Montana">Montana</option>
-              <option value="Nebraska">Nebraska</option>
-              <option value="Nevada">Nevada</option>
-              <option value="New Hampshire">New Hampshire</option>
-              <option value="New Jersey">New Jersey</option>
-              <option value="New Mexico">New Mexico</option>
-              <option value="New York">New York</option>
-              <option value="North Carolina">North Carolina</option>
-              <option value="North Dakota">North Dakota</option>
-              <option value="Ohio">Ohio</option>
-              <option value="Oklahoma">Oklahoma</option>
-              <option value="Oregon">Oregon</option>
-              <option value="Pennsylvania">Pennsylvania</option>
-              <option value="Rhode Island">Rhode Island</option>
-              <option value="South Carolina">South Carolina</option>
-              <option value="South Dakota">South Dakota</option>
-              <option value="Tennessee">Tennessee</option>
-              <option value="Texas">Texas</option>
-              <option value="Utah">Utah</option>
-              <option value="Vermont">Vermont</option>
-              <option value="Virginia">Virginia</option>
-              <option value="Washington">Washington</option>
-              <option value="West Virginia">West Virginia</option>
-              <option value="Wisconsin">Wisconsin</option>
-              <option value="Wyoming">Wyoming</option>
+              {/* Add state options here if needed, or dynamically generate */}
             </select>
 
             <button className="bg-[#ff4d00] text-black font-mono font-bold uppercase hover:bg-white hover:text-black transition-all px-4 py-3">
@@ -282,21 +175,8 @@ export default function LegislatorsPage() {
         {/* Legislator Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {currentLegislators.map((member, idx) => {
-            const rawPartyName = member.partyName || "Unknown"
-            // Convert party names to full party names
-            const getFullPartyName = (party: string) => {
-              const partyLower = party.toLowerCase()
-              if (partyLower.includes("democrat") || partyLower === "d") return "Democratic Party"
-              if (partyLower.includes("republican") || partyLower === "r") return "Republican Party"
-              if (partyLower.includes("independent") || partyLower === "i") return "Independent"
-              return party
-            }
-
-            const currentParty = getFullPartyName(rawPartyName)
-            const currentTerm = member.terms?.item && member.terms.item.length > 0
-              ? member.terms.item[member.terms.item.length - 1]
-              : null
-            const chamber = currentTerm?.chamber || "Unknown"
+            const currentParty = member.party === "democrat" ? "Democratic Party" : member.party === "republican" ? "Republican Party" : "Independent"
+            const chamber = member.chamber === "house" ? "House" : "Senate"
 
             // Get party colors
             const getPartyColor = (party: string) => {
@@ -308,21 +188,13 @@ export default function LegislatorsPage() {
             const partyColorClass = getPartyColor(currentParty)
 
             return (
-              <div key={member.bioguideId} className={`bg-[#171717] border-2 border-white/10 p-6 hover:border-[#ff4d00]/50 transition-all duration-300 group animate-stagger-item delay-${(idx % 5) + 1} flex flex-col h-full`}>
+              <div key={member._politicianId} className={`bg-[#171717] border-2 border-white/10 p-6 hover:border-[#ff4d00]/50 transition-all duration-300 group animate-stagger-item delay-${(idx % 5) + 1} flex flex-col h-full`}>
                 <div className="flex items-start justify-between mb-6">
                   <div className="relative">
                     <div className="w-20 h-20 bg-black border-2 border-white/10 overflow-hidden grayscale contrast-125 group-hover:grayscale-0 transition-all duration-500">
-                      {member.depiction?.imageUrl ? (
-                        <img
-                          src={member.depiction.imageUrl}
-                          alt={member.name}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center bg-white/5 text-gray-600">
-                          <Users size={24} />
-                        </div>
-                      )}
+                      <div className="w-full h-full flex items-center justify-center bg-white/5 text-gray-600">
+                        <Users size={24} />
+                      </div>
                     </div>
                     <div className={`absolute -bottom-3 -right-3 px-2 py-1 border ${partyColorClass} font-mono text-[10px] font-black uppercase tracking-wider backdrop-blur-md`}>
                       {currentParty.split(' ')[0]}
@@ -330,24 +202,19 @@ export default function LegislatorsPage() {
                   </div>
 
                   <div className="flex flex-col gap-2">
-                    <Link href={`/legislators/${member.bioguideId}`} className="w-10 h-10 flex items-center justify-center border border-white/20 text-white hover:bg-[#ff4d00] hover:text-black hover:border-[#ff4d00] transition-all">
+                    <Link href={`/legislators/${member._politicianId}`} className="w-10 h-10 flex items-center justify-center border border-white/20 text-white hover:bg-[#ff4d00] hover:text-black hover:border-[#ff4d00] transition-all">
                       <ArrowRight size={16} />
                     </Link>
-                    {member.officialWebsiteUrl && (
-                      <a href={member.officialWebsiteUrl} target="_blank" rel="noopener noreferrer" className="w-10 h-10 flex items-center justify-center border border-white/20 text-gray-500 hover:text-white hover:border-white transition-all">
-                        <ExternalLink size={14} />
-                      </a>
-                    )}
                   </div>
                 </div>
 
                 <div className="mb-6 flex-grow">
                   <h2 className="font-serif text-xl font-bold text-white mb-2 leading-tight group-hover:text-[#ff4d00] transition-colors">
-                    {member.name}
+                    {member.full_name}
                   </h2>
                   <div className="flex items-center gap-2 text-gray-400 font-mono text-xs uppercase">
                     <MapPin size={12} />
-                    <span>{member.state}{member.district ? `-${member.district}` : ""}</span>
+                    <span>{member._stateId}</span>
                     <span className="text-white/20">|</span>
                     <span>{chamber}</span>
                   </div>
@@ -356,23 +223,22 @@ export default function LegislatorsPage() {
                 <div className="grid grid-cols-2 gap-4 pt-4 border-t border-white/10">
                   <div>
                     <div className="flex items-center gap-2 text-[#ff4d00] mb-1">
-                      <FileText size={12} />
-                      <span className="font-mono text-[10px] font-bold uppercase">Sponsored</span>
+                      <DollarSign size={12} />
+                      <span className="font-mono text-[10px] font-bold uppercase">Volume</span>
                     </div>
-                    <span className="font-mono text-lg font-bold text-white">{member.sponsoredLegislation?.count || 0}</span>
+                    <span className="font-mono text-lg font-bold text-white">${(member.stats.volume / 1000000).toFixed(1)}M</span>
                   </div>
                   <div>
                     <div className="flex items-center gap-2 text-gray-400 mb-1">
-                      <Users size={12} />
-                      <span className="font-mono text-[10px] font-bold uppercase">Cosponsored</span>
+                      <FileText size={12} />
+                      <span className="font-mono text-[10px] font-bold uppercase">Trades</span>
                     </div>
-                    <span className="font-mono text-lg font-bold text-white">{member.cosponsoredLegislation?.count || 0}</span>
+                    <span className="font-mono text-lg font-bold text-white">{member.stats.count_trades}</span>
                   </div>
                 </div>
 
                 <div className="mt-4 pt-4 border-t border-white/10 flex justify-between items-center font-mono text-[10px] text-gray-500 uppercase">
-                  <span>Born: {member.birthYear || 'N/A'}</span>
-                  <span>Term: {currentTerm?.startYear || 'N/A'}-{currentTerm?.endYear || 'Pres'}</span>
+                  <span>Issuers: {member.stats.count_issuers}</span>
                 </div>
               </div>
             )

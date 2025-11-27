@@ -11,15 +11,15 @@ pub struct Politician {
 
     pub chamber: Chamber,
 
-    dob: String,
+    pub dob: Option<String>,
 
     pub first_name: String,
 
-    gender: Gender,
+    pub gender: Option<Gender>,
 
     pub last_name: String,
 
-    nickname: Option<String>,
+    pub nickname: Option<String>,
 
     pub party: Party,
 }
@@ -47,11 +47,11 @@ pub struct PoliticianDetail {
 
     middle_name: Option<String>,
 
-    full_name: String,
+    pub full_name: String,
 
-    dob: String,
+    pub dob: Option<String>,
 
-    gender: Gender,
+    pub gender: Option<Gender>,
 
     social_facebook: Option<String>,
 
