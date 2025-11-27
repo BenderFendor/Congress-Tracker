@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { ArrowLeft, MapPin, DollarSign, FileText, Users, TrendingUp, ExternalLink } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -8,43 +8,35 @@ import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Progress } from "@/components/ui/progress"
+import { getLegislator, Legislator } from "@/lib/services/legislators"
+import { getMemberVotes, Vote } from "@/lib/services/voting"
 
-// Mock data for a detailed legislator profile
-const mockLegislator = {
-  id: 1,
-  name: "Alexandria Ocasio-Cortez",
-  party: "Democrat",
-  state: "NY",
-  district: "14th",
-  chamber: "House",
-  avatar: "/aoc.jpg",
-  bio: "Representative Alexandria Ocasio-Cortez proudly serves New York's 14th Congressional District, which includes parts of the Bronx and Queens.",
-  totalDonations: 8500000,
-  billsSponsored: 23,
-  votingScore: 95,
-  committees: ["Financial Services", "Oversight and Reform"],
-  topDonors: [
-    { name: "ActBlue", amount: 2100000, industry: "Political Action" },
-    { name: "Justice Democrats", amount: 850000, industry: "Political Action" },
-    { name: "Brand New Congress", amount: 420000, industry: "Political Action" },
-    { name: "Democratic Socialists", amount: 380000, industry: "Political Action" },
-    { name: "Working Families Party", amount: 290000, industry: "Political Action" },
-  ],
-  recentBills: [
-    { title: "Green New Deal Resolution", status: "Introduced", date: "2023-04-20" },
-    { title: "Just Transition for Energy Communities Act", status: "Committee", date: "2023-03-15" },
-    { title: "Civilian Climate Corps Act", status: "Passed House", date: "2023-02-28" },
-  ],
-  votingRecord: [
-    { bill: "Infrastructure Investment Act", vote: "Yes", date: "2023-11-15" },
-    { bill: "Climate Action Now Act", vote: "Yes", date: "2023-10-22" },
-    { bill: "Tax Cuts Extension", vote: "No", date: "2023-09-18" },
-    { bill: "Healthcare Reform Bill", vote: "Yes", date: "2023-08-30" },
-  ],
-}
-
-export default function LegislatorProfilePage() {
+export default function LegislatorProfilePage({ params }: { params: { id: string } }) {
   const [activeTab, setActiveTab] = useState("overview")
+  const [legislator, setLegislator] = useState<Legislator | null>(null)
+  const [votes, setVotes] = useState<Vote[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const [legData, votesData] = await Promise.all([
+          getLegislator(params.id),
+          getMemberVotes(params.id)
+        ])
+        setLegislator(legData)
+        setVotes(votesData)
+      } catch (error) {
+        console.error("Failed to load legislator data", error)
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadData()
+  }, [params.id])
+
+  if (loading) return <div className="p-8 text-center">Loading profile...</div>
+  if (!legislator) return <div className="p-8 text-center">Legislator not found</div>
 
   return (
     <div className="min-h-screen bg-background">
@@ -68,9 +60,9 @@ export default function LegislatorProfilePage() {
           <CardHeader>
             <div className="flex flex-col md:flex-row items-start md:items-center gap-6">
               <Avatar className="h-32 w-32">
-                <AvatarImage src={mockLegislator.avatar || "/placeholder.svg"} alt={mockLegislator.name} />
+                <AvatarImage src={legislator.avatar || "/placeholder.svg"} alt={legislator.name} />
                 <AvatarFallback className="text-2xl">
-                  {mockLegislator.name
+                  {legislator.name
                     .split(" ")
                     .map((n) => n[0])
                     .join("")}
@@ -80,30 +72,32 @@ export default function LegislatorProfilePage() {
               <div className="flex-1">
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
                   <div>
-                    <CardTitle className="text-3xl mb-2">{mockLegislator.name}</CardTitle>
+                    <CardTitle className="text-3xl mb-2">{legislator.name}</CardTitle>
                     <CardDescription className="flex items-center gap-2 text-lg">
                       <Badge
-                        variant={mockLegislator.party === "Democrat" ? "default" : "secondary"}
-                        className="text-sm"
+                        variant={legislator.party === "D" || legislator.party === "Democrat" ? "default" : "secondary"}
+                        className={`text-sm ${legislator.party === "R" || legislator.party === "Republican" ? "bg-red-600 hover:bg-red-700" : ""}`}
                       >
-                        {mockLegislator.party}
+                        {legislator.party === "D" ? "Democrat" : legislator.party === "R" ? "Republican" : legislator.party}
                       </Badge>
                       <span className="flex items-center">
                         <MapPin className="h-4 w-4 mr-1" />
-                        {mockLegislator.state}-{mockLegislator.district} • {mockLegislator.chamber}
+                        {legislator.state}-{legislator.district} • {legislator.chamber}
                       </span>
                     </CardDescription>
                   </div>
-                  <Button>
-                    <ExternalLink className="h-4 w-4 mr-2" />
-                    Official Website
+                  <Button asChild>
+                    <a href={legislator.url} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      Official Website
+                    </a>
                   </Button>
                 </div>
 
-                <p className="text-muted-foreground mb-4">{mockLegislator.bio}</p>
+                <p className="text-muted-foreground mb-4">{legislator.bio}</p>
 
                 <div className="flex flex-wrap gap-2">
-                  {mockLegislator.committees.map((committee, index) => (
+                  {legislator.committees.map((committee, index) => (
                     <Badge key={index} variant="outline">
                       {committee}
                     </Badge>
@@ -125,7 +119,7 @@ export default function LegislatorProfilePage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-primary">
-                ${(mockLegislator.totalDonations / 1000000).toFixed(1)}M
+                ${(legislator.totalDonations / 1000000).toFixed(1)}M
               </div>
               <p className="text-xs text-muted-foreground">Current election cycle</p>
             </CardContent>
@@ -139,7 +133,7 @@ export default function LegislatorProfilePage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-primary">{mockLegislator.billsSponsored}</div>
+              <div className="text-2xl font-bold text-primary">{legislator.billsSponsored}</div>
               <p className="text-xs text-muted-foreground">This session</p>
             </CardContent>
           </Card>
@@ -152,8 +146,8 @@ export default function LegislatorProfilePage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-primary">{mockLegislator.votingScore}%</div>
-              <Progress value={mockLegislator.votingScore} className="mt-2" />
+              <div className="text-2xl font-bold text-primary">{legislator.votingScore}%</div>
+              <Progress value={legislator.votingScore} className="mt-2" />
             </CardContent>
           </Card>
 
@@ -189,17 +183,21 @@ export default function LegislatorProfilePage() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    {mockLegislator.topDonors.slice(0, 3).map((donor, index) => (
-                      <div key={index} className="flex items-center justify-between">
-                        <div>
-                          <div className="font-medium">{donor.name}</div>
-                          <div className="text-sm text-muted-foreground">{donor.industry}</div>
+                    {legislator.topDonors.length > 0 ? (
+                      legislator.topDonors.slice(0, 3).map((donor, index) => (
+                        <div key={index} className="flex items-center justify-between">
+                          <div>
+                            <div className="font-medium">{donor.name}</div>
+                            <div className="text-sm text-muted-foreground">{donor.industry}</div>
+                          </div>
+                          <div className="text-right">
+                            <div className="font-bold">${(donor.amount / 1000).toFixed(0)}K</div>
+                          </div>
                         </div>
-                        <div className="text-right">
-                          <div className="font-bold">${(donor.amount / 1000).toFixed(0)}K</div>
-                        </div>
-                      </div>
-                    ))}
+                      ))
+                    ) : (
+                      <div className="text-muted-foreground">No donor data available</div>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -211,15 +209,19 @@ export default function LegislatorProfilePage() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    {mockLegislator.recentBills.map((bill, index) => (
-                      <div key={index} className="flex items-center justify-between">
-                        <div>
-                          <div className="font-medium">{bill.title}</div>
-                          <div className="text-sm text-muted-foreground">{bill.date}</div>
+                    {legislator.recentBills.length > 0 ? (
+                      legislator.recentBills.map((bill, index) => (
+                        <div key={index} className="flex items-center justify-between">
+                          <div>
+                            <div className="font-medium">{bill.title}</div>
+                            <div className="text-sm text-muted-foreground">{bill.date}</div>
+                          </div>
+                          <Badge variant="outline">{bill.status}</Badge>
                         </div>
-                        <Badge variant="outline">{bill.status}</Badge>
-                      </div>
-                    ))}
+                      ))
+                    ) : (
+                      <div className="text-muted-foreground">No recent bills available</div>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -234,20 +236,24 @@ export default function LegislatorProfilePage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-6">
-                  {mockLegislator.topDonors.map((donor, index) => (
-                    <div key={index} className="flex items-center justify-between p-4 border border-border rounded-lg">
-                      <div>
-                        <div className="font-medium text-lg">{donor.name}</div>
-                        <div className="text-sm text-muted-foreground">{donor.industry}</div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-xl font-bold text-primary">${(donor.amount / 1000).toFixed(0)}K</div>
-                        <div className="text-sm text-muted-foreground">
-                          {((donor.amount / mockLegislator.totalDonations) * 100).toFixed(1)}% of total
+                  {legislator.topDonors.length > 0 ? (
+                    legislator.topDonors.map((donor, index) => (
+                      <div key={index} className="flex items-center justify-between p-4 border border-border rounded-lg">
+                        <div>
+                          <div className="font-medium text-lg">{donor.name}</div>
+                          <div className="text-sm text-muted-foreground">{donor.industry}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-xl font-bold text-primary">${(donor.amount / 1000).toFixed(0)}K</div>
+                          <div className="text-sm text-muted-foreground">
+                            {((donor.amount / legislator.totalDonations) * 100).toFixed(1)}% of total
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    ))
+                  ) : (
+                    <div className="text-muted-foreground">No detailed donor data available</div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -261,15 +267,19 @@ export default function LegislatorProfilePage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {mockLegislator.recentBills.map((bill, index) => (
-                    <div key={index} className="p-4 border border-border rounded-lg">
-                      <div className="flex items-start justify-between mb-2">
-                        <h4 className="font-medium">{bill.title}</h4>
-                        <Badge variant="outline">{bill.status}</Badge>
+                  {legislator.recentBills.length > 0 ? (
+                    legislator.recentBills.map((bill, index) => (
+                      <div key={index} className="p-4 border border-border rounded-lg">
+                        <div className="flex items-start justify-between mb-2">
+                          <h4 className="font-medium">{bill.title}</h4>
+                          <Badge variant="outline">{bill.status}</Badge>
+                        </div>
+                        <div className="text-sm text-muted-foreground">Introduced: {bill.date}</div>
                       </div>
-                      <div className="text-sm text-muted-foreground">Introduced: {bill.date}</div>
-                    </div>
-                  ))}
+                    ))
+                  ) : (
+                    <div className="text-muted-foreground">No sponsored legislation data available</div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -283,15 +293,21 @@ export default function LegislatorProfilePage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {mockLegislator.votingRecord.map((vote, index) => (
-                    <div key={index} className="flex items-center justify-between p-4 border border-border rounded-lg">
-                      <div>
-                        <div className="font-medium">{vote.bill}</div>
-                        <div className="text-sm text-muted-foreground">{vote.date}</div>
+                  {votes.length > 0 ? (
+                    votes.map((vote, index) => (
+                      <div key={index} className="flex items-center justify-between p-4 border border-border rounded-lg">
+                        <div className="flex-1 mr-4">
+                          <div className="font-medium">{vote.bill.number}: {vote.bill.title || vote.description}</div>
+                          <div className="text-sm text-muted-foreground">{vote.date} • {vote.question}</div>
+                        </div>
+                        <Badge variant={vote.position === "Yes" ? "default" : vote.position === "No" ? "destructive" : "secondary"}>
+                          {vote.position}
+                        </Badge>
                       </div>
-                      <Badge variant={vote.vote === "Yes" ? "default" : "destructive"}>{vote.vote}</Badge>
-                    </div>
-                  ))}
+                    ))
+                  ) : (
+                    <div className="text-muted-foreground">No voting record available</div>
+                  )}
                 </div>
               </CardContent>
             </Card>

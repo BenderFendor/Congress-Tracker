@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { TrendingUp, TrendingDown, Plus, Eye, EyeOff, BarChart3 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -28,92 +28,48 @@ import {
   Tooltip,
   Pie,
 } from "recharts"
+import { getRecentTrades, StockTrade } from "@/lib/services/stocks"
 
-// Mock portfolio data
-const portfolioHoldings = [
-  {
-    id: 1,
-    symbol: "NVDA",
-    name: "NVIDIA Corporation",
-    shares: 50,
-    avgCost: 420.5,
-    currentPrice: 875.5,
-    value: 43775,
-    dayChange: 2.5,
-    totalReturn: 54.1,
-    congressionalActivity: "High",
-    recentTrades: 12,
-  },
-  {
-    id: 2,
-    symbol: "MSFT",
-    name: "Microsoft Corporation",
-    shares: 100,
-    avgCost: 380.25,
-    currentPrice: 435.8,
-    value: 43580,
-    dayChange: 0.8,
-    totalReturn: 14.6,
-    congressionalActivity: "Medium",
-    recentTrades: 8,
-  },
-  {
-    id: 3,
-    symbol: "AAPL",
-    name: "Apple Inc",
-    shares: 200,
-    avgCost: 185.75,
-    currentPrice: 195.2,
-    value: 39040,
-    dayChange: 1.1,
-    totalReturn: 5.1,
-    congressionalActivity: "High",
-    recentTrades: 15,
-  },
-]
-
-const portfolioPerformance = [
-  { date: "Jan", value: 95000, congressIndex: 98000 },
-  { date: "Feb", value: 102000, congressIndex: 105000 },
-  { date: "Mar", value: 98000, congressIndex: 101000 },
-  { date: "Apr", value: 115000, congressIndex: 118000 },
-  { date: "May", value: 126355, congressIndex: 125000 },
-]
-
-const sectorAllocation = [
-  { name: "Technology", value: 65, color: "hsl(var(--primary))" },
-  { name: "Healthcare", value: 20, color: "hsl(var(--secondary))" },
-  { name: "Financial", value: 10, color: "hsl(var(--accent))" },
-  { name: "Energy", value: 5, color: "hsl(var(--muted))" },
-]
-
-const congressionalMirrorTrades = [
-  {
-    legislator: "Nancy Pelosi",
-    stock: "NVDA",
-    action: "Buy",
-    date: "2024-01-15",
-    yourPosition: "Following",
-    performance: "+12.3%",
-  },
-  {
-    legislator: "Josh Gottheimer",
-    stock: "MSFT",
-    action: "Buy",
-    date: "2024-01-10",
-    yourPosition: "Following",
-    performance: "+3.8%",
-  },
-]
+// Helper to generate a mock portfolio based on real recent trades
+const generateMockPortfolio = (trades: StockTrade[]) => {
+  const uniqueTickers = Array.from(new Set(trades.map(t => t.ticker))).slice(0, 5);
+  return uniqueTickers.map((ticker, index) => {
+    const trade = trades.find(t => t.ticker === ticker);
+    return {
+      id: index + 1,
+      symbol: ticker,
+      name: trade?.asset_description || ticker,
+      shares: Math.floor(Math.random() * 100) + 10,
+      avgCost: Math.floor(Math.random() * 200) + 50,
+      currentPrice: Math.floor(Math.random() * 200) + 50, // Mock price since we don't have real-time API
+      value: 0, // Calculated below
+      dayChange: (Math.random() * 5) - 2.5,
+      totalReturn: (Math.random() * 40) - 10,
+      congressionalActivity: ["High", "Medium", "Low"][Math.floor(Math.random() * 3)],
+      recentTrades: trades.filter(t => t.ticker === ticker).length,
+    }
+  }).map(h => ({ ...h, value: h.shares * h.currentPrice }));
+}
 
 export default function PortfolioPage() {
   const [isAddStockOpen, setIsAddStockOpen] = useState(false)
   const [newStock, setNewStock] = useState({ symbol: "", shares: "", price: "" })
   const [watchingCongress, setWatchingCongress] = useState(true)
+  const [portfolioHoldings, setPortfolioHoldings] = useState<any[]>([])
+  const [recentTrades, setRecentTrades] = useState<StockTrade[]>([])
+
+  useEffect(() => {
+    async function loadData() {
+      const trades = await getRecentTrades(50);
+      setRecentTrades(trades);
+      setPortfolioHoldings(generateMockPortfolio(trades));
+    }
+    loadData();
+  }, []);
 
   const totalValue = portfolioHoldings.reduce((sum, holding) => sum + holding.value, 0)
   const totalCost = portfolioHoldings.reduce((sum, holding) => sum + holding.shares * holding.avgCost, 0)
-  const totalReturn = ((totalValue - totalCost) / totalCost) * 100
+  const totalReturn = totalCost > 0 ? ((totalValue - totalCost) / totalCost) * 100 : 0
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-US", {
@@ -129,6 +85,13 @@ export default function PortfolioPage() {
     setIsAddStockOpen(false)
     setNewStock({ symbol: "", shares: "", price: "" })
   }
+
+  const sectorAllocation = [
+    { name: "Technology", value: 65, color: "hsl(var(--primary))" },
+    { name: "Healthcare", value: 20, color: "hsl(var(--secondary))" },
+    { name: "Financial", value: 10, color: "hsl(var(--accent))" },
+    { name: "Energy", value: 5, color: "hsl(var(--muted))" },
+  ]
 
   return (
     <div className="min-h-screen bg-background">
@@ -205,7 +168,7 @@ export default function PortfolioPage() {
                   {watchingCongress ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
                 </Button>
               </div>
-              <p className="text-xs text-muted-foreground">Following 2 trades</p>
+              <p className="text-xs text-muted-foreground">Tracking recent trades</p>
             </CardContent>
           </Card>
         </div>
@@ -290,9 +253,8 @@ export default function PortfolioPage() {
                       <div className="flex items-center space-x-4">
                         <div className="flex-shrink-0">
                           <div
-                            className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                              holding.dayChange > 0 ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
-                            }`}
+                            className={`w-12 h-12 rounded-full flex items-center justify-center ${holding.dayChange > 0 ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+                              }`}
                           >
                             {holding.dayChange > 0 ? (
                               <TrendingUp className="h-6 w-6" />
@@ -330,16 +292,15 @@ export default function PortfolioPage() {
                           <div className="text-xl font-bold">{formatCurrency(holding.value)}</div>
                           <div className={`text-sm ${holding.dayChange > 0 ? "text-green-600" : "text-red-600"}`}>
                             {holding.dayChange > 0 ? "+" : ""}
-                            {holding.dayChange}% today
+                            {holding.dayChange.toFixed(2)}% today
                           </div>
                         </div>
                         <div
-                          className={`text-sm font-medium ${
-                            holding.totalReturn > 0 ? "text-green-600" : "text-red-600"
-                          }`}
+                          className={`text-sm font-medium ${holding.totalReturn > 0 ? "text-green-600" : "text-red-600"
+                            }`}
                         >
                           {holding.totalReturn > 0 ? "+" : ""}
-                          {holding.totalReturn}% total
+                          {holding.totalReturn.toFixed(2)}% total
                         </div>
                       </div>
                     </div>
@@ -350,6 +311,7 @@ export default function PortfolioPage() {
           </TabsContent>
 
           <TabsContent value="performance" className="space-y-6">
+            {/* Keeping static performance chart for now as we don't have historical data */}
             <Card>
               <CardHeader>
                 <CardTitle>Portfolio vs Congressional Index</CardTitle>
@@ -358,7 +320,13 @@ export default function PortfolioPage() {
               <CardContent>
                 <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={portfolioPerformance}>
+                    <LineChart data={[
+                      { date: "Jan", value: 95000, congressIndex: 98000 },
+                      { date: "Feb", value: 102000, congressIndex: 105000 },
+                      { date: "Mar", value: 98000, congressIndex: 101000 },
+                      { date: "Apr", value: 115000, congressIndex: 118000 },
+                      { date: "May", value: 126355, congressIndex: 125000 },
+                    ]}>
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="date" />
                       <YAxis tickFormatter={(value) => formatCurrency(value)} />
@@ -461,22 +429,22 @@ export default function PortfolioPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {congressionalMirrorTrades.map((trade, index) => (
+                  {recentTrades.slice(0, 5).map((trade, index) => (
                     <div key={index} className="flex items-center justify-between p-4 border rounded-lg">
                       <div className="flex items-center space-x-4">
                         <div className="flex-shrink-0">
-                          <Badge variant="outline">{trade.action}</Badge>
+                          <Badge variant="outline">{trade.type}</Badge>
                         </div>
                         <div>
-                          <div className="font-semibold">{trade.stock}</div>
+                          <div className="font-semibold">{trade.ticker}</div>
                           <div className="text-sm text-muted-foreground">
-                            Following {trade.legislator} • {trade.date}
+                            Following {trade.representative} • {trade.transaction_date}
                           </div>
                         </div>
                       </div>
                       <div className="text-right">
-                        <div className="font-semibold text-green-600">{trade.performance}</div>
-                        <div className="text-sm text-muted-foreground">{trade.yourPosition}</div>
+                        <div className="font-semibold text-green-600">Following</div>
+                        <div className="text-sm text-muted-foreground">{trade.amount}</div>
                       </div>
                     </div>
                   ))}

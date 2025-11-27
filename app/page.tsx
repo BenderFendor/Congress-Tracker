@@ -1,272 +1,282 @@
-import { Search, TrendingUp, Users, FileText, DollarSign, Eye, ArrowRight, BarChart3, PieChart } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Navigation } from "@/components/navigation"
+"use client"
 
-export default function HomePage() {
-  return (
-    <div className="min-h-screen bg-background">
-      <Navigation />
+import React, { useState, useEffect } from 'react';
+import { Search, Grid, List, Info, Calendar, Shield, Users, TrendingUp, PieChart, FileText, DollarSign, BarChart3 } from 'lucide-react';
+import { NavBarItem } from '@/components/ui/design-system/NavBarItem';
+import { SectionHeader } from '@/components/ui/design-system/SectionHeader';
+import { StatBox } from '@/components/ui/design-system/StatBox';
+import { DataGrid } from '@/components/ui/design-system/DataGrid';
+import { LegislatorCard } from '@/components/ui/design-system/LegislatorCard';
+import { Briefing } from '@/components/ui/design-system/Briefing';
 
-      <section className="relative py-24 px-4 overflow-hidden">
-        {/* Background gradient */}
-        <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-background to-secondary/5" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(120,119,198,0.1),transparent_50%)]" />
+import { getAllLegislators, Legislator } from '@/lib/services/legislators';
+import { getRecentTrades, StockTrade } from '@/lib/services/stocks';
+import { getRecentFilings, Filing } from '@/lib/services/lobbying';
+import { getRecentBills, Bill } from '@/lib/services/bills';
 
-        <div className="container mx-auto text-center relative z-10">
-          <div className="animate-fade-in">
-            <h2 className="text-5xl md:text-7xl font-bold mb-6 text-balance">
-              <span className="text-primary font-extrabold">Transparency</span>{" "}
-              <span className="text-foreground">in Government</span>
-            </h2>
-            <p className="text-xl md:text-2xl text-muted-foreground mb-12 max-w-4xl mx-auto text-pretty leading-relaxed">
-              Track political influence, campaign finance, and legislative activity through interactive data
-              visualizations. Hold your representatives accountable with comprehensive insights.
-            </p>
-          </div>
+export default function CongressTracker() {
+  const [activeTab, setActiveTab] = useState('overview');
+  const [animKey, setAnimKey] = useState(0);
 
-          <div className="max-w-3xl mx-auto mb-16 animate-slide-up">
-            <div className="relative group">
-              <div className="absolute inset-0 bg-gradient-to-r from-primary/20 to-secondary/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500" />
-              <div className="relative glass-effect rounded-2xl p-2">
-                <div className="flex items-center">
-                  <Search className="ml-4 text-muted-foreground h-6 w-6" />
-                  <Input
-                    placeholder="Search legislators, bills, or organizations..."
-                    className="border-0 bg-transparent text-lg py-4 px-4 focus:ring-0 focus:outline-none"
-                  />
-                  <Button className="mr-2 px-8 py-3 rounded-xl hover-lift">
-                    Search
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
+  // State for real data
+  const [legislators, setLegislators] = useState<Legislator[]>([]);
+  const [trades, setTrades] = useState<StockTrade[]>([]);
+  const [filings, setFilings] = useState<Filing[]>([]);
+  const [bills, setBills] = useState<Bill[]>([]);
+  const [loading, setLoading] = useState(true);
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 max-w-4xl mx-auto animate-scale-in">
-            <div className="text-center">
-              <div className="text-3xl md:text-4xl font-bold text-primary mb-2">535</div>
-              <div className="text-sm text-muted-foreground">Congress Members</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl md:text-4xl font-bold text-primary mb-2">15K+</div>
-              <div className="text-sm text-muted-foreground">Bills Tracked</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl md:text-4xl font-bold text-primary mb-2">$2.1B</div>
-              <div className="text-sm text-muted-foreground">Contributions</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl md:text-4xl font-bold text-primary mb-2">10K+</div>
-              <div className="text-sm text-muted-foreground">Stock Trades</div>
-            </div>
-          </div>
+  useEffect(() => {
+    setAnimKey(prev => prev + 1);
+  }, [activeTab]);
+
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        const [legislatorsData, tradesData, filingsData, billsData] = await Promise.all([
+          getAllLegislators('house', 118),
+          getRecentTrades(10),
+          getRecentFilings(1, 5),
+          getRecentBills(5)
+        ]);
+
+        setLegislators(legislatorsData.slice(0, 6)); // Limit for display
+        setTrades(tradesData);
+        setFilings(filingsData.results || []);
+        setBills(billsData);
+      } catch (error) {
+        console.error("Failed to fetch data", error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchData();
+  }, []);
+
+  // Derived Briefing Items from real data
+  const briefingItems = [
+    ...bills.slice(0, 1).map(b => ({ id: 'LEGISLATION', text: `New Bill: ${b.title}`, date: b.date })),
+    ...trades.slice(0, 1).map(t => ({ id: 'TRADING', text: `${t.representative} ${t.type} ${t.ticker} (${t.amount})`, date: t.transaction_date })),
+    ...filings.slice(0, 1).map(f => ({ id: 'LOBBYING', text: `${f.registrant.name} filed report for ${f.client?.name || 'Self'}`, date: f.dt_posted.split('T')[0] }))
+  ];
+
+  // Fallback if data is empty
+  const displayBriefing = briefingItems.length > 0 ? briefingItems : [
+    { id: 'SYSTEM', text: "Loading real-time data streams...", date: "Now" }
+  ];
+
+  const renderContent = () => {
+    if (loading) {
+      return (
+        <div className="flex items-center justify-center h-64">
+          <div className="w-12 h-12 border-4 border-[#ff4d00] border-t-transparent rounded-full animate-spin"></div>
         </div>
-      </section>
+      );
+    }
 
-      <section className="py-24 px-4 bg-gradient-to-b from-background to-muted/20">
-        <div className="container mx-auto">
-          <div className="text-center mb-16">
-            <h3 className="text-4xl md:text-5xl font-bold mb-6">
-              <span className="text-primary font-extrabold">Explore</span>{" "}
-              <span className="text-foreground">Government Data</span>
-            </h3>
-            <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
-              Comprehensive tools to track political influence and hold representatives accountable
-            </p>
-          </div>
-
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8 mb-16">
-            <Card className="card-hover glass-effect border-0 group">
-              <CardHeader className="pb-4">
-                <div className="w-16 h-16 bg-gradient-to-br from-primary to-primary/80 rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
-                  <Users className="h-8 w-8 text-primary-foreground" />
-                </div>
-                <CardTitle className="text-xl">Legislator Profiles</CardTitle>
-                <CardDescription className="text-base leading-relaxed">
-                  Comprehensive profiles with voting records, campaign donors, and sponsored legislation analysis.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Button variant="outline" className="w-full hover-lift group bg-transparent" asChild>
-                  <a href="/legislators">
-                    Browse Legislators
-                    <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
-                  </a>
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card className="card-hover glass-effect border-0 group">
-              <CardHeader className="pb-4">
-                <div className="w-16 h-16 bg-gradient-to-br from-secondary to-secondary/80 rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
-                  <FileText className="h-8 w-8 text-secondary-foreground" />
-                </div>
-                <CardTitle className="text-xl">Bill Explorer</CardTitle>
-                <CardDescription className="text-base leading-relaxed">
-                  Discover connections between legislation and the organizations that influence them.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Button variant="outline" className="w-full hover-lift group bg-transparent" asChild>
-                  <a href="/bills">
-                    Explore Bills
-                    <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
-                  </a>
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card className="card-hover glass-effect border-0 group">
-              <CardHeader className="pb-4">
-                <div className="w-16 h-16 bg-gradient-to-br from-accent to-accent/80 rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
-                  <TrendingUp className="h-8 w-8 text-accent-foreground" />
-                </div>
-                <CardTitle className="text-xl">Stock Tracker</CardTitle>
-                <CardDescription className="text-base leading-relaxed">
-                  Monitor congressional stock trades and identify potential conflicts of interest.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Button variant="outline" className="w-full hover-lift group bg-transparent" asChild>
-                  <a href="/stocks">
-                    Track Trades
-                    <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
-                  </a>
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card className="card-hover glass-effect border-0 group">
-              <CardHeader className="pb-4">
-                <div className="w-16 h-16 bg-gradient-to-br from-chart-1 to-chart-1/80 rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
-                  <DollarSign className="h-8 w-8 text-white" />
-                </div>
-                <CardTitle className="text-xl">Net Worth Tracker</CardTitle>
-                <CardDescription className="text-base leading-relaxed">
-                  Analyze changes in congressional wealth and asset disclosures over time.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Button variant="outline" className="w-full hover-lift group bg-transparent" asChild>
-                  <a href="/networth">
-                    View Net Worth
-                    <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
-                  </a>
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card className="card-hover glass-effect border-0 group">
-              <CardHeader className="pb-4">
-                <div className="w-16 h-16 bg-gradient-to-br from-chart-3 to-chart-3/80 rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
-                  <BarChart3 className="h-8 w-8 text-white" />
-                </div>
-                <CardTitle className="text-xl">Lobbying Activity</CardTitle>
-                <CardDescription className="text-base leading-relaxed">
-                  Search corporations and lobbying firms to see their political influence efforts.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Button variant="outline" className="w-full hover-lift group bg-transparent" asChild>
-                  <a href="/lobbying">
-                    Search Lobbying
-                    <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
-                  </a>
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card className="card-hover glass-effect border-0 group">
-              <CardHeader className="pb-4">
-                <div className="w-16 h-16 bg-gradient-to-br from-chart-5 to-chart-5/80 rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
-                  <BarChart3 className="h-8 w-8 text-white" />
-                </div>
-                <CardTitle className="text-xl">Data Visualizations</CardTitle>
-                <CardDescription className="text-base leading-relaxed">
-                  Interactive charts and graphs showing patterns in government data and accountability.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Button variant="outline" className="w-full hover-lift group bg-transparent" asChild>
-                  <a href="/visualizations">
-                    View Charts
-                    <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
-                  </a>
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-      </section>
-
-      <footer className="bg-gradient-to-t from-muted/50 to-background border-t border-border/50 py-16 px-4">
-        <div className="container mx-auto">
-          <div className="grid md:grid-cols-4 gap-12">
-            <div className="md:col-span-2">
-              <div className="flex items-center space-x-3 mb-6">
-                <div className="w-10 h-10 bg-gradient-to-br from-primary to-secondary rounded-xl flex items-center justify-center">
-                  <Eye className="h-6 w-6 text-primary-foreground" />
-                </div>
-                <span className="font-bold text-xl text-primary">Congress Tracker</span>
-              </div>
-              <p className="text-muted-foreground text-lg leading-relaxed max-w-md">
-                Promoting government transparency through data visualization and accountability tracking.
+    switch (activeTab) {
+      case 'overview':
+        return (
+          <div key={animKey} className="pb-12">
+            <div className="mb-16 max-w-4xl border-l-4 border-[#ff4d00] pl-8 animate-stagger-item delay-1">
+              <h1 className="font-serif text-5xl md:text-7xl font-black leading-none mb-6 text-white tracking-tighter">
+                PUBLIC <br />
+                <span className="text-gray-500">TRANSPARENCY</span>
+              </h1>
+              <p className="font-mono text-lg font-bold text-gray-400 leading-relaxed max-w-2xl">
+                Real-time monitoring of federal legislative activity, financial disclosures, and lobbying records.
               </p>
             </div>
 
-            <div>
-              <h4 className="font-semibold text-foreground mb-6 text-lg">Explore</h4>
-              <ul className="space-y-3">
-                {[
-                  { name: "Legislators", href: "/legislators" },
-                  { name: "Bills", href: "/bills" },
-                  { name: "Stock Trades", href: "/stocks" },
-                  { name: "Lobbying", href: "/lobbying" },
-                ].map((item) => (
-                  <li key={item.name}>
-                    <a
-                      href={item.href}
-                      className="text-muted-foreground hover:text-foreground transition-colors duration-300 hover:translate-x-1 inline-block"
-                    >
-                      {item.name}
-                    </a>
-                  </li>
-                ))}
-              </ul>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-16">
+              <StatBox label="Active Members" value="535" delay="delay-1" />
+              <StatBox label="Recent Bills" value={bills.length > 0 ? "15K+" : "Loading..."} trend="Active Session" delay="delay-2" />
+              <StatBox label="Lobbying Reports" value={filings.length > 0 ? "20K+" : "Loading..."} trend="Q3 2024" trendColor="text-[#ff4d00]" delay="delay-3" />
+              <StatBox label="Recent Trades" value={trades.length > 0 ? "10K+" : "Loading..."} trend="High Activity" trendColor="text-[#ff4d00]" delay="delay-4" />
             </div>
 
-            <div>
-              <h4 className="font-semibold text-foreground mb-6 text-lg">Resources</h4>
-              <ul className="space-y-3">
-                {[
-                  { name: "API Documentation", href: "/api-docs" },
-                  { name: "Data Sources", href: "/data-sources" },
-                  { name: "Methodology", href: "/methodology" },
-                  { name: "About", href: "/about" },
-                ].map((item) => (
-                  <li key={item.name}>
-                    <a
-                      href={item.href}
-                      className="text-muted-foreground hover:text-foreground transition-colors duration-300 hover:translate-x-1 inline-block"
-                    >
-                      {item.name}
-                    </a>
-                  </li>
-                ))}
-              </ul>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 border-t-2 border-white/20 pt-8 animate-stagger-item delay-5">
+              <Briefing items={displayBriefing} />
+
+              <div className="bg-[#171717] p-8 border-2 border-white/10 hover:border-white/30 transition-colors duration-500">
+                <div className="flex items-center gap-3 mb-6">
+                  <Info className="text-[#ff4d00]" size={24} />
+                  <h3 className="font-mono text-sm font-black uppercase text-white">Data Sources</h3>
+                </div>
+
+                <div className="space-y-6 font-serif text-gray-300 leading-relaxed">
+                  <p>
+                    <strong>Legislators & Bills:</strong> Congress.gov API
+                  </p>
+                  <p>
+                    <strong>Lobbying:</strong> Senate LDA API
+                  </p>
+                  <p>
+                    <strong>Financials:</strong> STOCK Act Disclosures (Mock/ProPublica)
+                  </p>
+                </div>
+
+                <div className="mt-8 pt-6 border-t border-white/10">
+                  <div className="flex items-center gap-2 text-gray-500">
+                    <Calendar size={14} />
+                    <span className="font-mono text-xs font-bold uppercase">Last Updated: {new Date().toLocaleDateString()}</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
+        );
 
-          <div className="border-t border-border/50 mt-12 pt-8 text-center">
-            <p className="text-muted-foreground">
-              &copy; 2024 Congress Accountability Tracker. Built for government transparency.
-            </p>
+      case 'legislators':
+        return (
+          <div key={animKey}>
+            <SectionHeader title="Legislator Directory" subtitle="118th Congress" />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {legislators.map((l, i) => (
+                <LegislatorCard
+                  key={l.id}
+                  id={l.id}
+                  name={l.name}
+                  state={l.state}
+                  party={l.party}
+                  age={0} // Not available in basic API
+                  cash="N/A" // Not available in basic API
+                  risk="Med" // Placeholder
+                  delay={`delay-${(i % 5) + 1}`}
+                />
+              ))}
+            </div>
           </div>
+        );
+
+      case 'stocks':
+        return (
+          <div key={animKey}>
+            <SectionHeader title="Financial Disclosures" subtitle="Recent Transactions" />
+            <DataGrid headers={['Ticker', 'Company', 'Type', 'Amount', 'Date', 'Official']}>
+              {trades.map((t, i) => (
+                <div key={i} className={`grid grid-cols-6 hover:bg-white/5 transition-colors items-center group animate-stagger-item delay-${(i % 5) + 1}`}>
+                  <div className="p-4 border-r-2 border-white/10 font-black text-[#ff4d00] group-hover:translate-x-1 transition-transform">{t.ticker}</div>
+                  <div className="p-4 border-r-2 border-white/10 text-white font-bold truncate">{t.asset_description}</div>
+                  <div className={`p-4 border-r-2 border-white/10 font-black ${t.type.includes('sale') ? 'text-red-500' : 'text-green-500'}`}>{t.type.toUpperCase()}</div>
+                  <div className="p-4 border-r-2 border-white/10 text-white font-bold">{t.amount}</div>
+                  <div className="p-4 border-r-2 border-white/10 text-gray-500 font-bold">{t.transaction_date}</div>
+                  <div className="p-4 font-serif font-bold text-white group-hover:underline decoration-[#ff4d00] underline-offset-4">{t.representative}</div>
+                </div>
+              ))}
+            </DataGrid>
+          </div>
+        );
+
+      case 'bills':
+        return (
+          <div key={animKey}>
+            <SectionHeader title="Recent Legislation" subtitle="Active Bills" />
+            <DataGrid headers={['ID', 'Title', 'Status', 'Date']}>
+              {bills.map((b, i) => (
+                <div key={i} className={`grid grid-cols-4 hover:bg-white/5 transition-colors items-center group animate-stagger-item delay-${(i % 5) + 1}`}>
+                  <div className="p-4 border-r-2 border-white/10 font-black text-[#ff4d00]">{b.id}</div>
+                  <div className="p-4 border-r-2 border-white/10 text-white font-bold">{b.title}</div>
+                  <div className="p-4 border-r-2 border-white/10 text-white font-bold">{b.status}</div>
+                  <div className="p-4 text-gray-500 font-bold">{b.date}</div>
+                </div>
+              ))}
+            </DataGrid>
+          </div>
+        );
+
+      case 'networth':
+        // Placeholder as we don't have a real net worth API yet
+        return (
+          <div key={animKey}>
+            <SectionHeader title="Wealth Analysis" subtitle="Net Worth Estimates" />
+            <div className="p-12 text-center border-2 border-white/10 bg-[#171717]">
+              <h3 className="text-2xl font-bold text-white mb-4">Data Unavailable</h3>
+              <p className="text-gray-400">Real-time net worth data requires a premium API subscription.</p>
+            </div>
+          </div>
+        );
+
+      case 'portfolios':
+        // Placeholder
+        return (
+          <div key={animKey}>
+            <SectionHeader title="Sector Allocation" subtitle="Aggregate Holdings" />
+            <div className="p-12 text-center border-2 border-white/10 bg-[#171717]">
+              <h3 className="text-2xl font-bold text-white mb-4">Analysis Pending</h3>
+              <p className="text-gray-400">Sector allocation analysis requires aggregating all trade data.</p>
+            </div>
+          </div>
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-[#0a0a0a] text-white font-sans selection:bg-[#ff4d00] selection:text-white pb-20">
+
+      {/* Top Navigation Bar */}
+      <nav className="sticky top-0 z-50 bg-[#0a0a0a]/95 backdrop-blur-md border-b-2 border-white/10 px-6 md:px-12 flex justify-between items-center h-20 transition-all duration-300">
+        <div className="flex items-center gap-4 group cursor-default">
+          <div className="w-10 h-10 bg-[#ff4d00] flex items-center justify-center text-black shadow-[4px_4px_0px_0px_rgba(255,255,255,1)] group-hover:shadow-[2px_2px_0px_0px_rgba(255,255,255,1)] group-hover:translate-x-[2px] group-hover:translate-y-[2px] transition-all duration-300">
+            <Grid size={20} strokeWidth={3} />
+          </div>
+          <span className="font-serif font-black text-2xl tracking-tighter hidden md:inline">
+            CONGRESS<span className="font-light italic ml-1 text-gray-500">TRACKER</span>
+          </span>
         </div>
-      </footer>
+
+        <div className="hidden lg:flex space-x-2">
+          <NavBarItem active={activeTab === 'overview'} onClick={() => setActiveTab('overview')} label="Overview" />
+          <NavBarItem active={activeTab === 'legislators'} onClick={() => setActiveTab('legislators')} label="Directory" />
+          <NavBarItem active={activeTab === 'bills'} onClick={() => setActiveTab('bills')} label="Bills" />
+          <NavBarItem active={activeTab === 'stocks'} onClick={() => setActiveTab('stocks')} label="Trades" />
+          <NavBarItem active={activeTab === 'networth'} onClick={() => setActiveTab('networth')} label="Wealth" />
+          <NavBarItem active={activeTab === 'portfolios'} onClick={() => setActiveTab('portfolios')} label="Allocation" />
+        </div>
+
+        <div className="flex items-center gap-6">
+          <div className="relative hidden xl:block">
+            <input
+              type="text"
+              placeholder="SEARCH DATABASE"
+              className="bg-transparent border-b-2 border-white/20 px-2 py-2 text-xs font-mono font-bold placeholder:text-gray-600 focus:outline-none focus:border-[#ff4d00] w-64 transition-all text-white uppercase tracking-wider focus:w-72 duration-300"
+            />
+            <Search className="absolute right-0 top-2 text-gray-600" size={14} />
+          </div>
+          <button className="lg:hidden text-white">
+            <List size={28} />
+          </button>
+        </div>
+      </nav>
+
+      {/* Main Container */}
+      <main className="max-w-[1600px] mx-auto px-6 md:px-12 pt-12 md:pt-16">
+        {renderContent()}
+      </main>
+
+      {/* Mobile Nav */}
+      <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-[#171717] border-t-2 border-white/10 p-4 flex justify-between overflow-x-auto z-50">
+        <button onClick={() => setActiveTab('overview')} className="flex flex-col items-center gap-2 min-w-[60px] text-gray-400 hover:text-[#ff4d00]">
+          <Grid size={20} />
+          <span className="text-[10px] font-mono font-black uppercase">Home</span>
+        </button>
+        <button onClick={() => setActiveTab('legislators')} className="flex flex-col items-center gap-2 min-w-[60px] text-gray-400 hover:text-[#ff4d00]">
+          <Users size={20} />
+          <span className="text-[10px] font-mono font-black uppercase">PPL</span>
+        </button>
+        <button onClick={() => setActiveTab('stocks')} className="flex flex-col items-center gap-2 min-w-[60px] text-gray-400 hover:text-[#ff4d00]">
+          <TrendingUp size={20} />
+          <span className="text-[10px] font-mono font-black uppercase">$</span>
+        </button>
+        <button onClick={() => setActiveTab('networth')} className="flex flex-col items-center gap-2 min-w-[60px] text-gray-400 hover:text-[#ff4d00]">
+          <PieChart size={20} />
+          <span className="text-[10px] font-mono font-black uppercase">Worth</span>
+        </button>
+      </div>
+
     </div>
-  )
+  );
 }

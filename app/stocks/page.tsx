@@ -1,74 +1,70 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Search, TrendingUp, Calendar, Building, ArrowUpRight, ArrowDownRight } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-
-// Mock data for congressional stock trades
-const stockTrades = [
-  {
-    id: 1,
-    legislator: "Nancy Pelosi",
-    party: "Democrat",
-    chamber: "House",
-    stock: "NVDA",
-    company: "NVIDIA Corporation",
-    action: "Buy",
-    amount: "$1M - $5M",
-    date: "2024-01-15",
-    price: "$850.00",
-    currentPrice: "$875.50",
-    change: "+3.0%",
-    disclosure: "45 days late",
-  },
-  {
-    id: 2,
-    legislator: "Dan Crenshaw",
-    party: "Republican",
-    chamber: "House",
-    stock: "TSLA",
-    company: "Tesla Inc",
-    action: "Sell",
-    amount: "$250K - $500K",
-    date: "2024-01-12",
-    price: "$240.00",
-    currentPrice: "$220.15",
-    change: "-8.3%",
-    disclosure: "On time",
-  },
-  {
-    id: 3,
-    legislator: "Josh Gottheimer",
-    party: "Democrat",
-    chamber: "House",
-    stock: "MSFT",
-    company: "Microsoft Corporation",
-    action: "Buy",
-    amount: "$100K - $250K",
-    date: "2024-01-10",
-    price: "$420.00",
-    currentPrice: "$435.80",
-    change: "+3.8%",
-    disclosure: "On time",
-  },
-]
-
-const topStocks = [
-  { symbol: "NVDA", name: "NVIDIA", price: "$875.50", change: "+2.5%", trades: 12 },
-  { symbol: "TSLA", name: "Tesla", price: "$220.15", change: "-1.2%", trades: 8 },
-  { symbol: "MSFT", name: "Microsoft", price: "$435.80", change: "+0.8%", trades: 15 },
-  { symbol: "AAPL", name: "Apple", price: "$195.20", change: "+1.1%", trades: 22 },
-  { symbol: "GOOGL", name: "Alphabet", price: "$142.30", change: "-0.5%", trades: 6 },
-]
+import { getRecentTrades, StockTrade } from "@/lib/services/stocks"
 
 export default function StocksPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [filterParty, setFilterParty] = useState("all")
   const [filterAction, setFilterAction] = useState("all")
+  const [trades, setTrades] = useState<StockTrade[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    async function loadTrades() {
+      try {
+        const data = await getRecentTrades(100)
+        setTrades(data)
+      } catch (error) {
+        console.error("Failed to load trades", error)
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadTrades()
+  }, [])
+
+  const filteredTrades = trades.filter(trade => {
+    const matchesSearch =
+      trade.representative.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      trade.ticker.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      trade.asset_description.toLowerCase().includes(searchTerm.toLowerCase())
+
+    // Note: The API data doesn't strictly have "party" in the simple object, 
+    // we might need to infer it or fetch it if crucial. 
+    // For now, we'll skip party filter or assume it's not available in this simple view.
+    // If party is needed, we'd need a mapping of rep -> party.
+
+    const matchesAction = filterAction === "all" ||
+      (filterAction === "buy" && trade.type.toLowerCase().includes("purchase")) ||
+      (filterAction === "sell" && trade.type.toLowerCase().includes("sale"))
+
+    return matchesSearch && matchesAction
+  })
+
+  // Calculate popular stocks from the trades
+  const stockCounts = trades.reduce((acc, trade) => {
+    acc[trade.ticker] = (acc[trade.ticker] || 0) + 1
+    return acc
+  }, {} as Record<string, number>)
+
+  const topStocks = Object.entries(stockCounts)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 6)
+    .map(([symbol, count]) => ({
+      symbol,
+      name: trades.find(t => t.ticker === symbol)?.asset_description || symbol,
+      trades: count,
+      // Mock price/change for now as we don't have a real-time price API in this service yet
+      price: "N/A",
+      change: "N/A"
+    }))
 
   return (
     <div className="min-h-screen bg-background">
@@ -111,7 +107,8 @@ export default function StocksPage() {
                 className="pl-10"
               />
             </div>
-            <Select value={filterParty} onValueChange={setFilterParty}>
+            {/* Party filter disabled as data is missing in this feed */}
+            {/* <Select value={filterParty} onValueChange={setFilterParty}>
               <SelectTrigger className="w-full md:w-48">
                 <SelectValue placeholder="Filter by party" />
               </SelectTrigger>
@@ -120,7 +117,7 @@ export default function StocksPage() {
                 <SelectItem value="democrat">Democrat</SelectItem>
                 <SelectItem value="republican">Republican</SelectItem>
               </SelectContent>
-            </Select>
+            </Select> */}
             <Select value={filterAction} onValueChange={setFilterAction}>
               <SelectTrigger className="w-full md:w-48">
                 <SelectValue placeholder="Filter by action" />
@@ -142,70 +139,63 @@ export default function StocksPage() {
           </TabsList>
 
           <TabsContent value="trades" className="space-y-6">
-            <div className="grid gap-4">
-              {stockTrades.map((trade) => (
-                <Card key={trade.id} className="hover:shadow-lg transition-shadow">
-                  <CardContent className="p-6">
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                      <div className="flex items-start space-x-4">
-                        <div className="flex-shrink-0">
-                          <div
-                            className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                              trade.action === "Buy" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
-                            }`}
-                          >
-                            {trade.action === "Buy" ? (
-                              <ArrowUpRight className="h-6 w-6" />
-                            ) : (
-                              <ArrowDownRight className="h-6 w-6" />
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-2">
-                            <h3 className="font-semibold text-lg">{trade.legislator}</h3>
-                            <Badge variant={trade.party === "Democrat" ? "default" : "secondary"}>{trade.party}</Badge>
-                            <Badge variant="outline">{trade.chamber}</Badge>
-                          </div>
-                          <div className="flex items-center gap-4 text-sm text-muted-foreground mb-2">
-                            <span className="flex items-center gap-1">
-                              <Building className="h-4 w-4" />
-                              {trade.stock} - {trade.company}
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <Calendar className="h-4 w-4" />
-                              {trade.date}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-4 text-sm">
-                            <span className="font-medium">
-                              {trade.action}: {trade.amount}
-                            </span>
-                            <span>Price: ${trade.price}</span>
-                            <span
-                              className={`font-medium ${
-                                trade.change.startsWith("+") ? "text-green-600" : "text-red-600"
-                              }`}
+            {loading ? (
+              <div className="text-center py-8">Loading trades...</div>
+            ) : (
+              <div className="grid gap-4">
+                {filteredTrades.map((trade, index) => (
+                  <Card key={`${trade.transaction_date}-${trade.ticker}-${index}`} className="hover:shadow-lg transition-shadow">
+                    <CardContent className="p-6">
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div className="flex items-start space-x-4">
+                          <div className="flex-shrink-0">
+                            <div
+                              className={`w-12 h-12 rounded-full flex items-center justify-center ${trade.type.toLowerCase().includes("purchase") ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+                                }`}
                             >
-                              {trade.change}
-                            </span>
+                              {trade.type.toLowerCase().includes("purchase") ? (
+                                <ArrowUpRight className="h-6 w-6" />
+                              ) : (
+                                <ArrowDownRight className="h-6 w-6" />
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              <h3 className="font-semibold text-lg">{trade.representative}</h3>
+                              <Badge variant="outline">{trade.district}</Badge>
+                            </div>
+                            <div className="flex items-center gap-4 text-sm text-muted-foreground mb-2">
+                              <span className="flex items-center gap-1">
+                                <Building className="h-4 w-4" />
+                                {trade.ticker} - {trade.asset_description}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <Calendar className="h-4 w-4" />
+                                {trade.transaction_date}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-4 text-sm">
+                              <span className="font-medium">
+                                {trade.type}: {trade.amount}
+                              </span>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                      <div className="flex flex-col items-end gap-2">
-                        <div className="text-right">
-                          <div className="text-lg font-semibold">${trade.currentPrice}</div>
-                          <div className="text-sm text-muted-foreground">Current Price</div>
+                        <div className="flex flex-col items-end gap-2">
+                          <Badge variant={trade.cap_gains_over_200_usd ? "default" : "secondary"}>
+                            {trade.cap_gains_over_200_usd ? "Cap Gains > $200" : "Standard"}
+                          </Badge>
+                          <a href={trade.ptr_link} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 hover:underline">
+                            View Disclosure
+                          </a>
                         </div>
-                        <Badge variant={trade.disclosure === "On time" ? "default" : "destructive"}>
-                          {trade.disclosure}
-                        </Badge>
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="popular" className="space-y-6">
@@ -217,15 +207,13 @@ export default function StocksPage() {
                       <CardTitle className="text-xl">{stock.symbol}</CardTitle>
                       <Badge variant="outline">{stock.trades} trades</Badge>
                     </div>
-                    <CardDescription>{stock.name}</CardDescription>
+                    <CardDescription className="truncate">{stock.name}</CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div className="flex items-center justify-between">
                       <div className="text-2xl font-bold">{stock.price}</div>
-                      <div
-                        className={`font-medium ${stock.change.startsWith("+") ? "text-green-600" : "text-red-600"}`}
-                      >
-                        {stock.change}
+                      <div className="text-sm text-muted-foreground">
+                        Recent Activity Only
                       </div>
                     </div>
                   </CardContent>
@@ -239,49 +227,24 @@ export default function StocksPage() {
               <Card>
                 <CardHeader>
                   <CardTitle>Trading Summary</CardTitle>
-                  <CardDescription>Congressional trading activity overview</CardDescription>
+                  <CardDescription>Recent congressional trading activity</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="flex justify-between items-center">
-                    <span>Total Trades This Month</span>
-                    <span className="font-semibold">127</span>
+                    <span>Total Trades Loaded</span>
+                    <span className="font-semibold">{trades.length}</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span>Buy Orders</span>
-                    <span className="font-semibold text-green-600">78 (61%)</span>
+                    <span className="font-semibold text-green-600">
+                      {trades.filter(t => t.type.toLowerCase().includes("purchase")).length}
+                    </span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span>Sell Orders</span>
-                    <span className="font-semibold text-red-600">49 (39%)</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span>Late Disclosures</span>
-                    <span className="font-semibold text-orange-600">23 (18%)</span>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Top Sectors</CardTitle>
-                  <CardDescription>Most traded sectors by Congress</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <span>Technology</span>
-                    <span className="font-semibold">42 trades</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span>Healthcare</span>
-                    <span className="font-semibold">28 trades</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span>Financial Services</span>
-                    <span className="font-semibold">21 trades</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span>Energy</span>
-                    <span className="font-semibold">18 trades</span>
+                    <span className="font-semibold text-red-600">
+                      {trades.filter(t => t.type.toLowerCase().includes("sale")).length}
+                    </span>
                   </div>
                 </CardContent>
               </Card>

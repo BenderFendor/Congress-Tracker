@@ -21,51 +21,7 @@ import {
   parseLobbyistRecipients,
   formatCurrency
 } from "@/lib/csvUtils"
-
-interface Registrant {
-  id: number
-  name: string
-  description?: string
-  address_1?: string
-  address_2?: string
-  city?: string
-  state?: string
-  state_display?: string
-  zip?: string
-  country?: string
-  country_display?: string
-  contact_name?: string
-  contact_telephone?: string
-  url: string
-  dt_updated: string
-}
-
-interface Filing {
-  filing_uuid: string
-  filing_type: string
-  filing_type_display: string
-  filing_year: number
-  filing_period: string
-  filing_period_display: string
-  dt_posted: string
-  registrant: Registrant
-  client?: {
-    id: number
-    name: string
-    state?: string
-    country?: string
-  }
-  lobbying_activities?: Array<{
-    general_issue_area: string
-    general_issue_area_display: string
-    description?: string
-    house_of_representatives: boolean
-    senate: boolean
-  }>
-  income?: number
-  expenses?: number
-  url: string
-}
+import { getRecentFilings, getRegistrants, Filing, Registrant } from "@/lib/services/lobbying"
 
 // Get the current year for filtering recent data
 const currentYear = new Date().getFullYear()
@@ -89,20 +45,20 @@ export default function LobbyingPage() {
     const fetchLobbyingData = async () => {
       try {
         setLoading(true)
-        
+
         // Fetch API data and CSV data in parallel
         const [
-          filingsResponse,
-          registrantsResponse,
+          filingsData,
+          registrantsData,
           topSpendersResponse,
           topFirmsResponse,
           industriesResponse,
           recipients2024Response,
           recipients2022Response
         ] = await Promise.all([
-          // API data
-          fetch(`/api/congress-proxy?url=${encodeURIComponent(`https://lda.senate.gov/api/v1/filings/?filing_year=${currentYear}&page_size=25&ordering=-dt_posted`)}`),
-          fetch(`/api/congress-proxy?url=${encodeURIComponent(`https://lda.senate.gov/api/v1/registrants/?page_size=25`)}`),
+          // API data via service
+          getRecentFilings(1, 25),
+          getRegistrants(1, 25),
           // CSV data
           fetch('/data/Top Spenders.csv'),
           fetch('/data/Top Lobbying Firms.csv'),
@@ -110,25 +66,21 @@ export default function LobbyingPage() {
           fetch('/data/Top Recipients of Contributions from Lobbyists, 2024 Cycle.csv'),
           fetch('/data/Top Recipients of Contributions from Lobbyists, 2022 Cycle.csv')
         ])
-        
-        // Process API data
-        const filingsData = await filingsResponse.json()
-        const registrantsData = await registrantsResponse.json()
-        
+
         // Process CSV data
         const topSpendersText = await topSpendersResponse.text()
         const topFirmsText = await topFirmsResponse.text()
         const industriesText = await industriesResponse.text()
         const recipients2024Text = await recipients2024Response.text()
         const recipients2022Text = await recipients2022Response.text()
-        
+
         // Parse CSV data
         const parsedTopSpenders = parseTopSpenders(topSpendersText)
         const parsedTopFirms = parseTopLobbyingFirms(topFirmsText)
         const parsedIndustries = parseIndustries(industriesText)
         const parsedRecipients2024 = parseLobbyistRecipients(recipients2024Text, '2024')
         const parsedRecipients2022 = parseLobbyistRecipients(recipients2022Text, '2022')
-        
+
         console.log("Lobbying data loaded:", {
           filings: filingsData.results?.length || 0,
           registrants: registrantsData.results?.length || 0,
@@ -137,7 +89,7 @@ export default function LobbyingPage() {
           industries: parsedIndustries.length,
           recipients: parsedRecipients2024.length + parsedRecipients2022.length
         })
-        
+
         // Set state
         setFilings(filingsData.results || [])
         setRegistrants(registrantsData.results || [])
@@ -152,7 +104,7 @@ export default function LobbyingPage() {
         setLoading(false)
       }
     }
-    
+
     fetchLobbyingData()
   }, [])
 
@@ -176,11 +128,11 @@ export default function LobbyingPage() {
     const totalExpenses = orgFilings.reduce((sum, filing) => sum + (filing.expenses || 0), 0)
     const uniqueClients = new Set(orgFilings.map(f => f.client?.name).filter(Boolean))
     const allIssues = new Set(
-      orgFilings.flatMap(f => 
+      orgFilings.flatMap(f =>
         f.lobbying_activities?.map(a => a.general_issue_area_display).filter(Boolean) || []
       )
     )
-    
+
     return {
       id: registrantId,
       registrant,
@@ -194,16 +146,16 @@ export default function LobbyingPage() {
   })
 
   const filteredOrgs = lobbyingOrganizations.filter((org) => {
-    const matchesSearch = 
+    const matchesSearch =
       org.registrant.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       org.issueAreas.some(issue => issue && issue.toLowerCase().includes(searchTerm.toLowerCase()))
-    
+
     return matchesSearch
   })
 
   const getIssueColor = (issue: string) => {
     const colors = [
-      "bg-blue-500", "bg-green-500", "bg-purple-500", "bg-orange-500", 
+      "bg-blue-500", "bg-green-500", "bg-purple-500", "bg-orange-500",
       "bg-red-500", "bg-yellow-500", "bg-pink-500", "bg-indigo-500"
     ]
     if (!issue || typeof issue !== 'string') {
@@ -332,9 +284,9 @@ export default function LobbyingPage() {
                           <div className="text-sm font-medium mb-2">Issue Areas:</div>
                           <div className="flex flex-wrap gap-2">
                             {org.issueAreas.map((issue, index) => (
-                              <Badge 
-                                key={index} 
-                                variant="outline" 
+                              <Badge
+                                key={index}
+                                variant="outline"
                                 className={`text-xs text-white ${getIssueColor(issue)}`}
                               >
                                 {issue}
@@ -440,7 +392,7 @@ export default function LobbyingPage() {
                               </div>
                             )}
                           </div>
-                          
+
                           <div className="p-3 border border-border rounded-lg">
                             <div className="text-sm font-medium">Address</div>
                             <div className="text-xs text-muted-foreground mt-1">
@@ -483,8 +435,8 @@ export default function LobbyingPage() {
                       <div className="text-xs text-muted-foreground">Total Spent</div>
                     </div>
                   </div>
-                  <Progress 
-                    value={(spender.totalSpent / topSpenders[0]?.totalSpent) * 100} 
+                  <Progress
+                    value={(spender.totalSpent / topSpenders[0]?.totalSpent) * 100}
                     className="h-2"
                   />
                 </Card>
@@ -513,8 +465,8 @@ export default function LobbyingPage() {
                       <div className="text-xs text-muted-foreground">Total Income</div>
                     </div>
                   </div>
-                  <Progress 
-                    value={(firm.totalIncome / topFirms[0]?.totalIncome) * 100} 
+                  <Progress
+                    value={(firm.totalIncome / topFirms[0]?.totalIncome) * 100}
                     className="h-2"
                   />
                 </Card>
@@ -543,8 +495,8 @@ export default function LobbyingPage() {
                       <div className="text-xs text-muted-foreground">Total Spending</div>
                     </div>
                   </div>
-                  <Progress 
-                    value={(industry.total / industries[0]?.total) * 100} 
+                  <Progress
+                    value={(industry.total / industries[0]?.total) * 100}
                     className="h-2"
                   />
                 </Card>
@@ -559,7 +511,7 @@ export default function LobbyingPage() {
                 <Users className="h-5 w-5 text-primary" />
                 <h3 className="text-xl font-semibold">Top Recipients of Lobbyist Contributions</h3>
               </div>
-              
+
               <div className="grid md:grid-cols-2 gap-6">
                 <div>
                   <h4 className="font-medium mb-4">2024 Election Cycle</h4>

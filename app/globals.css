@@ -4,96 +4,54 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* Updated color tokens to match Congress Accountability Tracker design brief */
-  --background: #ffffff;
-  --foreground: #1e293b;
-  --card: #f8fafc;
-  --card-foreground: #1e293b;
-  --popover: #ffffff;
-  --popover-foreground: #1e293b;
-  --primary: #0f172a;
-  --primary-foreground: #ffffff;
-  --secondary: #0ea5e9;
+  /* Retro-Futuristic / Editorial Design System Tokens */
+  --background: #0a0a0a;          /* Deepest Charcoal */
+  --foreground: #ffffff;          /* Primary Text */
+  --card: #171717;                /* Card Surface */
+  --card-foreground: #ffffff;
+  --popover: #171717;
+  --popover-foreground: #ffffff;
+  --primary: #ffffff;
+  --primary-foreground: #0a0a0a;
+  --secondary: #a3a3a3;           /* Muted Text */
   --secondary-foreground: #ffffff;
-  --muted: #f1f5f9;
-  --muted-foreground: #64748b;
-  --accent: #f59e0b;
-  --accent-foreground: #0f172a;
-  --destructive: #dc2626;
+  --muted: #333333;               /* Borders / Muted backgrounds */
+  --muted-foreground: #a3a3a3;
+  --accent: #ff4d00;              /* International Orange */
+  --accent-foreground: #ffffff;
+  --destructive: #ef4444;
   --destructive-foreground: #ffffff;
-  --border: #e2e8f0;
-  --input: #ffffff;
-  --ring: rgba(15, 23, 42, 0.2);
-  --chart-1: #0ea5e9;
-  --chart-2: #f59e0b;
-  --chart-3: #10b981;
-  --chart-4: #8b5cf6;
-  --chart-5: #f97316;
-  --radius: 0.75rem;
-  --sidebar: #f8fafc;
-  --sidebar-foreground: #1e293b;
-  --sidebar-primary: #0f172a;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #0ea5e9;
-  --sidebar-accent-foreground: #ffffff;
-  --sidebar-border: #e2e8f0;
-  --sidebar-ring: rgba(15, 23, 42, 0.2);
-
-  /* Added modern animation and spacing tokens */
-  --animation-duration-fast: 150ms;
-  --animation-duration-normal: 300ms;
-  --animation-duration-slow: 500ms;
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  --border: #333333;              /* Subtle grid borders */
+  --input: #171717;
+  --ring: #ff4d00;
+  
+  --radius: 0rem;                 /* Brutalist / Sharp edges */
 }
 
 .dark {
-  /* Updated dark mode tokens for professional journalism aesthetic */
-  --background: #020617;
-  --foreground: #f1f5f9;
-  --card: #0f172a;
-  --card-foreground: #f1f5f9;
-  --popover: #0f172a;
-  --popover-foreground: #f1f5f9;
-  --primary: #f1f5f9;
-  --primary-foreground: #0f172a;
-  --secondary: #0ea5e9;
-  --secondary-foreground: #0f172a;
-  --muted: #1e293b;
-  --muted-foreground: #94a3b8;
-  --accent: #f59e0b;
-  --accent-foreground: #0f172a;
+  /* Inherit root values as the design is inherently dark mode */
+  --background: #0a0a0a;
+  --foreground: #ffffff;
+  --card: #171717;
+  --card-foreground: #ffffff;
+  --popover: #171717;
+  --popover-foreground: #ffffff;
+  --primary: #ffffff;
+  --primary-foreground: #0a0a0a;
+  --secondary: #a3a3a3;
+  --secondary-foreground: #ffffff;
+  --muted: #333333;
+  --muted-foreground: #a3a3a3;
+  --accent: #ff4d00;
+  --accent-foreground: #ffffff;
   --destructive: #ef4444;
   --destructive-foreground: #ffffff;
-  --border: #1e293b;
-  --input: #0f172a;
-  --ring: rgba(241, 245, 249, 0.2);
-  --chart-1: #0ea5e9;
-  --chart-2: #f59e0b;
-  --chart-3: #10b981;
-  --chart-4: #8b5cf6;
-  --chart-5: #f97316;
-  --sidebar: #0f172a;
-  --sidebar-foreground: #f1f5f9;
-  --sidebar-primary: #f1f5f9;
-  --sidebar-primary-foreground: #0f172a;
-  --sidebar-accent: #0ea5e9;
-  --sidebar-accent-foreground: #0f172a;
-  --sidebar-border: #1e293b;
-  --sidebar-ring: rgba(241, 245, 249, 0.2);
-
-  /* Dark mode shadow adjustments */
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.4), 0 2px 4px -2px rgb(0 0 0 / 0.4);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.4), 0 4px 6px -4px rgb(0 0 0 / 0.4);
-  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.4), 0 8px 10px -6px rgb(0 0 0 / 0.4);
+  --border: #333333;
+  --input: #171717;
+  --ring: #ff4d00;
 }
 
 @theme inline {
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -113,23 +71,10 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
 }
 
 @layer base {
@@ -137,143 +82,52 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground transition-colors duration-300;
-  }
-
-  /* Added modern scroll behavior and selection styles */
-  html {
-    scroll-behavior: smooth;
-  }
-
-  ::selection {
-    @apply bg-primary/20 text-primary;
-  }
-
-  /* Enhanced focus styles for accessibility */
-  *:focus-visible {
-    @apply outline-2 outline-offset-2 outline-ring;
+    @apply bg-background text-foreground font-sans selection:bg-accent selection:text-white;
   }
 }
 
-/* Added modern utility classes for animations and effects */
 @layer utilities {
-  .animate-fade-in {
-    animation: fadeIn var(--animation-duration-normal) ease-out;
-  }
-
-  .animate-slide-up {
-    animation: slideUp var(--animation-duration-normal) ease-out;
-  }
-
-  .animate-scale-in {
-    animation: scaleIn var(--animation-duration-fast) ease-out;
-  }
-
-  .glass-effect {
-    @apply bg-background/80 backdrop-blur-lg border border-border/50;
-  }
-
-  /* Fixed gradient text with proper fallbacks for accessibility */
-  .gradient-text {
-    @apply bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent;
-    /* Fallback for better accessibility */
-    color: var(--primary);
-  }
-
-  .dark .gradient-text {
-    @apply bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent;
-    /* Better fallback for dark mode */
-    color: var(--primary);
-  }
-
-  /* Enhanced gradient text that works in both modes */
-  .gradient-text-safe {
-    @apply font-bold;
-    background: linear-gradient(135deg, var(--primary), var(--secondary));
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-    /* Fallback colors for accessibility */
-    color: var(--primary);
-  }
-
-  /* Ensure gradient text has proper contrast in all browsers */
-  @supports not (-webkit-background-clip: text) {
-    .gradient-text,
-    .gradient-text-safe {
-      color: var(--primary) !important;
-      background: none !important;
-    }
-  }
-
   .hover-lift {
-    @apply transition-all duration-300 hover:scale-105 hover:shadow-lg;
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.3s ease;
+  }
+  .hover-lift:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 10px 30px -10px rgba(255, 77, 0, 0.15);
+  }
+  
+  .animate-stagger-item {
+    opacity: 0;
+    animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+  
+  .animate-scale-in {
+    animation: scaleIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   }
 
-  .card-hover {
-    @apply transition-all duration-300 hover:shadow-xl hover:-translate-y-1;
-  }
+  .delay-1 { animation-delay: 50ms; }
+  .delay-2 { animation-delay: 100ms; }
+  .delay-3 { animation-delay: 150ms; }
+  .delay-4 { animation-delay: 200ms; }
+  .delay-5 { animation-delay: 250ms; }
+  .delay-6 { animation-delay: 300ms; }
 }
 
-/* Added keyframe animations */
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(-20px); }
+  to { opacity: 1; transform: translateX(0); }
 }
 
 @keyframes scaleIn {
-  from {
-    opacity: 0;
-    transform: scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
 }
 
-/* Enhanced loading states */
-.loading-shimmer {
-  background: linear-gradient(90deg, var(--muted) 25%, var(--muted-foreground) 50%, var(--muted) 75%);
-  background-size: 200% 100%;
-  animation: shimmer 2s infinite;
-}
-
-@keyframes shimmer {
-  0% {
-    background-position: -200% 0;
-  }
-  100% {
-    background-position: 200% 0;
-  }
-}
-
-/* Party-specific text shadows for better readability */
-.text-shadow-blue {
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 0 0 rgba(37, 99, 235, 0.2);
-}
-
-.text-shadow-red {
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 0 0 rgba(220, 38, 38, 0.2);
-}
-
-.text-shadow-gray {
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 0 0 rgba(75, 85, 99, 0.2);
+@keyframes pulse-slow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
 }

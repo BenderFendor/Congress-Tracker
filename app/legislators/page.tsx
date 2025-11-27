@@ -1,7 +1,8 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Search, Filter, MapPin, Users, DollarSign, FileText, ExternalLink, Loader2 } from "lucide-react"
+import Link from "next/link"
+import { Search, Filter, MapPin, Users, DollarSign, FileText, ExternalLink, Loader2, ArrowRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -67,10 +68,10 @@ export default function LegislatorsPage() {
           fetchPage(0),
           fetchPage(50)
         ])
-        
+
         const allMembers = [...page1.members, ...page2.members]
         console.log("Fetched members:", allMembers.slice(0, 3)) // Debug first 3 members
-        
+
         // Filter to only current members (those with recent terms)
         const currentYear = new Date().getFullYear()
         const currentMembers = allMembers.filter((member: Member) => {
@@ -79,7 +80,7 @@ export default function LegislatorsPage() {
           // Consider current if term started in last 2 years and no end year or end year is current/future
           return latestTerm.startYear >= currentYear - 2 && (!latestTerm.endYear || latestTerm.endYear >= currentYear)
         })
-        
+
         setMembers(currentMembers)
       } catch (e: any) {
         setError(e.message)
@@ -98,7 +99,7 @@ export default function LegislatorsPage() {
   // Load more function
   const loadMore = async () => {
     if (loadingMore) return
-    
+
     setLoadingMore(true)
     // Simulate loading delay for better UX
     await new Promise(resolve => setTimeout(resolve, 500))
@@ -110,11 +111,11 @@ export default function LegislatorsPage() {
   useEffect(() => {
     const handleScroll = () => {
       if (loadingMore) return
-      
+
       const scrollTop = window.pageYOffset || document.documentElement.scrollTop
       const scrollHeight = document.documentElement.scrollHeight
       const clientHeight = window.innerHeight
-      
+
       // Load more when user is within 200px of bottom
       if (scrollTop + clientHeight >= scrollHeight - 200) {
         loadMore()
@@ -132,18 +133,18 @@ export default function LegislatorsPage() {
     const matchesSearch =
       member.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       member.state?.toLowerCase().includes(searchTerm.toLowerCase())
-    
+
     const currentParty = member.partyName?.toLowerCase() || ""
-    const matchesParty = selectedParty === "all" || 
+    const matchesParty = selectedParty === "all" ||
       (selectedParty === "democrat" && (currentParty.includes("democrat") || currentParty === "d")) ||
       (selectedParty === "republican" && (currentParty.includes("republican") || currentParty === "r")) ||
       (selectedParty === "independent" && (currentParty.includes("independent") || currentParty === "i"))
-    
-    const currentTerm = member.terms?.item && member.terms.item.length > 0 
-      ? member.terms.item[member.terms.item.length - 1] 
+
+    const currentTerm = member.terms?.item && member.terms.item.length > 0
+      ? member.terms.item[member.terms.item.length - 1]
       : null
     const chamber = currentTerm?.chamber?.toLowerCase() || ""
-    const matchesChamber = selectedChamber === "all" || 
+    const matchesChamber = selectedChamber === "all" ||
       (selectedChamber === "house" && chamber.includes("house")) ||
       (selectedChamber === "senate" && chamber.includes("senate"))
 
@@ -169,15 +170,15 @@ export default function LegislatorsPage() {
               <h1 className="text-2xl font-bold text-foreground">Legislator Search</h1>
             </div>
             <nav className="hidden md:flex items-center space-x-6">
-              <a href="/" className="text-muted-foreground hover:text-foreground transition-colors">
+              <Link href="/" className="text-muted-foreground hover:text-foreground transition-colors">
                 Home
-              </a>
-              <a href="/bills" className="text-muted-foreground hover:text-foreground transition-colors">
+              </Link>
+              <Link href="/bills" className="text-muted-foreground hover:text-foreground transition-colors">
                 Bills
-              </a>
-              <a href="/lobbying" className="text-muted-foreground hover:text-foreground transition-colors">
+              </Link>
+              <Link href="/lobbying" className="text-muted-foreground hover:text-foreground transition-colors">
                 Lobbying
-              </a>
+              </Link>
             </nav>
           </div>
         </div>
@@ -316,13 +317,13 @@ export default function LegislatorsPage() {
               if (partyLower.includes("independent") || partyLower === "i") return "Independent"
               return party
             }
-            
+
             const currentParty = getFullPartyName(rawPartyName)
-            const currentTerm = member.terms?.item && member.terms.item.length > 0 
-              ? member.terms.item[member.terms.item.length - 1] 
+            const currentTerm = member.terms?.item && member.terms.item.length > 0
+              ? member.terms.item[member.terms.item.length - 1]
               : null
             const chamber = currentTerm?.chamber || "Unknown"
-            
+
             // Get party colors and styles
             const getPartyStyle = (party: string) => {
               if (party === "Democratic Party") {
@@ -339,18 +340,18 @@ export default function LegislatorsPage() {
                 }
               }
             }
-            
+
             const partyStyle = getPartyStyle(currentParty)
-            
+
             return (
               <Card key={member.bioguideId} className="hover:shadow-lg transition-shadow">
                 <CardHeader>
                   <div className="flex items-start justify-between">
                     <div className="flex items-center space-x-4">
                       <Avatar className="h-16 w-16">
-                        <AvatarImage 
-                          src={member.depiction?.imageUrl || "/placeholder.svg"} 
-                          alt={member.name} 
+                        <AvatarImage
+                          src={member.depiction?.imageUrl || "/placeholder.svg"}
+                          alt={member.name}
                         />
                         <AvatarFallback>
                           {member.name
@@ -372,14 +373,22 @@ export default function LegislatorsPage() {
                         </CardDescription>
                       </div>
                     </div>
-                    {member.officialWebsiteUrl && (
-                      <Button variant="outline" size="sm" asChild>
-                        <a href={member.officialWebsiteUrl} target="_blank" rel="noopener noreferrer">
-                          <ExternalLink className="h-4 w-4 mr-2" />
+                    <div className="flex flex-col gap-2">
+                      <Button size="sm" asChild>
+                        <Link href={`/legislators/${member.bioguideId}`}>
+                          <Users className="h-4 w-4 mr-2" />
                           View Profile
-                        </a>
+                        </Link>
                       </Button>
-                    )}
+                      {member.officialWebsiteUrl && (
+                        <Button variant="outline" size="sm" asChild>
+                          <a href={member.officialWebsiteUrl} target="_blank" rel="noopener noreferrer">
+                            <ExternalLink className="h-4 w-4 mr-2" />
+                            Official Site
+                          </a>
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -451,8 +460,8 @@ export default function LegislatorsPage() {
         {/* Load More Button (fallback for manual loading) */}
         {!loadingMore && hasMore && (
           <div className="mt-8 flex justify-center">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={loadMore}
               className="px-8"
             >
