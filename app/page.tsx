@@ -217,40 +217,7 @@ export default function CongressTracker() {
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white font-sans selection:bg-[#ff4d00] selection:text-white pb-20">
 
-      {/* Top Navigation Bar */}
-      <nav className="sticky top-0 z-50 bg-[#0a0a0a]/95 backdrop-blur-md border-b-2 border-white/10 px-6 md:px-12 flex justify-between items-center h-20 transition-all duration-300">
-        <div className="flex items-center gap-4 group cursor-default">
-          <div className="w-10 h-10 bg-[#ff4d00] flex items-center justify-center text-black shadow-[4px_4px_0px_0px_rgba(255,255,255,1)] group-hover:shadow-[2px_2px_0px_0px_rgba(255,255,255,1)] group-hover:translate-x-[2px] group-hover:translate-y-[2px] transition-all duration-300">
-            <Grid size={20} strokeWidth={3} />
-          </div>
-          <span className="font-serif font-black text-2xl tracking-tighter hidden md:inline">
-            CONGRESS<span className="font-light italic ml-1 text-gray-500">TRACKER</span>
-          </span>
-        </div>
 
-        <div className="hidden lg:flex space-x-2">
-          <NavBarItem active={activeTab === 'overview'} onClick={() => setActiveTab('overview')} label="Overview" />
-          <NavBarItem active={activeTab === 'legislators'} onClick={() => setActiveTab('legislators')} label="Directory" />
-          <NavBarItem active={activeTab === 'bills'} onClick={() => setActiveTab('bills')} label="Bills" />
-          <NavBarItem active={activeTab === 'stocks'} onClick={() => setActiveTab('stocks')} label="Trades" />
-          <NavBarItem active={activeTab === 'networth'} onClick={() => setActiveTab('networth')} label="Wealth" />
-          <NavBarItem active={activeTab === 'portfolios'} onClick={() => setActiveTab('portfolios')} label="Allocation" />
-        </div>
-
-        <div className="flex items-center gap-6">
-          <div className="relative hidden xl:block">
-            <input
-              type="text"
-              placeholder="SEARCH DATABASE"
-              className="bg-transparent border-b-2 border-white/20 px-2 py-2 text-xs font-mono font-bold placeholder:text-gray-600 focus:outline-none focus:border-[#ff4d00] w-64 transition-all text-white uppercase tracking-wider focus:w-72 duration-300"
-            />
-            <Search className="absolute right-0 top-2 text-gray-600" size={14} />
-          </div>
-          <button className="lg:hidden text-white">
-            <List size={28} />
-          </button>
-        </div>
-      </nav>
 
       {/* Main Container */}
       <main className="max-w-[1600px] mx-auto px-6 md:px-12 pt-12 md:pt-16">
@@ -266,6 +233,10 @@ export default function CongressTracker() {
         <button onClick={() => setActiveTab('legislators')} className="flex flex-col items-center gap-2 min-w-[60px] text-gray-400 hover:text-[#ff4d00]">
           <Users size={20} />
           <span className="text-[10px] font-mono font-black uppercase">PPL</span>
+        </button>
+        <button onClick={() => window.location.href = '/bills'} className="flex flex-col items-center gap-2 min-w-[60px] text-gray-400 hover:text-[#ff4d00]">
+          <FileText size={20} />
+          <span className="text-[10px] font-mono font-black uppercase">Bills</span>
         </button>
         <button onClick={() => setActiveTab('stocks')} className="flex flex-col items-center gap-2 min-w-[60px] text-gray-400 hover:text-[#ff4d00]">
           <TrendingUp size={20} />

@@ -6,32 +6,14 @@ import { Badge } from "@/components/ui/badge"
 export default function MethodologyPage() {
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <Button variant="ghost" size="sm" asChild>
-                <a href="/" className="flex items-center">
-                  <ArrowLeft className="h-4 w-4 mr-2" />
-                  Back to Home
-                </a>
-              </Button>
-              <div className="flex items-center space-x-2">
-                <BarChart3 className="h-8 w-8 text-primary" />
-                <h1 className="text-2xl font-bold text-foreground">Methodology</h1>
-              </div>
-            </div>
-          </div>
-        </div>
-      </header>
+
 
       <div className="container mx-auto px-4 py-8">
         {/* Introduction */}
         <div className="mb-12">
           <h2 className="text-4xl font-bold text-foreground mb-6">Our Methodology</h2>
           <p className="text-lg text-muted-foreground max-w-3xl leading-relaxed">
-            We employ rigorous data collection, processing, and analysis methods to ensure accuracy 
+            We employ rigorous data collection, processing, and analysis methods to ensure accuracy
             and transparency in government accountability tracking.
           </p>
         </div>
@@ -59,7 +41,7 @@ export default function MethodologyPage() {
                     <div>
                       <h4 className="font-semibold mb-2">API Integration</h4>
                       <p className="text-sm text-muted-foreground">
-                        Direct connections to official government APIs (Congress.gov, Senate Lobbying Disclosure) 
+                        Direct connections to official government APIs (Congress.gov, Senate Lobbying Disclosure)
                         ensure we receive data as soon as it's officially published.
                       </p>
                     </div>
@@ -72,7 +54,7 @@ export default function MethodologyPage() {
                     <div>
                       <h4 className="font-semibold mb-2">Data Validation</h4>
                       <p className="text-sm text-muted-foreground">
-                        Each data point is validated against multiple sources and checked for consistency. 
+                        Each data point is validated against multiple sources and checked for consistency.
                         Automated quality checks flag potential errors for manual review.
                       </p>
                     </div>
@@ -85,7 +67,7 @@ export default function MethodologyPage() {
                     <div>
                       <h4 className="font-semibold mb-2">Data Enrichment</h4>
                       <p className="text-sm text-muted-foreground">
-                        Raw data is enhanced with additional context, standardized formatting, 
+                        Raw data is enhanced with additional context, standardized formatting,
                         and cross-references to related information for comprehensive analysis.
                       </p>
                     </div>
@@ -98,7 +80,7 @@ export default function MethodologyPage() {
                     <div>
                       <h4 className="font-semibold mb-2">Real-time Updates</h4>
                       <p className="text-sm text-muted-foreground">
-                        Changes are immediately reflected in our system, providing users with 
+                        Changes are immediately reflected in our system, providing users with
                         the most current information available.
                       </p>
                     </div>
@@ -134,7 +116,7 @@ export default function MethodologyPage() {
                       <li>• Track PAC and individual contribution sources</li>
                     </ul>
                   </div>
-                  
+
                   <div>
                     <h4 className="font-semibold mb-2">Stock Trading Analysis</h4>
                     <ul className="text-sm text-muted-foreground space-y-1">
@@ -169,7 +151,7 @@ export default function MethodologyPage() {
                       <li>• Identify sponsor and co-sponsor relationships</li>
                     </ul>
                   </div>
-                  
+
                   <div>
                     <h4 className="font-semibold mb-2">Lobbying Impact</h4>
                     <ul className="text-sm text-muted-foreground space-y-1">
@@ -207,7 +189,7 @@ export default function MethodologyPage() {
                       <li>• Corrections and updates are publicly logged</li>
                     </ul>
                   </div>
-                  
+
                   <div>
                     <h4 className="font-semibold mb-3">Bias Prevention</h4>
                     <ul className="text-sm text-muted-foreground space-y-2">
@@ -239,7 +221,7 @@ export default function MethodologyPage() {
               <div className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
                 <h4 className="font-semibold text-orange-800 mb-2">Reporting Delays</h4>
                 <p className="text-sm text-orange-700">
-                  Government data may be delayed due to filing requirements, processing times, 
+                  Government data may be delayed due to filing requirements, processing times,
                   or compliance issues. We clearly indicate when data may be incomplete.
                 </p>
               </div>
@@ -247,7 +229,7 @@ export default function MethodologyPage() {
               <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
                 <h4 className="font-semibold text-blue-800 mb-2">Correlation vs. Causation</h4>
                 <p className="text-sm text-blue-700">
-                  Statistical relationships shown in our analysis indicate correlation, not 
+                  Statistical relationships shown in our analysis indicate correlation, not
                   necessarily causation. Users should consider multiple factors when drawing conclusions.
                 </p>
               </div>
@@ -255,7 +237,7 @@ export default function MethodologyPage() {
               <div className="p-4 bg-purple-50 border border-purple-200 rounded-lg">
                 <h4 className="font-semibold text-purple-800 mb-2">Data Interpretation</h4>
                 <p className="text-sm text-purple-700">
-                  Government data can be complex and context-dependent. We encourage users to 
+                  Government data can be complex and context-dependent. We encourage users to
                   review original sources and consider multiple data points before making judgments.
                 </p>
               </div>

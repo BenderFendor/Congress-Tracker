@@ -6,32 +6,14 @@ import { Badge } from "@/components/ui/badge"
 export default function DataSourcesPage() {
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <Button variant="ghost" size="sm" asChild>
-                <a href="/" className="flex items-center">
-                  <ArrowLeft className="h-4 w-4 mr-2" />
-                  Back to Home
-                </a>
-              </Button>
-              <div className="flex items-center space-x-2">
-                <Database className="h-8 w-8 text-primary" />
-                <h1 className="text-2xl font-bold text-foreground">Data Sources</h1>
-              </div>
-            </div>
-          </div>
-        </div>
-      </header>
+
 
       <div className="container mx-auto px-4 py-8">
         {/* Introduction */}
         <div className="mb-12">
           <h2 className="text-4xl font-bold text-foreground mb-6">Our Data Sources</h2>
           <p className="text-lg text-muted-foreground max-w-3xl leading-relaxed">
-            We aggregate data from official government sources and trusted institutions to provide 
+            We aggregate data from official government sources and trusted institutions to provide
             comprehensive insights into congressional activity and political influence.
           </p>
         </div>
@@ -255,15 +237,15 @@ export default function DataSourcesPage() {
               <div>
                 <h4 className="font-semibold mb-2">Reporting Delays</h4>
                 <p className="text-muted-foreground">
-                  Some data may be delayed due to official filing requirements. Stock trades must be 
+                  Some data may be delayed due to official filing requirements. Stock trades must be
                   disclosed within 45 days, lobbying reports are filed quarterly.
                 </p>
               </div>
-              
+
               <div>
                 <h4 className="font-semibold mb-2">Data Completeness</h4>
                 <p className="text-muted-foreground">
-                  Not all officials may file required disclosures on time. We clearly mark when data 
+                  Not all officials may file required disclosures on time. We clearly mark when data
                   is incomplete or overdue.
                 </p>
               </div>
@@ -271,7 +253,7 @@ export default function DataSourcesPage() {
               <div>
                 <h4 className="font-semibold mb-2">Historical Accuracy</h4>
                 <p className="text-muted-foreground">
-                  Older records may have different reporting standards or requirements. We note 
+                  Older records may have different reporting standards or requirements. We note
                   these differences where applicable.
                 </p>
               </div>

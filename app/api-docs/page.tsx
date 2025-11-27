@@ -6,32 +6,14 @@ import { Badge } from "@/components/ui/badge"
 export default function ApiDocsPage() {
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <Button variant="ghost" size="sm" asChild>
-                <a href="/" className="flex items-center">
-                  <ArrowLeft className="h-4 w-4 mr-2" />
-                  Back to Home
-                </a>
-              </Button>
-              <div className="flex items-center space-x-2">
-                <Code className="h-8 w-8 text-primary" />
-                <h1 className="text-2xl font-bold text-foreground">API Documentation</h1>
-              </div>
-            </div>
-          </div>
-        </div>
-      </header>
+
 
       <div className="container mx-auto px-4 py-8">
         {/* Introduction */}
         <div className="mb-12">
           <h2 className="text-4xl font-bold text-foreground mb-6">Congress Accountability Tracker API</h2>
           <p className="text-lg text-muted-foreground max-w-3xl leading-relaxed">
-            Access comprehensive government accountability data through our RESTful API. Get real-time information 
+            Access comprehensive government accountability data through our RESTful API. Get real-time information
             about congressional activities, lobbying efforts, and legislative processes.
           </p>
         </div>
@@ -113,7 +95,7 @@ export default function ApiDocsPage() {
                     ?api_key=YOUR_API_KEY
                   </code>
                 </div>
-                
+
                 <div>
                   <h3 className="font-semibold mb-2">Senate Lobbying API</h3>
                   <p className="text-sm text-muted-foreground">

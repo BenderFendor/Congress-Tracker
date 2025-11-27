@@ -61,31 +61,7 @@ export default function VisualizationsPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <BarChart3 className="h-8 w-8 text-primary" />
-              <h1 className="text-2xl font-bold text-foreground">Data Visualizations</h1>
-            </div>
-            <nav className="hidden md:flex items-center space-x-6">
-              <a href="/" className="text-muted-foreground hover:text-foreground transition-colors">
-                Home
-              </a>
-              <a href="/legislators" className="text-muted-foreground hover:text-foreground transition-colors">
-                Legislators
-              </a>
-              <a href="/bills" className="text-muted-foreground hover:text-foreground transition-colors">
-                Bills
-              </a>
-              <a href="/lobbying" className="text-muted-foreground hover:text-foreground transition-colors">
-                Lobbying
-              </a>
-            </nav>
-          </div>
-        </div>
-      </header>
+
 
       <div className="container mx-auto px-4 py-8">
         {/* Page Header */}

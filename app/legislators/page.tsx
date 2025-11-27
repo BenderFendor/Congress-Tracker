@@ -2,13 +2,7 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
-import { Search, Filter, MapPin, Users, DollarSign, FileText, ExternalLink, Loader2, ArrowRight } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Search, Filter, MapPin, Users, DollarSign, FileText, ExternalLink, Loader2, ArrowRight, Grid } from "lucide-react"
 
 interface Member {
   bioguideId: string
@@ -126,8 +120,17 @@ export default function LegislatorsPage() {
     return () => window.removeEventListener('scroll', handleScroll)
   }, [loadingMore])
 
-  if (loading) return <div className="p-8 text-center">Loading legislators...</div>
-  if (error) return <div className="p-8 text-center text-red-500">{error}</div>
+  if (loading) return (
+    <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+      <div className="w-12 h-12 border-4 border-[#ff4d00] border-t-transparent rounded-full animate-spin"></div>
+    </div>
+  )
+
+  if (error) return (
+    <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+      <div className="text-red-500 font-mono text-center">{error}</div>
+    </div>
+  )
 
   const filteredLegislators = members.filter((member) => {
     const matchesSearch =
@@ -157,157 +160,128 @@ export default function LegislatorsPage() {
   const currentLegislators = filteredLegislators.slice(0, displayCount)
   const hasMore = displayCount < filteredLegislators.length
 
-
-
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <Users className="h-8 w-8 text-primary" />
-              <h1 className="text-2xl font-bold text-foreground">Legislator Search</h1>
-            </div>
-            <nav className="hidden md:flex items-center space-x-6">
-              <Link href="/" className="text-muted-foreground hover:text-foreground transition-colors">
-                Home
-              </Link>
-              <Link href="/bills" className="text-muted-foreground hover:text-foreground transition-colors">
-                Bills
-              </Link>
-              <Link href="/lobbying" className="text-muted-foreground hover:text-foreground transition-colors">
-                Lobbying
-              </Link>
-            </nav>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen bg-[#0a0a0a] text-white font-sans selection:bg-[#ff4d00] selection:text-white pb-20">
 
-      <div className="container mx-auto px-4 py-8">
+
+      <div className="max-w-[1600px] mx-auto px-6 md:px-12 pt-12">
         {/* Search and Filters */}
-        <div className="mb-8">
-          <div className="flex flex-col lg:flex-row gap-4 mb-6">
+        <div className="mb-12 animate-stagger-item delay-1">
+          <div className="flex flex-col lg:flex-row gap-6 mb-8">
             <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-5 w-5" />
-              <Input
-                placeholder="Search by name, state, or district..."
+              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-[#ff4d00]" size={20} />
+              <input
+                type="text"
+                placeholder="SEARCH BY NAME, STATE, OR DISTRICT..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
+                className="w-full bg-[#171717] border-2 border-white/10 px-12 py-4 text-white font-mono font-bold placeholder:text-gray-600 focus:outline-none focus:border-[#ff4d00] transition-all uppercase tracking-wider"
               />
             </div>
-            <Button variant="outline" className="lg:w-auto bg-transparent">
-              <Filter className="h-4 w-4 mr-2" />
+            <button className="flex items-center justify-center gap-2 bg-white/5 border-2 border-white/10 px-8 py-4 font-mono font-bold uppercase hover:bg-white/10 hover:border-[#ff4d00] transition-all text-[#ff4d00]">
+              <Filter size={16} />
               Advanced Filters
-            </Button>
+            </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Select value={selectedParty} onValueChange={setSelectedParty}>
-              <SelectTrigger>
-                <SelectValue placeholder="Party" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Parties</SelectItem>
-                <SelectItem value="democrat">Democrat</SelectItem>
-                <SelectItem value="republican">Republican</SelectItem>
-                <SelectItem value="independent">Independent</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <select
+              value={selectedParty}
+              onChange={(e) => setSelectedParty(e.target.value)}
+              className="bg-[#171717] border-2 border-white/10 px-4 py-3 text-white font-mono text-sm uppercase focus:border-[#ff4d00] outline-none appearance-none"
+            >
+              <option value="all">All Parties</option>
+              <option value="democrat">Democrat</option>
+              <option value="republican">Republican</option>
+              <option value="independent">Independent</option>
+            </select>
 
-            <Select value={selectedChamber} onValueChange={setSelectedChamber}>
-              <SelectTrigger>
-                <SelectValue placeholder="Chamber" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Both Chambers</SelectItem>
-                <SelectItem value="house">House</SelectItem>
-                <SelectItem value="senate">Senate</SelectItem>
-              </SelectContent>
-            </Select>
+            <select
+              value={selectedChamber}
+              onChange={(e) => setSelectedChamber(e.target.value)}
+              className="bg-[#171717] border-2 border-white/10 px-4 py-3 text-white font-mono text-sm uppercase focus:border-[#ff4d00] outline-none appearance-none"
+            >
+              <option value="all">Both Chambers</option>
+              <option value="house">House</option>
+              <option value="senate">Senate</option>
+            </select>
 
-            <Select value={selectedState} onValueChange={setSelectedState}>
-              <SelectTrigger>
-                <SelectValue placeholder="State" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All States</SelectItem>
-                <SelectItem value="Alabama">Alabama</SelectItem>
-                <SelectItem value="Alaska">Alaska</SelectItem>
-                <SelectItem value="Arizona">Arizona</SelectItem>
-                <SelectItem value="Arkansas">Arkansas</SelectItem>
-                <SelectItem value="California">California</SelectItem>
-                <SelectItem value="Colorado">Colorado</SelectItem>
-                <SelectItem value="Connecticut">Connecticut</SelectItem>
-                <SelectItem value="Delaware">Delaware</SelectItem>
-                <SelectItem value="Florida">Florida</SelectItem>
-                <SelectItem value="Georgia">Georgia</SelectItem>
-                <SelectItem value="Hawaii">Hawaii</SelectItem>
-                <SelectItem value="Idaho">Idaho</SelectItem>
-                <SelectItem value="Illinois">Illinois</SelectItem>
-                <SelectItem value="Indiana">Indiana</SelectItem>
-                <SelectItem value="Iowa">Iowa</SelectItem>
-                <SelectItem value="Kansas">Kansas</SelectItem>
-                <SelectItem value="Kentucky">Kentucky</SelectItem>
-                <SelectItem value="Louisiana">Louisiana</SelectItem>
-                <SelectItem value="Maine">Maine</SelectItem>
-                <SelectItem value="Maryland">Maryland</SelectItem>
-                <SelectItem value="Massachusetts">Massachusetts</SelectItem>
-                <SelectItem value="Michigan">Michigan</SelectItem>
-                <SelectItem value="Minnesota">Minnesota</SelectItem>
-                <SelectItem value="Mississippi">Mississippi</SelectItem>
-                <SelectItem value="Missouri">Missouri</SelectItem>
-                <SelectItem value="Montana">Montana</SelectItem>
-                <SelectItem value="Nebraska">Nebraska</SelectItem>
-                <SelectItem value="Nevada">Nevada</SelectItem>
-                <SelectItem value="New Hampshire">New Hampshire</SelectItem>
-                <SelectItem value="New Jersey">New Jersey</SelectItem>
-                <SelectItem value="New Mexico">New Mexico</SelectItem>
-                <SelectItem value="New York">New York</SelectItem>
-                <SelectItem value="North Carolina">North Carolina</SelectItem>
-                <SelectItem value="North Dakota">North Dakota</SelectItem>
-                <SelectItem value="Ohio">Ohio</SelectItem>
-                <SelectItem value="Oklahoma">Oklahoma</SelectItem>
-                <SelectItem value="Oregon">Oregon</SelectItem>
-                <SelectItem value="Pennsylvania">Pennsylvania</SelectItem>
-                <SelectItem value="Rhode Island">Rhode Island</SelectItem>
-                <SelectItem value="South Carolina">South Carolina</SelectItem>
-                <SelectItem value="South Dakota">South Dakota</SelectItem>
-                <SelectItem value="Tennessee">Tennessee</SelectItem>
-                <SelectItem value="Texas">Texas</SelectItem>
-                <SelectItem value="Utah">Utah</SelectItem>
-                <SelectItem value="Vermont">Vermont</SelectItem>
-                <SelectItem value="Virginia">Virginia</SelectItem>
-                <SelectItem value="Washington">Washington</SelectItem>
-                <SelectItem value="West Virginia">West Virginia</SelectItem>
-                <SelectItem value="Wisconsin">Wisconsin</SelectItem>
-                <SelectItem value="Wyoming">Wyoming</SelectItem>
-              </SelectContent>
-            </Select>
+            <select
+              value={selectedState}
+              onChange={(e) => setSelectedState(e.target.value)}
+              className="bg-[#171717] border-2 border-white/10 px-4 py-3 text-white font-mono text-sm uppercase focus:border-[#ff4d00] outline-none appearance-none"
+            >
+              <option value="all">All States</option>
+              <option value="Alabama">Alabama</option>
+              <option value="Alaska">Alaska</option>
+              <option value="Arizona">Arizona</option>
+              <option value="Arkansas">Arkansas</option>
+              <option value="California">California</option>
+              <option value="Colorado">Colorado</option>
+              <option value="Connecticut">Connecticut</option>
+              <option value="Delaware">Delaware</option>
+              <option value="Florida">Florida</option>
+              <option value="Georgia">Georgia</option>
+              <option value="Hawaii">Hawaii</option>
+              <option value="Idaho">Idaho</option>
+              <option value="Illinois">Illinois</option>
+              <option value="Indiana">Indiana</option>
+              <option value="Iowa">Iowa</option>
+              <option value="Kansas">Kansas</option>
+              <option value="Kentucky">Kentucky</option>
+              <option value="Louisiana">Louisiana</option>
+              <option value="Maine">Maine</option>
+              <option value="Maryland">Maryland</option>
+              <option value="Massachusetts">Massachusetts</option>
+              <option value="Michigan">Michigan</option>
+              <option value="Minnesota">Minnesota</option>
+              <option value="Mississippi">Mississippi</option>
+              <option value="Missouri">Missouri</option>
+              <option value="Montana">Montana</option>
+              <option value="Nebraska">Nebraska</option>
+              <option value="Nevada">Nevada</option>
+              <option value="New Hampshire">New Hampshire</option>
+              <option value="New Jersey">New Jersey</option>
+              <option value="New Mexico">New Mexico</option>
+              <option value="New York">New York</option>
+              <option value="North Carolina">North Carolina</option>
+              <option value="North Dakota">North Dakota</option>
+              <option value="Ohio">Ohio</option>
+              <option value="Oklahoma">Oklahoma</option>
+              <option value="Oregon">Oregon</option>
+              <option value="Pennsylvania">Pennsylvania</option>
+              <option value="Rhode Island">Rhode Island</option>
+              <option value="South Carolina">South Carolina</option>
+              <option value="South Dakota">South Dakota</option>
+              <option value="Tennessee">Tennessee</option>
+              <option value="Texas">Texas</option>
+              <option value="Utah">Utah</option>
+              <option value="Vermont">Vermont</option>
+              <option value="Virginia">Virginia</option>
+              <option value="Washington">Washington</option>
+              <option value="West Virginia">West Virginia</option>
+              <option value="Wisconsin">Wisconsin</option>
+              <option value="Wyoming">Wyoming</option>
+            </select>
 
-            <Button className="w-full">Apply Filters</Button>
+            <button className="bg-[#ff4d00] text-black font-mono font-bold uppercase hover:bg-white hover:text-black transition-all px-4 py-3">
+              Apply Filters
+            </button>
           </div>
         </div>
 
         {/* Results Summary */}
-        <div className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <p className="text-muted-foreground">
-            Showing {currentLegislators.length} of {filteredLegislators.length} legislators
-            {filteredLegislators.length !== members.length && (
-              <span className="text-sm ml-2">({members.length} total)</span>
-            )}
-          </p>
-          {hasMore && (
-            <div className="text-sm text-muted-foreground">
-              Scroll down to load more
-            </div>
+        <div className="mb-6 flex items-center gap-2 text-gray-500 font-mono text-xs uppercase tracking-widest">
+          <div className="w-2 h-2 bg-[#ff4d00] rounded-full animate-pulse"></div>
+          Showing {currentLegislators.length} of {filteredLegislators.length} legislators
+          {filteredLegislators.length !== members.length && (
+            <span className="ml-1">({members.length} total)</span>
           )}
         </div>
 
         {/* Legislator Cards */}
-        <div className="grid gap-6">
-          {currentLegislators.map((member) => {
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          {currentLegislators.map((member, idx) => {
             const rawPartyName = member.partyName || "Unknown"
             // Convert party names to full party names
             const getFullPartyName = (party: string) => {
@@ -324,156 +298,115 @@ export default function LegislatorsPage() {
               : null
             const chamber = currentTerm?.chamber || "Unknown"
 
-            // Get party colors and styles
-            const getPartyStyle = (party: string) => {
-              if (party === "Democratic Party") {
-                return {
-                  badgeClass: "bg-blue-600 text-white hover:bg-blue-700 text-shadow-blue font-medium"
-                }
-              } else if (party === "Republican Party") {
-                return {
-                  badgeClass: "bg-red-600 text-white hover:bg-red-700 text-shadow-red font-medium"
-                }
-              } else {
-                return {
-                  badgeClass: "bg-gray-600 text-white hover:bg-gray-700 text-shadow-gray font-medium"
-                }
-              }
+            // Get party colors
+            const getPartyColor = (party: string) => {
+              if (party === "Democratic Party") return "text-blue-400 bg-blue-900/20 border-blue-500/30"
+              if (party === "Republican Party") return "text-red-400 bg-red-900/20 border-red-500/30"
+              return "text-gray-400 bg-gray-900/20 border-gray-500/30"
             }
 
-            const partyStyle = getPartyStyle(currentParty)
+            const partyColorClass = getPartyColor(currentParty)
 
             return (
-              <Card key={member.bioguideId} className="hover:shadow-lg transition-shadow">
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center space-x-4">
-                      <Avatar className="h-16 w-16">
-                        <AvatarImage
-                          src={member.depiction?.imageUrl || "/placeholder.svg"}
+              <div key={member.bioguideId} className={`bg-[#171717] border-2 border-white/10 p-6 hover:border-[#ff4d00]/50 transition-all duration-300 group animate-stagger-item delay-${(idx % 5) + 1} flex flex-col h-full`}>
+                <div className="flex items-start justify-between mb-6">
+                  <div className="relative">
+                    <div className="w-20 h-20 bg-black border-2 border-white/10 overflow-hidden grayscale contrast-125 group-hover:grayscale-0 transition-all duration-500">
+                      {member.depiction?.imageUrl ? (
+                        <img
+                          src={member.depiction.imageUrl}
                           alt={member.name}
+                          className="w-full h-full object-cover"
                         />
-                        <AvatarFallback>
-                          {member.name
-                            .split(" ")
-                            .map((n: string) => n[0])
-                            .join("")}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <CardTitle className="text-xl">{member.name}</CardTitle>
-                        <CardDescription className="flex items-center gap-2 mt-1">
-                          <Badge className={partyStyle.badgeClass}>
-                            {currentParty}
-                          </Badge>
-                          <span className="flex items-center">
-                            <MapPin className="h-4 w-4 mr-1" />
-                            {member.state}{member.district ? `-${member.district}` : ""} • {chamber}
-                          </span>
-                        </CardDescription>
-                      </div>
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <Button size="sm" asChild>
-                        <Link href={`/legislators/${member.bioguideId}`}>
-                          <Users className="h-4 w-4 mr-2" />
-                          View Profile
-                        </Link>
-                      </Button>
-                      {member.officialWebsiteUrl && (
-                        <Button variant="outline" size="sm" asChild>
-                          <a href={member.officialWebsiteUrl} target="_blank" rel="noopener noreferrer">
-                            <ExternalLink className="h-4 w-4 mr-2" />
-                            Official Site
-                          </a>
-                        </Button>
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center bg-white/5 text-gray-600">
+                          <Users size={24} />
+                        </div>
                       )}
                     </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div className="text-center">
-                      <div className="flex items-center justify-center mb-2">
-                        <DollarSign className="h-5 w-5 text-primary" />
-                      </div>
-                      <div className="text-2xl font-bold text-primary">
-                        N/A
-                      </div>
-                      <div className="text-sm text-muted-foreground">Campaign Finance</div>
-                      <div className="text-xs text-muted-foreground mt-1">Data not available</div>
-                    </div>
-
-                    <div className="text-center">
-                      <div className="flex items-center justify-center mb-2">
-                        <FileText className="h-5 w-5 text-primary" />
-                      </div>
-                      <div className="text-2xl font-bold text-primary">
-                        {member.sponsoredLegislation?.count || 0}
-                      </div>
-                      <div className="text-sm text-muted-foreground">Bills Sponsored</div>
-                    </div>
-
-                    <div className="text-center">
-                      <div className="flex items-center justify-center mb-2">
-                        <Users className="h-5 w-5 text-primary" />
-                      </div>
-                      <div className="text-2xl font-bold text-primary">
-                        {member.cosponsoredLegislation?.count || 0}
-                      </div>
-                      <div className="text-sm text-muted-foreground">Bills Cosponsored</div>
-                    </div>
-
-                    <div className="text-center">
-                      <div className="text-sm font-medium text-foreground mb-2">Info</div>
-                      <div className="space-y-1">
-                        <Badge variant="outline" className="text-xs">
-                          Born: {member.birthYear || 'N/A'}
-                        </Badge>
-                        <Badge variant="outline" className="text-xs">
-                          Term: {currentTerm?.startYear || 'N/A'}{currentTerm?.endYear ? `-${currentTerm.endYear}` : '-Present'}
-                        </Badge>
-                        {member.district && (
-                          <Badge variant="outline" className="text-xs">
-                            District {member.district}
-                          </Badge>
-                        )}
-                      </div>
+                    <div className={`absolute -bottom-3 -right-3 px-2 py-1 border ${partyColorClass} font-mono text-[10px] font-black uppercase tracking-wider backdrop-blur-md`}>
+                      {currentParty.split(' ')[0]}
                     </div>
                   </div>
-                </CardContent>
-              </Card>
+
+                  <div className="flex flex-col gap-2">
+                    <Link href={`/legislators/${member.bioguideId}`} className="w-10 h-10 flex items-center justify-center border border-white/20 text-white hover:bg-[#ff4d00] hover:text-black hover:border-[#ff4d00] transition-all">
+                      <ArrowRight size={16} />
+                    </Link>
+                    {member.officialWebsiteUrl && (
+                      <a href={member.officialWebsiteUrl} target="_blank" rel="noopener noreferrer" className="w-10 h-10 flex items-center justify-center border border-white/20 text-gray-500 hover:text-white hover:border-white transition-all">
+                        <ExternalLink size={14} />
+                      </a>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mb-6 flex-grow">
+                  <h2 className="font-serif text-xl font-bold text-white mb-2 leading-tight group-hover:text-[#ff4d00] transition-colors">
+                    {member.name}
+                  </h2>
+                  <div className="flex items-center gap-2 text-gray-400 font-mono text-xs uppercase">
+                    <MapPin size={12} />
+                    <span>{member.state}{member.district ? `-${member.district}` : ""}</span>
+                    <span className="text-white/20">|</span>
+                    <span>{chamber}</span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 pt-4 border-t border-white/10">
+                  <div>
+                    <div className="flex items-center gap-2 text-[#ff4d00] mb-1">
+                      <FileText size={12} />
+                      <span className="font-mono text-[10px] font-bold uppercase">Sponsored</span>
+                    </div>
+                    <span className="font-mono text-lg font-bold text-white">{member.sponsoredLegislation?.count || 0}</span>
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 text-gray-400 mb-1">
+                      <Users size={12} />
+                      <span className="font-mono text-[10px] font-bold uppercase">Cosponsored</span>
+                    </div>
+                    <span className="font-mono text-lg font-bold text-white">{member.cosponsoredLegislation?.count || 0}</span>
+                  </div>
+                </div>
+
+                <div className="mt-4 pt-4 border-t border-white/10 flex justify-between items-center font-mono text-[10px] text-gray-500 uppercase">
+                  <span>Born: {member.birthYear || 'N/A'}</span>
+                  <span>Term: {currentTerm?.startYear || 'N/A'}-{currentTerm?.endYear || 'Pres'}</span>
+                </div>
+              </div>
             )
           })}
         </div>
 
         {/* Loading More Indicator */}
         {loadingMore && (
-          <div className="mt-8 flex justify-center">
-            <div className="flex items-center space-x-2 text-muted-foreground">
-              <Loader2 className="h-5 w-5 animate-spin" />
-              <span>Loading more legislators...</span>
+          <div className="mt-12 flex justify-center">
+            <div className="flex items-center gap-3 text-[#ff4d00] font-mono text-xs uppercase tracking-widest animate-pulse">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>Accessing Database...</span>
             </div>
           </div>
         )}
 
         {/* Load More Button (fallback for manual loading) */}
         {!loadingMore && hasMore && (
-          <div className="mt-8 flex justify-center">
-            <Button
-              variant="outline"
+          <div className="mt-12 flex justify-center mb-20">
+            <button
               onClick={loadMore}
-              className="px-8"
+              className="px-8 py-4 bg-white/5 border-2 border-white/10 hover:bg-[#ff4d00] hover:text-black hover:border-[#ff4d00] transition-all font-mono text-sm font-bold uppercase tracking-widest"
             >
               Load More Legislators
-            </Button>
+            </button>
           </div>
         )}
 
         {/* End of Results */}
         {!hasMore && filteredLegislators.length > 12 && (
-          <div className="mt-8 text-center text-muted-foreground">
-            <p>You've reached the end of the results</p>
+          <div className="mt-12 mb-20 text-center">
+            <div className="inline-block px-4 py-2 border border-white/10 bg-white/5 text-gray-500 font-mono text-xs uppercase tracking-widest">
+              End of Directory
+            </div>
           </div>
         )}
       </div>
