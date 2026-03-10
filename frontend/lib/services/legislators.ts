@@ -1,4 +1,3 @@
-
 const CONGRESS_GOV_API_KEY = process.env.NEXT_PUBLIC_CONGRESS_GOV_API_KEY || process.env.CONGRESS_GOV_API_KEY;
 const BASE_URL = 'https://api.congress.gov/v3';
 
@@ -28,74 +27,10 @@ export interface Legislator {
     next_election: string;
 }
 
-// Mock data for fallback
-const MOCK_LEGISLATORS: Record<string, Legislator> = {
-    "A000370": {
-        id: "A000370",
-        name: "Alma Adams",
-        first_name: "Alma",
-        last_name: "Adams",
-        party: "D",
-        state: "NC",
-        district: "12",
-        chamber: "House",
-        avatar: "https://theunitedstates.io/images/congress/225x275/A000370.jpg",
-        bio: "Representative Alma Adams serves North Carolina's 12th Congressional District.",
-        totalDonations: 450000,
-        billsSponsored: 15,
-        votingScore: 92,
-        committees: ["Agriculture", "Education and Labor"],
-        topDonors: [
-            { name: "Education Assoc", amount: 50000, industry: "Education" },
-            { name: "Labor Union Local", amount: 45000, industry: "Labor" }
-        ],
-        recentBills: [
-            { title: "H.R. 123: Education Access Act", status: "Introduced", date: "2023-01-15" }
-        ],
-        url: "https://adams.house.gov",
-        twitter_account: "RepAdams",
-        facebook_account: "CongresswomanAdams",
-        youtube_account: "RepAlmaAdams",
-        contact_form: "",
-        in_office: true,
-        next_election: "2024"
-    },
-    "O000172": {
-        id: "O000172",
-        name: "Alexandria Ocasio-Cortez",
-        first_name: "Alexandria",
-        last_name: "Ocasio-Cortez",
-        party: "D",
-        state: "NY",
-        district: "14",
-        chamber: "House",
-        avatar: "https://theunitedstates.io/images/congress/225x275/O000172.jpg",
-        bio: "Representative Alexandria Ocasio-Cortez proudly serves New York's 14th Congressional District.",
-        totalDonations: 8500000,
-        billsSponsored: 23,
-        votingScore: 95,
-        committees: ["Financial Services", "Oversight and Reform"],
-        topDonors: [
-            { name: "ActBlue", amount: 2100000, industry: "Political Action" },
-            { name: "Justice Democrats", amount: 850000, industry: "Political Action" }
-        ],
-        recentBills: [
-            { title: "Green New Deal Resolution", status: "Introduced", date: "2023-04-20" }
-        ],
-        url: "https://ocasio-cortez.house.gov",
-        twitter_account: "RepAOC",
-        facebook_account: "RepAOC",
-        youtube_account: "RepAOC",
-        contact_form: "",
-        in_office: true,
-        next_election: "2024"
-    }
-};
-
 export async function getLegislator(id: string): Promise<Legislator | null> {
     if (!CONGRESS_GOV_API_KEY) {
-        console.warn("Congress.gov API key not found. Using mock data.");
-        return MOCK_LEGISLATORS[id] || MOCK_LEGISLATORS["O000172"];
+        console.warn("Congress.gov API key not found. Returning null.");
+        return null;
     }
 
     try {
@@ -107,17 +42,16 @@ export async function getLegislator(id: string): Promise<Legislator | null> {
 
         if (!response.ok) {
             console.error(`Congress.gov API error: ${response.statusText}`);
-            return MOCK_LEGISLATORS[id] || MOCK_LEGISLATORS["O000172"];
+            return null;
         }
 
         const data = await response.json();
         const member = data.member;
 
         if (!member) {
-            return MOCK_LEGISLATORS[id] || MOCK_LEGISLATORS["O000172"];
+            return null;
         }
 
-        // Extract latest term for current details
         const currentTerm = member.terms ? member.terms.item[member.terms.item.length - 1] : {};
 
         return {
@@ -131,14 +65,14 @@ export async function getLegislator(id: string): Promise<Legislator | null> {
             chamber: currentTerm.chamber || "Congress",
             avatar: member.depiction ? member.depiction.imageUrl : `https://theunitedstates.io/images/congress/225x275/${member.bioguideId}.jpg`,
             bio: `Representative ${member.firstName} ${member.lastName} serves ${member.state}.`,
-            totalDonations: 0, // Not available in this API
+            totalDonations: 0,
             billsSponsored: member.sponsoredLegislation ? member.sponsoredLegislation.count : 0,
-            votingScore: 0, // Not available directly
-            committees: [], // Would need separate call
+            votingScore: 0,
+            committees: [],
             topDonors: [],
             recentBills: [],
             url: member.officialWebsiteUrl || "",
-            twitter_account: "", // Not consistently available
+            twitter_account: "",
             facebook_account: "",
             youtube_account: "",
             contact_form: "",
@@ -147,18 +81,16 @@ export async function getLegislator(id: string): Promise<Legislator | null> {
         };
     } catch (error) {
         console.error("Error fetching legislator:", error);
-        return MOCK_LEGISLATORS[id] || MOCK_LEGISLATORS["O000172"];
+        return null;
     }
 }
 
 export async function getAllLegislators(chamber = 'house', congress = 118): Promise<Legislator[]> {
     if (!CONGRESS_GOV_API_KEY) {
-        return Object.values(MOCK_LEGISLATORS);
+        return [];
     }
 
     try {
-        // Congress.gov API pagination is limited, we might need to loop if we want ALL, 
-        // but for now let's get the first batch (default 20, max 250)
         const response = await fetch(`${BASE_URL}/member?format=json&limit=250`, {
             headers: {
                 'X-Api-Key': CONGRESS_GOV_API_KEY
@@ -167,13 +99,13 @@ export async function getAllLegislators(chamber = 'house', congress = 118): Prom
 
         if (!response.ok) {
             console.error(`Congress.gov API error: ${response.statusText}`);
-            return Object.values(MOCK_LEGISLATORS);
+            return [];
         }
 
         const data = await response.json();
 
         if (!data.members || !data.members.map) {
-            return Object.values(MOCK_LEGISLATORS);
+            return [];
         }
 
         return data.members.map((member: any) => ({
@@ -184,7 +116,7 @@ export async function getAllLegislators(chamber = 'house', congress = 118): Prom
             party: member.partyName,
             state: member.state,
             district: member.district ? member.district.toString() : "",
-            chamber: member.terms ? member.terms.item[0].chamber : chamber, // Simplified
+            chamber: member.terms ? member.terms.item[0].chamber : chamber,
             avatar: member.depiction ? member.depiction.imageUrl : `https://theunitedstates.io/images/congress/225x275/${member.bioguideId}.jpg`,
             bio: "",
             totalDonations: 0,
@@ -198,12 +130,12 @@ export async function getAllLegislators(chamber = 'house', congress = 118): Prom
             facebook_account: "",
             youtube_account: "",
             contact_form: "",
-            in_office: true, // Assuming list returns current members mostly
+            in_office: true,
             next_election: ""
         }));
 
     } catch (error) {
         console.error("Error fetching legislators:", error);
-        return Object.values(MOCK_LEGISLATORS);
+        return [];
     }
 }

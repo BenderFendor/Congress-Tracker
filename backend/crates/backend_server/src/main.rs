@@ -6,7 +6,8 @@ use axum::{
 use capitoltrades_api::{
     Client,
     PoliticianQuery,
-    types::{PaginatedResponse, PoliticianDetail},
+    TradeQuery,
+    types::{PaginatedResponse, PoliticianDetail, Trade},
 };
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -14,7 +15,6 @@ use tower_http::cors::{Any, CorsLayer};
 
 #[tokio::main]
 async fn main() {
-    // Initialize tracing
     tracing_subscriber::fmt::init();
 
     let client = Client::new();
@@ -30,10 +30,11 @@ async fn main() {
 
     let app = Router::new()
         .route("/api/politicians", get(get_politicians))
+        .route("/api/trades", get(get_trades))
         .layer(cors)
         .with_state(app_state);
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 8000));
+    let addr = SocketAddr::from(([127, 0, 0, 1], 4020));
     tracing::info!("listening on {}", addr);
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
@@ -52,6 +53,22 @@ async fn get_politicians(
             Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Failed to fetch politicians: {:?}", e),
+            ))
+        }
+    }
+}
+
+async fn get_trades(
+    State(client): State<Arc<Client>>,
+) -> Result<Json<PaginatedResponse<Trade>>, (StatusCode, String)> {
+    let query = TradeQuery::default();
+    match client.get_trades(&query).await {
+        Ok(trades) => Ok(Json(trades)),
+        Err(e) => {
+            tracing::error!("Failed to fetch trades: {:?}", e);
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to fetch trades: {:?}", e),
             ))
         }
     }
