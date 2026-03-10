@@ -59,3 +59,31 @@ export async function getTradesByTicker(ticker: string): Promise<StockTrade[]> {
     const allTrades = await getAllTrades();
     return allTrades.filter(t => t.ticker && t.ticker.toUpperCase() === ticker.toUpperCase());
 }
+
+export async function getTradesByPoliticianId(id: string): Promise<StockTrade[]> {
+    try {
+        const response = await fetch(`${BACKEND_URL}/api/trades?politician=${id}`, { next: { revalidate: 3600 } });
+        if (!response.ok) throw new Error(`Backend API error: ${response.statusText}`);
+        
+        const data = await response.json();
+        const trades = data.data || [];
+
+        return trades.map((trade: any) => ({
+            disclosure_year: trade.filingDate ? new Date(trade.filingDate).getFullYear() : (trade.pubDate ? new Date(trade.pubDate).getFullYear() : 0),
+            disclosure_date: trade.filingDate || trade.pubDate || "",
+            transaction_date: trade.txDate || "",
+            owner: trade.owner || "unknown", 
+            ticker: trade.asset?.assetTicker || trade.issuer?.issuerTicker || "",
+            asset_description: trade.issuer?.issuerName || trade.asset?.instrument || "",
+            type: trade.txType || "", 
+            amount: trade.value ? `$${trade.value.toLocaleString()}` : "N/A",
+            representative: trade.politician ? `${trade.politician.firstName || ''} ${trade.politician.lastName || ''}`.trim() : "",
+            district: trade.politician?._stateId || trade.politician?.state || "",
+            ptr_link: trade.filingURL || "",
+            cap_gains_over_200_usd: trade.hasCapitalGains || false
+        }));
+    } catch (error) {
+        console.error("Error fetching trades for politician:", error);
+        return [];
+    }
+}

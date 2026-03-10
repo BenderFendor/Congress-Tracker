@@ -1,5 +1,6 @@
-const CONGRESS_GOV_API_KEY = process.env.NEXT_PUBLIC_CONGRESS_GOV_API_KEY || process.env.CONGRESS_GOV_API_KEY;
-const BASE_URL = 'https://api.congress.gov/v3';
+import { getTradesByPoliticianId, StockTrade } from "./stocks";
+
+const BASE_URL = '/api/congress-proxy?url=https://api.congress.gov/v3';
 
 export interface Legislator {
     id: string;
@@ -18,6 +19,7 @@ export interface Legislator {
     committees: string[];
     topDonors: { name: string; amount: number; industry: string }[];
     recentBills: { title: string; status: string; date: string }[];
+    recentTrades: StockTrade[];
     url: string;
     twitter_account: string;
     facebook_account: string;
@@ -28,24 +30,18 @@ export interface Legislator {
 }
 
 export async function getLegislator(id: string): Promise<Legislator | null> {
-    if (!CONGRESS_GOV_API_KEY) {
-        console.warn("Congress.gov API key not found. Returning null.");
-        return null;
-    }
-
     try {
-        const response = await fetch(`${BASE_URL}/member/${id}?format=json`, {
-            headers: {
-                'X-Api-Key': CONGRESS_GOV_API_KEY
-            }
-        });
+        const [congressResponse, trades] = await Promise.all([
+            fetch(`${BASE_URL}/member/${id}?format=json`),
+            getTradesByPoliticianId(id)
+        ]);
 
-        if (!response.ok) {
-            console.error(`Congress.gov API error: ${response.statusText}`);
+        if (!congressResponse.ok) {
+            console.error(`Congress.gov API error: ${congressResponse.statusText}`);
             return null;
         }
 
-        const data = await response.json();
+        const data = await congressResponse.json();
         const member = data.member;
 
         if (!member) {
@@ -71,6 +67,7 @@ export async function getLegislator(id: string): Promise<Legislator | null> {
             committees: [],
             topDonors: [],
             recentBills: [],
+            recentTrades: trades,
             url: member.officialWebsiteUrl || "",
             twitter_account: "",
             facebook_account: "",
@@ -86,16 +83,8 @@ export async function getLegislator(id: string): Promise<Legislator | null> {
 }
 
 export async function getAllLegislators(chamber = 'house', congress = 118): Promise<Legislator[]> {
-    if (!CONGRESS_GOV_API_KEY) {
-        return [];
-    }
-
     try {
-        const response = await fetch(`${BASE_URL}/member?format=json&limit=250`, {
-            headers: {
-                'X-Api-Key': CONGRESS_GOV_API_KEY
-            }
-        });
+        const response = await fetch(`${BASE_URL}/member?format=json&limit=250`);
 
         if (!response.ok) {
             console.error(`Congress.gov API error: ${response.statusText}`);

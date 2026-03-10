@@ -25,27 +25,27 @@ pub struct Politician {
 }
 
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "snake_case")]
 pub struct PoliticianDetail {
     #[serde(rename = "_politicianId")]
     pub politician_id: PoliticianID,
 
     #[serde(rename = "_stateId")]
-    pub state_id: String,
+    pub state_id: Option<String>,
 
-    pub party: Party,
+    pub party: Option<Party>,
 
-    party_other: Option<serde_json::Value>,
+    pub party_other: Option<serde_json::Value>,
 
-    district: Option<String>,
+    pub district: Option<String>,
 
-    pub first_name: String,
+    pub first_name: Option<String>,
 
-    pub last_name: String,
+    pub last_name: Option<String>,
 
-    nickname: Option<String>,
+    pub nickname: Option<String>,
 
-    middle_name: Option<String>,
+    pub middle_name: Option<String>,
 
     pub full_name: String,
 
@@ -53,48 +53,53 @@ pub struct PoliticianDetail {
 
     pub gender: Option<Gender>,
 
-    social_facebook: Option<String>,
+    pub social_facebook: Option<String>,
 
-    social_twitter: Option<String>,
+    pub social_twitter: Option<String>,
 
-    social_youtube: Option<String>,
+    pub social_youtube: Option<String>,
 
-    website: Option<String>,
+    pub website: Option<String>,
 
-    pub chamber: Chamber,
+    pub chamber: Option<Chamber>,
 
-    committees: Vec<String>,
+    #[serde(default)]
+    pub committees: Vec<String>,
 
     pub stats: Stats,
 }
 impl Into<Politician> for PoliticianDetail {
     fn into(self) -> Politician {
         Politician {
-            state_id: self.state_id,
-            chamber: self.chamber,
+            state_id: self.state_id.unwrap_or_default(),
+            chamber: self.chamber.unwrap_or(Chamber::House),
             dob: self.dob,
-            first_name: self.first_name,
+            first_name: self.first_name.unwrap_or_default(),
             gender: self.gender,
-            last_name: self.last_name,
+            last_name: self.last_name.unwrap_or_default(),
             nickname: self.nickname,
-            party: self.party,
+            party: self.party.unwrap_or(Party::Other),
         }
     }
 }
 
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
 pub struct Stats {
+    #[serde(default)]
     pub date_last_traded: Option<NaiveDate>,
 
-    pub count_trades: i64,
+    #[serde(alias = "countTrades", default)]
+    pub count_trades: Option<i64>,
 
-    pub count_issuers: i64,
+    #[serde(alias = "countIssuers", default)]
+    pub count_issuers: Option<i64>,
 
-    pub volume: i64,
+    #[serde(default)]
+    pub volume: Option<i64>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Copy)]
 pub enum Chamber {
     #[serde(rename = "house")]
     House,
@@ -103,7 +108,7 @@ pub enum Chamber {
     Senate,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Copy)]
 pub enum Gender {
     #[serde(rename = "female")]
     Female,
@@ -112,7 +117,7 @@ pub enum Gender {
     Male,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Copy)]
 pub enum Party {
     #[serde(rename = "democrat")]
     Democrat,

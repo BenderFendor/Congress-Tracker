@@ -103,6 +103,8 @@ impl QueryCommon {
         if let Some(page_size) = self.page_size {
             url.query_pairs_mut()
                 .append_pair("pageSize", &page_size.to_string());
+            url.query_pairs_mut()
+                .append_pair("size", &page_size.to_string());
         };
         if let Some(pub_date_relative) = self.pub_date_relative {
             url.query_pairs_mut()

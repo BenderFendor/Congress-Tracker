@@ -10,6 +10,7 @@ use super::common::{Query, QueryCommon, SortDirection};
 pub struct TradeQuery {
     pub common: QueryCommon,
     pub issuer_ids: Vec<IssuerID>,
+    pub politician_ids: Vec<crate::types::PoliticianID>,
     pub trade_sizes: Vec<TradeSize>,
     pub sort_by: TradeSortBy,
 }
@@ -23,6 +24,10 @@ impl Query for TradeQuery {
         for issuer_id in self.issuer_ids.iter() {
             url.query_pairs_mut()
                 .append_pair("issuer", &issuer_id.to_string());
+        }
+        for politician_id in self.politician_ids.iter() {
+            url.query_pairs_mut()
+                .append_pair("politician", politician_id);
         }
         for trade_size in self.trade_sizes.iter() {
             url.query_pairs_mut()
@@ -53,6 +58,14 @@ impl TradeQuery {
     }
     pub fn with_issuer_ids(mut self, issuer_ids: &[IssuerID]) -> Self {
         self.issuer_ids.extend_from_slice(issuer_ids);
+        self
+    }
+    pub fn with_politician_id(mut self, politician_id: crate::types::PoliticianID) -> Self {
+        self.politician_ids.push(politician_id);
+        self
+    }
+    pub fn with_politician_ids(mut self, politician_ids: &[crate::types::PoliticianID]) -> Self {
+        self.politician_ids.extend_from_slice(politician_ids);
         self
     }
     pub fn with_trade_size(mut self, trade_size: TradeSize) -> Self {
