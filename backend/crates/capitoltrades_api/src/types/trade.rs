@@ -33,14 +33,14 @@ pub struct Trade {
     pub politician_id: PoliticianID,
 
     #[serde(rename = "_assetId")]
-    asset_id: i64,
+    pub asset_id: Option<i64>,
 
     #[serde(rename = "_issuerId")]
     pub issuer_id: IssuerID,
 
     pub pub_date: DateTime<Utc>,
 
-    pub filing_date: NaiveDate,
+    pub filing_date: Option<NaiveDate>,
 
     pub tx_date: NaiveDate,
 
@@ -48,6 +48,7 @@ pub struct Trade {
 
     tx_type_extended: Option<serde_json::Value>,
 
+    #[serde(default)]
     has_capital_gains: bool,
 
     owner: Owner,
@@ -64,23 +65,25 @@ pub struct Trade {
 
     pub value: i64,
 
-    filing_id: i64,
+    pub filing_id: Option<i64>,
 
     #[serde(rename = "filingURL")]
-    pub filing_url: String,
+    pub filing_url: Option<String>,
 
     pub reporting_gap: i64,
 
     comment: Option<String>,
 
+    #[serde(default)]
     committees: Vec<String>,
 
-    pub asset: Asset,
+    pub asset: Option<Asset>,
 
     pub issuer: Issuer,
 
     pub politician: Politician,
 
+    #[serde(default)]
     labels: Vec<String>,
 }
 

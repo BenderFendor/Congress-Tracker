@@ -24,8 +24,8 @@ export async function getAllTrades(): Promise<StockTrade[]> {
         const trades = data.data || [];
 
         return trades.map((trade: any) => ({
-            disclosure_year: trade.filingDate ? new Date(trade.filingDate).getFullYear() : 0,
-            disclosure_date: trade.filingDate || "",
+            disclosure_year: trade.filingDate ? new Date(trade.filingDate).getFullYear() : (trade.pubDate ? new Date(trade.pubDate).getFullYear() : 0),
+            disclosure_date: trade.filingDate || trade.pubDate || "",
             transaction_date: trade.txDate || "",
             owner: trade.owner || "unknown", 
             ticker: trade.asset?.assetTicker || trade.issuer?.issuerTicker || "",
@@ -33,7 +33,7 @@ export async function getAllTrades(): Promise<StockTrade[]> {
             type: trade.txType || "", 
             amount: trade.value ? `Size Range: ${trade.value}` : "",
             representative: trade.politician ? `${trade.politician.firstName || ''} ${trade.politician.lastName || ''}`.trim() : "",
-            district: trade.politician?.state || "",
+            district: trade.politician?._stateId || trade.politician?.state || "",
             ptr_link: trade.filingURL || "",
             cap_gains_over_200_usd: trade.hasCapitalGains || false
         }));
