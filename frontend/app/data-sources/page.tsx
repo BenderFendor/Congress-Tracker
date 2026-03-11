@@ -115,20 +115,20 @@ export default function DataSourcesPage() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-3">
                     <Shield className="h-6 w-6 text-blue-600" />
-                    <CardTitle>OpenSecrets.org</CardTitle>
+                    <CardTitle>OpenFEC API</CardTitle>
                     <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
-                      Non-Profit
+                      Official
                     </Badge>
                   </div>
                   <Button variant="outline" size="sm" asChild>
-                    <a href="https://www.opensecrets.org/" target="_blank" rel="noopener noreferrer">
+                    <a href="https://api.open.fec.gov/" target="_blank" rel="noopener noreferrer">
                       <ExternalLink className="h-4 w-4 mr-2" />
                       Visit Source
                     </a>
                   </Button>
                 </div>
                 <CardDescription>
-                  Center for Responsive Politics campaign finance data
+                  Federal Election Commission official API for campaign finance data
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -136,19 +136,19 @@ export default function DataSourcesPage() {
                   <div>
                     <h4 className="font-semibold mb-2">Data Provided:</h4>
                     <ul className="text-sm text-muted-foreground space-y-1">
-                      <li>• Campaign contribution records</li>
-                      <li>• Industry and sector analysis</li>
-                      <li>• Top donors and recipients</li>
-                      <li>• Lobbying spending by client and firm</li>
-                      <li>• Personal financial disclosures</li>
+                      <li>• Candidate and committee information</li>
+                      <li>• Campaign contribution records (Schedule A)</li>
+                      <li>• Independent expenditures</li>
+                      <li>• Committee filings and financial reports</li>
+                      <li>• Election spending and fundraising data</li>
                     </ul>
                   </div>
                   <div className="flex items-center space-x-4 text-sm">
                     <div className="flex items-center space-x-1">
                       <Clock className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-muted-foreground">Updated: Daily</span>
+                      <span className="text-muted-foreground">Updated: Nightly</span>
                     </div>
-                    <Badge variant="secondary">CSV Downloads</Badge>
+                    <Badge variant="secondary">Free API</Badge>
                   </div>
                 </div>
               </CardContent>
