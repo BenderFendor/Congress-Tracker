@@ -8,4 +8,4 @@ mod trade;
 pub use self::trade::{Asset, Trade, TradeSize};
 
 mod politician;
-pub use self::politician::{Chamber, Gender, Party, Politician, PoliticianDetail, PoliticianID};
+pub use self::politician::{Chamber, Gender, Party, Politician, PoliticianDetail, PoliticianID, Stats};

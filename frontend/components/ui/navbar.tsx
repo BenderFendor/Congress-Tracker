@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { Shield } from "lucide-react"
+import { ThemeToggle } from "@/components/theme-toggle"
 
 export function Navbar() {
     const pathname = usePathname()
@@ -24,30 +25,31 @@ export function Navbar() {
     ]
 
     return (
-        <header className="sticky top-0 z-50 bg-[#0a0a0a]/95 backdrop-blur-md border-b-2 border-white/10 px-6 md:px-12 py-4 flex justify-between items-center transition-all duration-300">
-            <div className="flex items-center gap-4 group cursor-default">
-                <div className="w-10 h-10 bg-[#ff4d00] flex items-center justify-center text-black shadow-[4px_4px_0px_0px_rgba(255,255,255,1)] group-hover:shadow-[2px_2px_0px_0px_rgba(255,255,255,1)] group-hover:translate-x-[2px] group-hover:translate-y-[2px] transition-all duration-300">
-                    <Shield size={20} strokeWidth={3} />
+        <header className="sticky top-0 z-50 bg-background/90 backdrop-blur-md border-b border-border px-6 md:px-12 py-5 flex justify-between items-center transition-all duration-300">
+            <div className="flex items-center gap-3 group cursor-default">
+                <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground shadow-sm transition-transform duration-500 ease-in-out group-hover:scale-105">
+                    <Shield size={16} strokeWidth={2} />
                 </div>
-                <h1 className="font-serif text-2xl font-black tracking-tighter text-white">
-                    CONGRESS<span className="font-light italic ml-1 text-gray-500">TRACKER</span>
+                <h1 className="font-serif text-2xl tracking-tight text-primary">
+                    Congress<span className="italic text-accent">Tracker</span>
                 </h1>
             </div>
-            <nav className="hidden xl:flex space-x-6">
+            <nav className="hidden xl:flex items-center space-x-8">
                 {navLinks.map((link) => (
                     <Link
                         key={link.href}
                         href={link.href}
-                        className={`font-mono text-sm font-bold uppercase tracking-widest transition-colors ${isActive(link.href) ? "text-[#ff4d00]" : "text-gray-400 hover:text-[#ff4d00]"
+                        className={`text-[13px] font-medium tracking-wide transition-colors ${isActive(link.href) ? "text-accent" : "text-muted-foreground hover:text-primary"
                             }`}
                     >
                         {link.label}
                     </Link>
                 ))}
+                <ThemeToggle />
             </nav>
-            {/* Mobile Menu Placeholder - For future implementation */}
-            <div className="xl:hidden">
-                {/* Add mobile menu toggle here if needed */}
+            {/* Mobile Menu Placeholder */}
+            <div className="xl:hidden flex items-center gap-4">
+                <ThemeToggle />
             </div>
         </header>
     )

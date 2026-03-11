@@ -2,21 +2,21 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 pub struct Meta {
-    paging: Paging,
+    pub paging: Paging,
 }
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Paging {
-    page: i64,
-    size: i64,
-    total_items: i64,
-    total_pages: i64,
+    pub page: i64,
+    pub size: i64,
+    pub total_items: i64,
+    pub total_pages: i64,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct PaginatedResponse<T> {
-    meta: Meta,
+    pub meta: Meta,
     pub data: Vec<T>,
 }
 

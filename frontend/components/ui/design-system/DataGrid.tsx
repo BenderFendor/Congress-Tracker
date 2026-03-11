@@ -6,15 +6,15 @@ interface DataGridProps {
 }
 
 export const DataGrid: React.FC<DataGridProps> = ({ headers, children }) => (
-    <div className="w-full bg-[#171717] border-2 border-white/10 animate-stagger-item delay-2">
-        <div className="grid border-b-2 border-white/10 bg-white/5" style={{ gridTemplateColumns: `repeat(${headers.length}, 1fr)` }}>
+    <div className="w-full bg-card border border-border rounded-sm shadow-sm animate-stagger-item delay-2 overflow-hidden">
+        <div className="grid border-b border-border bg-background" style={{ gridTemplateColumns: `repeat(${headers.length}, 1fr)` }}>
             {headers.map((h, i) => (
-                <div key={i} className="p-4 font-mono text-xs font-black uppercase tracking-wider text-gray-400 border-r-2 border-white/10 last:border-r-0">
+                <div key={i} className="p-4 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground border-r border-border last:border-r-0">
                     {h}
                 </div>
             ))}
         </div>
-        <div className="divide-y-2 divide-white/10 font-mono text-sm text-white font-bold">
+        <div className="divide-y divide-gray-100 text-[13px] text-foreground">
             {children}
         </div>
     </div>

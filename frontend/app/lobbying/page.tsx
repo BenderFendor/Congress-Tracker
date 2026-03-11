@@ -2,18 +2,7 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
-import { Search, Building2, DollarSign, Users, FileText, TrendingUp, ExternalLink, BarChart3, PieChart } from "lucide-react"
-import {
-  TopSpender,
-  TopLobbyingFirm,
-  Industry,
-  LobbyistRecipient,
-  parseTopSpenders,
-  parseTopLobbyingFirms,
-  parseIndustries,
-  parseLobbyistRecipients,
-  formatCurrency
-} from "@/lib/csvUtils"
+import { Search, Building2, DollarSign, Users, FileText, TrendingUp, ExternalLink, HardHat } from "lucide-react"
 import { getRecentFilings, getRegistrants, Filing, Registrant } from "@/lib/services/lobbying"
 
 // Get the current year for filtering recent data
@@ -22,64 +11,37 @@ const currentYear = new Date().getFullYear()
 export default function LobbyingPage() {
   const [filings, setFilings] = useState<Filing[]>([])
   const [registrants, setRegistrants] = useState<Registrant[]>([])
-  const [topSpenders, setTopSpenders] = useState<TopSpender[]>([])
-  const [topFirms, setTopFirms] = useState<TopLobbyingFirm[]>([])
-  const [industries, setIndustries] = useState<Industry[]>([])
-  const [recipients, setRecipients] = useState<LobbyistRecipient[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedYear, setSelectedYear] = useState(currentYear.toString())
-  const [selectedPeriod, setSelectedPeriod] = useState("all")
   const [activeTab, setActiveTab] = useState("filings")
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(amount)
+  }
 
   useEffect(() => {
     const fetchLobbyingData = async () => {
       try {
         setLoading(true)
 
-        // Fetch API data and CSV data in parallel
+        // Fetch API data
         const [
           filingsData,
-          registrantsData,
-          topSpendersResponse,
-          topFirmsResponse,
-          industriesResponse,
-          recipients2024Response,
-          recipients2022Response
+          registrantsData
         ] = await Promise.all([
-          // API data via service
           getRecentFilings(1, 25),
-          getRegistrants(1, 25),
-          // CSV data
-          fetch('/data/Top Spenders.csv'),
-          fetch('/data/Top Lobbying Firms.csv'),
-          fetch('/data/Industries.csv'),
-          fetch('/data/Top Recipients of Contributions from Lobbyists, 2024 Cycle.csv'),
-          fetch('/data/Top Recipients of Contributions from Lobbyists, 2022 Cycle.csv')
+          getRegistrants(1, 25)
         ])
 
-        // Process CSV data
-        const topSpendersText = await topSpendersResponse.text()
-        const topFirmsText = await topFirmsResponse.text()
-        const industriesText = await industriesResponse.text()
-        const recipients2024Text = await recipients2024Response.text()
-        const recipients2022Text = await recipients2022Response.text()
-
-        // Parse CSV data
-        const parsedTopSpenders = parseTopSpenders(topSpendersText)
-        const parsedTopFirms = parseTopLobbyingFirms(topFirmsText)
-        const parsedIndustries = parseIndustries(industriesText)
-        const parsedRecipients2024 = parseLobbyistRecipients(recipients2024Text, '2024')
-        const parsedRecipients2022 = parseLobbyistRecipients(recipients2022Text, '2022')
-
-        // Set state
         setFilings(filingsData.results || [])
         setRegistrants(registrantsData.results || [])
-        setTopSpenders(parsedTopSpenders)
-        setTopFirms(parsedTopFirms)
-        setIndustries(parsedIndustries)
-        setRecipients([...parsedRecipients2024, ...parsedRecipients2022])
       } catch (e: any) {
         console.error("Lobbying data fetch error:", e)
         setError(e.message)
@@ -151,8 +113,18 @@ export default function LobbyingPage() {
     return colors[index]
   }
 
+  const renderWIP = (title: string) => (
+    <div className="flex flex-col items-center justify-center py-24 text-center border border-border bg-card rounded-sm shadow-sm animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <HardHat size={48} className="text-muted-foreground mb-6" />
+      <h3 className="font-serif text-3xl font-bold text-primary mb-4">{title}</h3>
+      <p className="text-muted-foreground max-w-md mx-auto">
+        This view is currently under development as we integrate live data pipelines instead of using static mock data. Please check back later.
+      </p>
+    </div>
+  )
+
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white font-sans selection:bg-[#ff4d00] selection:text-white pb-20">
+    <div className="min-h-screen bg-background text-foreground font-sans selection:bg-accent text-accent-foreground selection:text-foreground pb-20">
 
 
 
@@ -160,28 +132,28 @@ export default function LobbyingPage() {
 
         {/* Page Title */}
         <div className="mb-12">
-          <h2 className="font-serif text-5xl md:text-6xl font-black text-white mb-4 leading-none tracking-tight">
-            INFLUENCE <span className="text-[#ff4d00]">TRACKER</span>
+          <h2 className="font-serif text-5xl md:text-6xl font-bold text-foreground mb-4 leading-none tracking-tight">
+            INFLUENCE <span className="text-accent">TRACKER</span>
           </h2>
-          <p className="font-mono text-gray-400 max-w-xl text-sm uppercase tracking-wide">
-            Follow the flow of money and political influence. Comprehensive data from Senate filings and historical spending records.
+          <p className="font-mono text-muted-foreground max-w-xl text-sm uppercase tracking-wide">
+            Follow the flow of money and political influence. Comprehensive data from Senate filings.
           </p>
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b-2 border-white/10 mb-8 overflow-x-auto">
+        <div className="flex border-b-2 border-border mb-8 overflow-x-auto">
           {['filings', 'spenders', 'firms', 'industries', 'recipients'].map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`px-8 py-4 font-mono text-sm font-bold uppercase tracking-widest transition-all relative ${activeTab === tab
-                ? 'text-[#ff4d00]'
-                : 'text-gray-500 hover:text-white'
+              className={`px-8 py-4 font-sans text-sm font-semibold tracking-wide transition-all relative ${activeTab === tab
+                ? 'text-accent'
+                : 'text-muted-foreground hover:text-foreground'
                 }`}
             >
               {tab === 'filings' ? 'Recent Filings' : tab === 'spenders' ? 'Top Spenders' : tab === 'firms' ? 'Top Firms' : tab.charAt(0).toUpperCase() + tab.slice(1)}
               {activeTab === tab && (
-                <div className="absolute bottom-0 left-0 right-0 h-1 bg-[#ff4d00]"></div>
+                <div className="absolute bottom-0 left-0 right-0 h-1 bg-accent text-accent-foreground"></div>
               )}
             </button>
           ))}
@@ -189,11 +161,11 @@ export default function LobbyingPage() {
 
         {/* Content */}
         <div className="min-h-[400px]">
-          {loading ? (
+          {loading && activeTab === 'filings' ? (
             <div className="flex items-center justify-center h-64">
-              <div className="w-12 h-12 border-4 border-[#ff4d00] border-t-transparent rounded-full animate-spin"></div>
+              <div className="w-12 h-12 border-4 border-accent border-t-transparent rounded-full animate-spin"></div>
             </div>
-          ) : error ? (
+          ) : error && activeTab === 'filings' ? (
             <div className="flex items-center justify-center h-64 text-red-500 font-mono">
               Error: {error}
             </div>
@@ -205,20 +177,20 @@ export default function LobbyingPage() {
                   {/* Filters */}
                   <div className="flex flex-col md:flex-row gap-4 mb-8">
                     <div className="relative group flex-1">
-                      <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-500 group-focus-within:text-[#ff4d00] transition-colors" size={18} />
+                      <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-muted-foreground group-focus-within:text-accent transition-colors" size={18} />
                       <input
                         type="text"
                         placeholder="SEARCH ORGANIZATIONS..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full bg-[#171717] border-2 border-white/10 px-12 py-3 text-white font-mono text-sm font-bold placeholder:text-gray-600 focus:outline-none focus:border-[#ff4d00] transition-all uppercase tracking-wider"
+                        className="w-full bg-card border-2 border-border px-12 py-3 text-foreground font-mono text-sm font-bold placeholder:text-muted-foreground focus:outline-none focus:border-accent transition-all uppercase tracking-wider"
                       />
                     </div>
 
                     <select
                       value={selectedYear}
                       onChange={(e) => setSelectedYear(e.target.value)}
-                      className="w-full md:w-48 bg-[#171717] border-2 border-white/10 px-4 py-3 text-white font-mono text-sm font-bold uppercase focus:border-[#ff4d00] outline-none appearance-none cursor-pointer"
+                      className="w-full md:w-48 bg-card border-2 border-border px-4 py-3 text-foreground font-sans text-sm font-semibold focus:border-accent outline-none appearance-none cursor-pointer"
                     >
                       <option value={currentYear.toString()}>{currentYear}</option>
                       <option value={(currentYear - 1).toString()}>{currentYear - 1}</option>
@@ -227,7 +199,7 @@ export default function LobbyingPage() {
 
                     <button
                       onClick={() => window.location.reload()}
-                      className="px-6 py-3 bg-white/5 border-2 border-white/10 text-white font-mono text-sm font-bold uppercase hover:bg-[#ff4d00] hover:text-black hover:border-[#ff4d00] transition-all"
+                      className="px-6 py-3 bg-muted border-2 border-border text-foreground font-sans text-sm font-semibold hover:bg-accent hover:text-accent-foreground hover:text-black hover:border-accent transition-all"
                     >
                       Refresh
                     </button>
@@ -236,16 +208,16 @@ export default function LobbyingPage() {
                   {/* Organization Cards */}
                   <div className="grid gap-6">
                     {filteredOrgs.map((org) => (
-                      <div key={org.id} className="bg-[#171717] border-2 border-white/10 p-8 hover:border-[#ff4d00]/50 transition-all duration-300 group">
+                      <div key={org.id} className="bg-card border-2 border-border p-8 hover:border-accent/50 transition-all duration-300 group">
                         <div className="flex flex-col md:flex-row justify-between items-start gap-6 mb-8">
                           <div>
                             <div className="flex items-center gap-3 mb-2">
-                              <span className="w-2 h-2 bg-[#ff4d00] rounded-full"></span>
-                              <span className="font-mono text-xs text-[#ff4d00] font-bold uppercase tracking-widest">Registrant</span>
-                              <span className="font-mono text-xs text-gray-500 uppercase border border-white/10 px-2 py-0.5">{org.registrant.state_display || "Federal"}</span>
+                              <span className="w-2 h-2 bg-accent text-accent-foreground rounded-full"></span>
+                              <span className="font-mono text-xs text-accent font-bold uppercase tracking-wide">Registrant</span>
+                              <span className="font-mono text-xs text-muted-foreground uppercase border border-border px-2 py-0.5">{org.registrant.state_display || "Federal"}</span>
                             </div>
-                            <h3 className="font-serif text-3xl font-bold text-white mb-2">{org.registrant.name}</h3>
-                            <div className="flex items-center gap-4 font-mono text-xs text-gray-400 uppercase">
+                            <h3 className="font-serif text-3xl font-bold text-foreground mb-2">{org.registrant.name}</h3>
+                            <div className="flex items-center gap-4 font-mono text-xs text-muted-foreground uppercase">
                               <span>{org.filings.length} filings this year</span>
                               <span className="text-gray-700">|</span>
                               <span>{org.clientCount} clients</span>
@@ -256,45 +228,45 @@ export default function LobbyingPage() {
                             href={org.registrant.url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="px-4 py-2 border border-white/20 text-xs font-mono font-bold uppercase hover:bg-white hover:text-black transition-colors flex items-center gap-2"
+                            className="px-4 py-2 border border-border text-xs font-mono font-bold uppercase hover:bg-card hover:text-black transition-colors flex items-center gap-2"
                           >
                             View Details <ExternalLink size={12} />
                           </a>
                         </div>
 
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-                          <div className="p-4 bg-black/20 border border-white/5">
-                            <div className="flex items-center gap-2 mb-2 text-gray-500">
+                          <div className="p-4 bg-muted border border-white/5">
+                            <div className="flex items-center gap-2 mb-2 text-muted-foreground">
                               <DollarSign size={14} />
-                              <span className="font-mono text-xs uppercase">Total Income</span>
+                              <span className="font-sans text-xs text-muted-foreground">Total Income</span>
                             </div>
-                            <div className="font-serif text-xl font-bold text-white">
+                            <div className="font-serif text-xl font-bold text-foreground">
                               {org.totalIncome > 0 ? formatCurrency(org.totalIncome) : 'N/A'}
                             </div>
                           </div>
 
-                          <div className="p-4 bg-black/20 border border-white/5">
-                            <div className="flex items-center gap-2 mb-2 text-gray-500">
+                          <div className="p-4 bg-muted border border-white/5">
+                            <div className="flex items-center gap-2 mb-2 text-muted-foreground">
                               <FileText size={14} />
-                              <span className="font-mono text-xs uppercase">Filings</span>
+                              <span className="font-sans text-xs text-muted-foreground">Filings</span>
                             </div>
-                            <div className="font-serif text-xl font-bold text-white">{org.filings.length}</div>
+                            <div className="font-serif text-xl font-bold text-foreground">{org.filings.length}</div>
                           </div>
 
-                          <div className="p-4 bg-black/20 border border-white/5">
-                            <div className="flex items-center gap-2 mb-2 text-gray-500">
+                          <div className="p-4 bg-muted border border-white/5">
+                            <div className="flex items-center gap-2 mb-2 text-muted-foreground">
                               <Users size={14} />
-                              <span className="font-mono text-xs uppercase">Clients</span>
+                              <span className="font-sans text-xs text-muted-foreground">Clients</span>
                             </div>
-                            <div className="font-serif text-xl font-bold text-white">{org.clientCount}</div>
+                            <div className="font-serif text-xl font-bold text-foreground">{org.clientCount}</div>
                           </div>
 
-                          <div className="p-4 bg-black/20 border border-white/5">
-                            <div className="flex items-center gap-2 mb-2 text-gray-500">
+                          <div className="p-4 bg-muted border border-white/5">
+                            <div className="flex items-center gap-2 mb-2 text-muted-foreground">
                               <TrendingUp size={14} />
-                              <span className="font-mono text-xs uppercase">Issue Areas</span>
+                              <span className="font-sans text-xs text-muted-foreground">Issue Areas</span>
                             </div>
-                            <div className="font-serif text-xl font-bold text-white">{org.issueAreas.length}</div>
+                            <div className="font-serif text-xl font-bold text-foreground">{org.issueAreas.length}</div>
                           </div>
                         </div>
 
@@ -311,136 +283,10 @@ export default function LobbyingPage() {
                 </div>
               )}
 
-              {/* Top Spenders Tab */}
-              {activeTab === 'spenders' && (
-                <div className="grid gap-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                  {topSpenders.slice(0, 20).map((spender, index) => (
-                    <div key={index} className="bg-[#171717] border-2 border-white/10 p-6 flex items-center justify-between hover:border-[#ff4d00]/50 transition-colors group">
-                      <div className="flex items-center gap-6">
-                        <div className="w-10 h-10 bg-[#ff4d00]/10 border border-[#ff4d00]/30 flex items-center justify-center font-mono font-bold text-[#ff4d00]">
-                          #{index + 1}
-                        </div>
-                        <div>
-                          <h4 className="font-serif text-xl font-bold text-white group-hover:text-[#ff4d00] transition-colors">{spender.client}</h4>
-                          <div className="w-full h-1 bg-gray-800 mt-2 rounded-full overflow-hidden w-48 md:w-64">
-                            <div
-                              className="h-full bg-[#ff4d00]"
-                              style={{ width: `${(spender.totalSpent / topSpenders[0]?.totalSpent) * 100}%` }}
-                            ></div>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="font-mono text-xl font-bold text-white">{formatCurrency(spender.totalSpent)}</div>
-                        <div className="font-mono text-xs text-gray-500 uppercase">Total Spent</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Top Firms Tab */}
-              {activeTab === 'firms' && (
-                <div className="grid gap-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                  {topFirms.slice(0, 20).map((firm, index) => (
-                    <div key={index} className="bg-[#171717] border-2 border-white/10 p-6 flex items-center justify-between hover:border-[#ff4d00]/50 transition-colors group">
-                      <div className="flex items-center gap-6">
-                        <div className="w-10 h-10 bg-white/5 border border-white/10 flex items-center justify-center font-mono font-bold text-white">
-                          #{index + 1}
-                        </div>
-                        <div>
-                          <h4 className="font-serif text-xl font-bold text-white group-hover:text-[#ff4d00] transition-colors">{firm.firm}</h4>
-                          <div className="w-full h-1 bg-gray-800 mt-2 rounded-full overflow-hidden w-48 md:w-64">
-                            <div
-                              className="h-full bg-white"
-                              style={{ width: `${(firm.totalIncome / topFirms[0]?.totalIncome) * 100}%` }}
-                            ></div>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="font-mono text-xl font-bold text-white">{formatCurrency(firm.totalIncome)}</div>
-                        <div className="font-mono text-xs text-gray-500 uppercase">Total Income</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Industries Tab */}
-              {activeTab === 'industries' && (
-                <div className="grid gap-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                  {industries.slice(0, 20).map((industry, index) => (
-                    <div key={index} className="bg-[#171717] border-2 border-white/10 p-6 flex items-center justify-between hover:border-[#ff4d00]/50 transition-colors group">
-                      <div className="flex items-center gap-6">
-                        <div className="w-10 h-10 bg-white/5 border border-white/10 flex items-center justify-center font-mono font-bold text-white">
-                          #{index + 1}
-                        </div>
-                        <div>
-                          <h4 className="font-serif text-xl font-bold text-white group-hover:text-[#ff4d00] transition-colors">{industry.name}</h4>
-                          <div className="w-full h-1 bg-gray-800 mt-2 rounded-full overflow-hidden w-48 md:w-64">
-                            <div
-                              className="h-full bg-[#ff4d00]"
-                              style={{ width: `${(industry.total / industries[0]?.total) * 100}%` }}
-                            ></div>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="font-mono text-xl font-bold text-white">{formatCurrency(industry.total)}</div>
-                        <div className="font-mono text-xs text-gray-500 uppercase">Total Spending</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Recipients Tab */}
-              {activeTab === 'recipients' && (
-                <div className="grid md:grid-cols-2 gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                  <div>
-                    <h3 className="font-mono text-xs font-black text-[#ff4d00] uppercase mb-6 flex items-center gap-2">
-                      <Users size={16} /> 2024 Election Cycle
-                    </h3>
-                    <div className="space-y-4">
-                      {recipients.filter(r => r.cycle === '2024').slice(0, 10).map((recipient, index) => (
-                        <div key={index} className="bg-[#171717] border-2 border-white/10 p-4 flex items-center justify-between hover:border-[#ff4d00]/50 transition-colors">
-                          <div>
-                            <div className="font-serif font-bold text-white">{recipient.recipient}</div>
-                            <div className="text-[10px] font-mono text-gray-500 uppercase">
-                              Inc. Family: {formatCurrency(recipient.fromLobbyistsFamily)}
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <div className="font-mono font-bold text-[#ff4d00]">{formatCurrency(recipient.fromLobbyists)}</div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <h3 className="font-mono text-xs font-black text-white uppercase mb-6 flex items-center gap-2">
-                      <Users size={16} /> 2022 Election Cycle
-                    </h3>
-                    <div className="space-y-4">
-                      {recipients.filter(r => r.cycle === '2022').slice(0, 10).map((recipient, index) => (
-                        <div key={index} className="bg-[#171717] border-2 border-white/10 p-4 flex items-center justify-between hover:border-white transition-colors">
-                          <div>
-                            <div className="font-serif font-bold text-white">{recipient.recipient}</div>
-                            <div className="text-[10px] font-mono text-gray-500 uppercase">
-                              Inc. Family: {formatCurrency(recipient.fromLobbyistsFamily)}
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <div className="font-mono font-bold text-white">{formatCurrency(recipient.fromLobbyists)}</div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
+              {activeTab === 'spenders' && renderWIP("Top Spenders")}
+              {activeTab === 'firms' && renderWIP("Top Lobbying Firms")}
+              {activeTab === 'industries' && renderWIP("Industry Spend")}
+              {activeTab === 'recipients' && renderWIP("Top Recipients")}
             </>
           )}
         </div>

@@ -4,51 +4,51 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* Retro-Futuristic / Editorial Design System Tokens */
-  --background: #0a0a0a;          /* Deepest Charcoal */
-  --foreground: #ffffff;          /* Primary Text */
-  --card: #171717;                /* Card Surface */
-  --card-foreground: #ffffff;
-  --popover: #171717;
-  --popover-foreground: #ffffff;
-  --primary: #ffffff;
-  --primary-foreground: #0a0a0a;
-  --secondary: #a3a3a3;           /* Muted Text */
-  --secondary-foreground: #ffffff;
-  --muted: #333333;               /* Borders / Muted backgrounds */
-  --muted-foreground: #a3a3a3;
-  --accent: #ff4d00;              /* International Orange */
-  --accent-foreground: #ffffff;
-  --destructive: #ef4444;
-  --destructive-foreground: #ffffff;
-  --border: #333333;              /* Subtle grid borders */
-  --input: #171717;
-  --ring: #ff4d00;
+  /* Editorial Design System Tokens */
+  --background: #F9F8F6;          /* Alabaster / Off-white */
+  --foreground: #111827;          /* Primary Text - Deep Charcoal */
+  --card: #FFFFFF;                /* Card Surface */
+  --card-foreground: #111827;
+  --popover: #FFFFFF;
+  --popover-foreground: #111827;
+  --primary: #0B1D3A;             /* Deep Navy */
+  --primary-foreground: #FFFFFF;
+  --secondary: #6B7280;           /* Muted Text */
+  --secondary-foreground: #111827;
+  --muted: #F3F4F6;               /* Subtle Backgrounds */
+  --muted-foreground: #6B7280;
+  --accent: #8B1A10;              /* Deep Crimson/Burgundy */
+  --accent-foreground: #FFFFFF;
+  --destructive: #DC2626;
+  --destructive-foreground: #FFFFFF;
+  --border: #E5E7EB;              /* Soft Borders */
+  --input: #FFFFFF;
+  --ring: #0B1D3A;
   
-  --radius: 0rem;                 /* Brutalist / Sharp edges */
+  --radius: 0.25rem;              /* Subtle rounding */
 }
 
+/* Light mode is default. We can keep dark empty or just map it to the same for now */
 .dark {
-  /* Inherit root values as the design is inherently dark mode */
-  --background: #0a0a0a;
-  --foreground: #ffffff;
-  --card: #171717;
-  --card-foreground: #ffffff;
-  --popover: #171717;
-  --popover-foreground: #ffffff;
-  --primary: #ffffff;
-  --primary-foreground: #0a0a0a;
-  --secondary: #a3a3a3;
-  --secondary-foreground: #ffffff;
-  --muted: #333333;
-  --muted-foreground: #a3a3a3;
-  --accent: #ff4d00;
-  --accent-foreground: #ffffff;
-  --destructive: #ef4444;
-  --destructive-foreground: #ffffff;
-  --border: #333333;
-  --input: #171717;
-  --ring: #ff4d00;
+  --background: #111827;
+  --foreground: #F9F8F6;
+  --card: #1F2937;
+  --card-foreground: #F9F8F6;
+  --popover: #1F2937;
+  --popover-foreground: #F9F8F6;
+  --primary: #F9F8F6;
+  --primary-foreground: #111827;
+  --secondary: #9CA3AF;
+  --secondary-foreground: #F9F8F6;
+  --muted: #374151;
+  --muted-foreground: #9CA3AF;
+  --accent: #FCA5A5;
+  --accent-foreground: #111827;
+  --destructive: #EF4444;
+  --destructive-foreground: #FFFFFF;
+  --border: #374151;
+  --input: #1F2937;
+  --ring: #F9F8F6;
 }
 
 @theme inline {
@@ -71,10 +71,13 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+  --radius-xl: calc(var(--radius) + 6px);
+  
+  --font-serif: var(--font-playfair), ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
 }
 
 @layer base {
@@ -82,52 +85,52 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground font-sans selection:bg-accent selection:text-white;
+    @apply bg-background text-foreground font-sans selection:bg-primary selection:text-white antialiased;
   }
 }
 
 @layer utilities {
   .hover-lift {
-    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.3s ease;
+    transition: transform 0.4s cubic-bezier(0.25, 1, 0.5, 1), box-shadow 0.4s cubic-bezier(0.25, 1, 0.5, 1), border-color 0.4s ease;
   }
   .hover-lift:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 10px 30px -10px rgba(255, 77, 0, 0.15);
+    transform: translateY(-2px);
+    box-shadow: 0 10px 30px -10px rgba(11, 29, 58, 0.1);
   }
   
   .animate-stagger-item {
     opacity: 0;
-    animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    animation: fadeInUpSoft 0.8s cubic-bezier(0.25, 1, 0.5, 1) forwards;
   }
   
   .animate-scale-in {
-    animation: scaleIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    animation: fadeInSoft 0.8s cubic-bezier(0.25, 1, 0.5, 1) forwards;
   }
 
-  .delay-1 { animation-delay: 50ms; }
-  .delay-2 { animation-delay: 100ms; }
-  .delay-3 { animation-delay: 150ms; }
-  .delay-4 { animation-delay: 200ms; }
-  .delay-5 { animation-delay: 250ms; }
-  .delay-6 { animation-delay: 300ms; }
+  .delay-1 { animation-delay: 100ms; }
+  .delay-2 { animation-delay: 200ms; }
+  .delay-3 { animation-delay: 300ms; }
+  .delay-4 { animation-delay: 400ms; }
+  .delay-5 { animation-delay: 500ms; }
+  .delay-6 { animation-delay: 600ms; }
 }
 
-@keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(20px); }
+@keyframes fadeInUpSoft {
+  from { opacity: 0; transform: translateY(15px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes slideInRight {
-  from { opacity: 0; transform: translateX(-20px); }
-  to { opacity: 1; transform: translateX(0); }
+@keyframes fadeInSoft {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
-@keyframes scaleIn {
-  from { opacity: 0; transform: scale(0.95); }
-  to { opacity: 1; transform: scale(1); }
+@keyframes slideInRightSoft {
+  from { opacity: 0; transform: translateX(-15px); }
+  to { opacity: 1; transform: translateX(0); }
 }
 
 @keyframes pulse-slow {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
+  50% { opacity: 0.8; }
 }

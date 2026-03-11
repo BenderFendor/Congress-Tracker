@@ -19,24 +19,24 @@ export const LegislatorCard: React.FC<LegislatorProps> = ({
     risk,
     delay = "delay-1"
 }) => (
-    <div className={`p-8 bg-[#171717] border-2 border-white/10 hover-lift group cursor-pointer relative overflow-hidden animate-stagger-item ${delay}`}>
-        <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 -mr-16 -mt-16 rounded-full blur-3xl group-hover:bg-[#ff4d00]/20 transition-all duration-700 ease-in-out"></div>
+    <div className={`p-8 bg-card border border-border rounded-sm shadow-sm hover-lift group cursor-pointer relative overflow-hidden animate-stagger-item ${delay}`}>
+        <div className="absolute top-0 right-0 w-32 h-32 bg-primary text-primary-foreground/5 -mr-16 -mt-16 rounded-full blur-3xl group-hover:bg-primary text-primary-foreground/10 transition-all duration-700 ease-in-out"></div>
 
-        <div className="flex justify-between items-start mb-6 relative z-10">
-            <div className="w-12 h-12 bg-white/10 flex items-center justify-center text-white font-serif font-black text-xl group-hover:bg-[#ff4d00] group-hover:text-black transition-all duration-300">
-                {name.charAt(5)}
+        <div className="flex justify-between items-start mb-8 relative z-10">
+            <div className="w-12 h-12 rounded-full bg-background border border-border flex items-center justify-center text-primary font-serif text-xl group-hover:bg-primary text-primary-foreground group-hover:text-foreground transition-all duration-500">
+                {name.charAt(0)}
             </div>
-            <span className={`font-mono text-xs font-bold px-3 py-1 ${risk === 'High' ? 'bg-red-900/50 text-red-200' : 'bg-green-900/50 text-green-200'}`}>
+            <span className={`text-[10px] font-semibold px-3 py-1 rounded-full uppercase tracking-wider ${risk === 'High' ? 'bg-[#FCA5A5]/20 text-accent' : 'bg-[#D1FAE5]/50 text-[#065F46]'}`}>
                 {risk} Activity
             </span>
         </div>
 
-        <h3 className="font-serif text-2xl font-bold text-white mb-1 relative z-10 group-hover:translate-x-1 transition-transform duration-300">{name}</h3>
-        <p className="font-mono text-xs font-bold text-gray-500 uppercase mb-6 relative z-10">{state} — {party}</p>
+        <h3 className="font-serif text-2xl text-primary mb-2 relative z-10 transition-transform duration-500">{name}</h3>
+        <p className="text-[12px] font-medium text-muted-foreground uppercase tracking-wide mb-8 relative z-10">{state} — {party}</p>
 
-        <div className="pt-6 border-t-2 border-white/10 flex justify-between items-center relative z-10">
-            <span className="font-mono text-xs font-bold text-gray-500">CASH ON HAND</span>
-            <span className="font-mono text-lg font-bold text-white">{cash}</span>
+        <div className="pt-6 border-t border-border flex justify-between items-center relative z-10">
+            <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">CASH ON HAND</span>
+            <span className="text-lg font-serif text-primary">{cash}</span>
         </div>
     </div>
 );

@@ -130,7 +130,7 @@ export default function BillsPage() {
   })
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white font-sans selection:bg-[#ff4d00] selection:text-white pb-20">
+    <div className="min-h-screen bg-background text-foreground font-sans selection:bg-accent text-accent-foreground selection:text-foreground pb-20">
 
 
 
@@ -140,16 +140,16 @@ export default function BillsPage() {
         <div className="mb-12 animate-stagger-item delay-1">
           <div className="flex flex-col lg:flex-row gap-6 mb-8">
             <div className="flex-1 relative">
-              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-[#ff4d00]" size={20} />
+              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-accent" size={20} />
               <input
                 type="text"
                 placeholder="SEARCH LEGISLATION..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full bg-[#171717] border-2 border-white/10 px-12 py-4 text-white font-mono font-bold placeholder:text-gray-600 focus:outline-none focus:border-[#ff4d00] transition-all uppercase tracking-wider"
+                className="w-full bg-card border-2 border-border px-12 py-4 text-foreground font-mono font-bold placeholder:text-muted-foreground focus:outline-none focus:border-accent transition-all uppercase tracking-wider"
               />
             </div>
-            <button className="flex items-center justify-center gap-2 bg-white/5 border-2 border-white/10 px-8 py-4 font-mono font-bold uppercase hover:bg-white/10 hover:border-[#ff4d00] transition-all text-[#ff4d00]">
+            <button className="flex items-center justify-center gap-2 bg-muted border-2 border-border px-8 py-4 font-mono font-bold uppercase hover:bg-muted/50 hover:border-accent transition-all text-accent">
               <Filter size={16} />
               Advanced Filters
             </button>
@@ -159,7 +159,7 @@ export default function BillsPage() {
             <select
               value={selectedStatus}
               onChange={(e) => setSelectedStatus(e.target.value)}
-              className="bg-[#171717] border-2 border-white/10 px-4 py-3 text-white font-mono text-sm uppercase focus:border-[#ff4d00] outline-none appearance-none"
+              className="bg-card border-2 border-border px-4 py-3 text-foreground font-mono text-sm uppercase focus:border-accent outline-none appearance-none"
             >
               <option value="all">All Statuses</option>
               <option value="committee">Committee Review</option>
@@ -170,7 +170,7 @@ export default function BillsPage() {
             <select
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
-              className="bg-[#171717] border-2 border-white/10 px-4 py-3 text-white font-mono text-sm uppercase focus:border-[#ff4d00] outline-none appearance-none"
+              className="bg-card border-2 border-border px-4 py-3 text-foreground font-mono text-sm uppercase focus:border-accent outline-none appearance-none"
             >
               <option value="all">All Categories</option>
               <option value="environment">Environment</option>
@@ -182,7 +182,7 @@ export default function BillsPage() {
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
-              className="bg-[#171717] border-2 border-white/10 px-4 py-3 text-white font-mono text-sm uppercase focus:border-[#ff4d00] outline-none appearance-none"
+              className="bg-card border-2 border-border px-4 py-3 text-foreground font-mono text-sm uppercase focus:border-accent outline-none appearance-none"
             >
               <option value="recent">Most Recent</option>
               <option value="lobbying">Lobbying Spend</option>
@@ -193,43 +193,43 @@ export default function BillsPage() {
         </div>
 
         {/* Results */}
-        <div className="mb-6 flex items-center gap-2 text-gray-500 font-mono text-xs uppercase tracking-widest">
-          <div className="w-2 h-2 bg-[#ff4d00] rounded-full animate-pulse"></div>
+        <div className="mb-6 flex items-center gap-2 text-muted-foreground font-sans text-xs text-muted-foreground tracking-wide">
+          <div className="w-2 h-2 bg-accent text-accent-foreground rounded-full animate-pulse"></div>
           Showing {filteredBills.length} of {bills.length} bills
         </div>
 
         {loading ? (
           <div className="flex justify-center py-20">
-            <div className="w-12 h-12 border-4 border-[#ff4d00] border-t-transparent rounded-full animate-spin"></div>
+            <div className="w-12 h-12 border-4 border-accent border-t-transparent rounded-full animate-spin"></div>
           </div>
         ) : error ? (
           <div className="text-red-500 font-mono text-center py-20">{error}</div>
         ) : (
           <div className="space-y-6">
             {filteredBills.map((bill, idx) => (
-              <div key={bill.number + bill.type + idx} className="bg-[#171717] border-2 border-white/10 p-6 hover:border-[#ff4d00]/50 transition-all duration-300 group animate-stagger-item">
+              <div key={bill.number + bill.type + idx} className="bg-card border-2 border-border p-6 hover:border-accent/50 transition-all duration-300 group animate-stagger-item">
                 <div className="flex flex-col md:flex-row justify-between items-start gap-6">
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-4">
-                      <span className="font-mono text-xs font-black bg-white/10 px-2 py-1 text-[#ff4d00] uppercase">
+                      <span className="font-mono text-xs font-bold bg-muted/50 px-2 py-1 text-accent uppercase">
                         {bill.type}.{bill.number}
                       </span>
                       <span className={`font-mono text-xs font-bold px-2 py-1 uppercase ${bill.originChamber === 'Senate' ? 'text-blue-400 bg-blue-900/20' :
-                        bill.originChamber === 'House' ? 'text-green-400 bg-green-900/20' : 'text-gray-400'
+                        bill.originChamber === 'House' ? 'text-green-400 bg-green-900/20' : 'text-muted-foreground'
                         }`}>
                         {bill.originChamber}
                       </span>
                     </div>
 
-                    <h2 className="font-serif text-2xl font-bold text-white mb-3 group-hover:text-[#ff4d00] transition-colors leading-tight">
+                    <h2 className="font-serif text-2xl font-bold text-foreground mb-3 group-hover:text-accent transition-colors leading-tight">
                       {bill.title}
                     </h2>
 
-                    <p className="font-mono text-sm text-gray-400 mb-4 border-l-2 border-white/20 pl-4">
+                    <p className="font-mono text-sm text-muted-foreground mb-4 border-l-2 border-border pl-4">
                       {bill.latestAction?.text || "No recent action."}
                     </p>
 
-                    <div className="flex flex-wrap items-center gap-6 text-xs font-mono font-bold text-gray-500 uppercase">
+                    <div className="flex flex-wrap items-center gap-6 text-xs font-mono font-bold text-muted-foreground uppercase">
                       <div className="flex items-center gap-2">
                         <Calendar size={14} />
                         Updated: {bill.updateDate}
@@ -298,7 +298,7 @@ export default function BillsPage() {
                         }
                       }
                     }}
-                    className="flex items-center gap-2 px-6 py-3 border border-white/20 hover:bg-[#ff4d00] hover:text-black hover:border-[#ff4d00] transition-all font-mono text-xs font-bold uppercase tracking-widest"
+                    className="flex items-center gap-2 px-6 py-3 border border-border hover:bg-accent hover:text-accent-foreground hover:text-black hover:border-accent transition-all font-sans text-xs font-semibold tracking-wide tracking-wide"
                   >
                     {expanded[bill.url] ? "Hide Details" : "View Details"}
                     {expanded[bill.url] ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
@@ -307,20 +307,20 @@ export default function BillsPage() {
 
                 {/* Expanded Details */}
                 {expanded[bill.url] && (
-                  <div className="mt-8 pt-8 border-t-2 border-white/10 animate-fadeInUp">
-                    {detailsLoading[bill.url] && <div className="font-mono text-xs text-[#ff4d00] animate-pulse">LOADING INTELLIGENCE...</div>}
+                  <div className="mt-8 pt-8 border-t-2 border-border animate-fadeInUp">
+                    {detailsLoading[bill.url] && <div className="font-mono text-xs text-accent animate-pulse">LOADING INTELLIGENCE...</div>}
                     {detailsError[bill.url] && <div className="text-red-500 font-mono text-xs">{detailsError[bill.url]}</div>}
 
                     {details[bill.url] && (
                       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                         <div className="lg:col-span-1 space-y-6">
                           <div>
-                            <h3 className="font-mono text-xs font-black text-[#ff4d00] uppercase mb-2">Metadata</h3>
+                            <h3 className="font-mono text-xs font-bold text-accent uppercase mb-2">Metadata</h3>
                             <div className="space-y-2">
-                              <a href={bill.legislationUrl} target="_blank" rel="noopener noreferrer" className="block font-mono text-xs text-white hover:text-[#ff4d00] underline decoration-white/30 underline-offset-4">
+                              <a href={bill.legislationUrl} target="_blank" rel="noopener noreferrer" className="block font-mono text-xs text-foreground hover:text-accent underline decoration-white/30 underline-offset-4">
                                 Official Congress.gov Page <ExternalLink size={10} className="inline ml-1" />
                               </a>
-                              <a href="#" onClick={e => { e.preventDefault(); window.open(`/api/congress-proxy?url=${encodeURIComponent(bill.url + '?format=json')}`, '_blank') }} className="block font-mono text-xs text-gray-500 hover:text-white underline decoration-white/10 underline-offset-4">
+                              <a href="#" onClick={e => { e.preventDefault(); window.open(`/api/congress-proxy?url=${encodeURIComponent(bill.url + '?format=json')}`, '_blank') }} className="block font-mono text-xs text-muted-foreground hover:text-foreground underline decoration-white/10 underline-offset-4">
                                 Raw JSON Data
                               </a>
                             </div>
@@ -328,10 +328,10 @@ export default function BillsPage() {
 
                           {details[bill.url]?.sponsors && details[bill.url]!.sponsors!.length > 0 && (
                             <div>
-                              <h3 className="font-mono text-xs font-black text-[#ff4d00] uppercase mb-2">Sponsors</h3>
+                              <h3 className="font-mono text-xs font-bold text-accent uppercase mb-2">Sponsors</h3>
                               <ul className="space-y-1">
                                 {details[bill.url]!.sponsors!.map((s: any, i: number) => (
-                                  <li key={i} className="font-serif text-sm text-white">{s.fullName}</li>
+                                  <li key={i} className="font-serif text-sm text-foreground">{s.fullName}</li>
                                 ))}
                               </ul>
                             </div>
@@ -339,10 +339,10 @@ export default function BillsPage() {
 
                           {committeesData[bill.url] && (
                             <div>
-                              <h3 className="font-mono text-xs font-black text-[#ff4d00] uppercase mb-2">Committees</h3>
+                              <h3 className="font-mono text-xs font-bold text-accent uppercase mb-2">Committees</h3>
                               <ul className="space-y-1">
                                 {committeesData[bill.url].committees?.map((c: any, i: number) => (
-                                  <li key={i} className="font-mono text-xs text-gray-400">{c.name}</li>
+                                  <li key={i} className="font-mono text-xs text-muted-foreground">{c.name}</li>
                                 ))}
                               </ul>
                             </div>
@@ -352,13 +352,13 @@ export default function BillsPage() {
                         <div className="lg:col-span-2 space-y-6">
                           {actionsData[bill.url] && (
                             <div>
-                              <h3 className="font-mono text-xs font-black text-[#ff4d00] uppercase mb-4">Recent Actions</h3>
-                              <div className="space-y-4 border-l border-white/10 pl-4">
+                              <h3 className="font-mono text-xs font-bold text-accent uppercase mb-4">Recent Actions</h3>
+                              <div className="space-y-4 border-l border-border pl-4">
                                 {actionsData[bill.url].actions?.slice(0, 5).map((action: any, i: number) => (
                                   <div key={i} className="relative">
-                                    <div className="absolute -left-[21px] top-1.5 w-2 h-2 rounded-full bg-white/20"></div>
-                                    <p className="font-serif text-sm text-white mb-1">{action.text}</p>
-                                    <span className="font-mono text-[10px] text-gray-500 uppercase">{action.actionDate}</span>
+                                    <div className="absolute -left-[21px] top-1.5 w-2 h-2 rounded-full bg-card/20"></div>
+                                    <p className="font-serif text-sm text-foreground mb-1">{action.text}</p>
+                                    <span className="font-mono text-[10px] text-muted-foreground uppercase">{action.actionDate}</span>
                                   </div>
                                 ))}
                               </div>
@@ -367,8 +367,8 @@ export default function BillsPage() {
 
                           {/* Member Cards Grid */}
                           {details[bill.url]?.sponsors?.some(s => s.bioguideId && memberDetails[s.bioguideId]) && (
-                            <div className="pt-6 border-t border-white/10">
-                              <h3 className="font-mono text-xs font-black text-[#ff4d00] uppercase mb-4">Sponsor Profiles</h3>
+                            <div className="pt-6 border-t border-border">
+                              <h3 className="font-mono text-xs font-bold text-accent uppercase mb-4">Sponsor Profiles</h3>
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 {details[bill.url]!.sponsors!.map((s, i) => {
                                   if (!s.bioguideId || !memberDetails[s.bioguideId]) return null;
@@ -378,14 +378,14 @@ export default function BillsPage() {
                                   const partyColor = isDem ? 'border-blue-500' : isRep ? 'border-red-500' : 'border-yellow-500';
 
                                   return (
-                                    <div key={s.bioguideId} className={`bg-black border-l-4 ${partyColor} p-4 flex gap-4 items-start`}>
+                                    <div key={s.bioguideId} className={`bg-background border-l-4 ${partyColor} p-4 flex gap-4 items-start`}>
                                       {m.depiction?.imageUrl && (
                                         <img src={m.depiction.imageUrl} alt={m.directOrderName} className="w-12 h-12 object-cover grayscale contrast-125" />
                                       )}
                                       <div>
-                                        <h4 className="font-serif font-bold text-white leading-none mb-1">{m.directOrderName}</h4>
-                                        <p className="font-mono text-xs text-gray-500 uppercase mb-2">{m.state} — {m.partyHistory?.[0]?.partyName}</p>
-                                        <div className="flex gap-2 text-[10px] font-mono font-bold text-gray-600">
+                                        <h4 className="font-serif font-bold text-foreground leading-none mb-1">{m.directOrderName}</h4>
+                                        <p className="font-mono text-xs text-muted-foreground uppercase mb-2">{m.state} — {m.partyHistory?.[0]?.partyName}</p>
+                                        <div className="flex gap-2 text-[10px] font-mono font-bold text-muted-foreground">
                                           <span>BORN: {m.birthYear}</span>
                                           <span>•</span>
                                           <span>{m.currentMember ? 'ACTIVE' : 'INACTIVE'}</span>
@@ -408,7 +408,7 @@ export default function BillsPage() {
         )}
 
         <div className="flex justify-center mt-12 mb-20">
-          <button className="px-8 py-4 bg-white/5 border-2 border-white/10 hover:bg-[#ff4d00] hover:text-black hover:border-[#ff4d00] transition-all font-mono text-sm font-bold uppercase tracking-widest">
+          <button className="px-8 py-4 bg-muted border-2 border-border hover:bg-accent hover:text-accent-foreground hover:text-black hover:border-accent transition-all font-sans text-sm font-semibold tracking-wide">
             Load More Legislation
           </button>
         </div>

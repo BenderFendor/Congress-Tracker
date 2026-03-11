@@ -26,13 +26,13 @@ export function InfluenceNetwork({
   const getNodeColor = (type: string, party?: string) => {
     switch (type) {
       case "legislator":
-        return party === "Democrat" ? "bg-blue-500" : party === "Republican" ? "bg-red-500" : "bg-gray-500"
+        return party === "Democrat" ? "bg-blue-500" : party === "Republican" ? "bg-red-500" : "bg-muted0"
       case "organization":
         return "bg-green-500"
       case "bill":
         return "bg-purple-500"
       default:
-        return "bg-gray-500"
+        return "bg-muted0"
     }
   }
 
@@ -65,7 +65,7 @@ export function InfluenceNetwork({
                   .map((node, index) => (
                     <div key={node.id} className="flex flex-col items-center">
                       <div
-                        className={`${getNodeColor(node.type)} ${getNodeSize(node.type, node.amount)} rounded-full flex items-center justify-center text-white text-xs font-bold`}
+                        className={`${getNodeColor(node.type)} ${getNodeSize(node.type, node.amount)} rounded-full flex items-center justify-center text-foreground text-xs font-bold`}
                       >
                         {node.name.substring(0, 2).toUpperCase()}
                       </div>
@@ -86,7 +86,7 @@ export function InfluenceNetwork({
                   .map((node, index) => (
                     <div key={node.id} className="flex flex-col items-center">
                       <div
-                        className={`${getNodeColor(node.type, node.party)} ${getNodeSize(node.type)} rounded-full flex items-center justify-center text-white text-xs font-bold`}
+                        className={`${getNodeColor(node.type, node.party)} ${getNodeSize(node.type)} rounded-full flex items-center justify-center text-foreground text-xs font-bold`}
                       >
                         {node.name
                           .split(" ")
@@ -110,7 +110,7 @@ export function InfluenceNetwork({
                   .map((node, index) => (
                     <div key={node.id} className="flex flex-col items-center">
                       <div
-                        className={`${getNodeColor(node.type)} ${getNodeSize(node.type)} rounded-full flex items-center justify-center text-white text-xs font-bold`}
+                        className={`${getNodeColor(node.type)} ${getNodeSize(node.type)} rounded-full flex items-center justify-center text-foreground text-xs font-bold`}
                       >
                         {index + 1}
                       </div>

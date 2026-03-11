@@ -69,7 +69,7 @@ export default function CongressTracker() {
     if (loading) {
       return (
         <div className="flex items-center justify-center h-64">
-          <div className="w-12 h-12 border-4 border-[#ff4d00] border-t-transparent rounded-full animate-spin"></div>
+          <div className="w-12 h-12 border-4 border-[#0B1D3A] border-t-transparent rounded-full animate-spin"></div>
         </div>
       );
     }
@@ -78,48 +78,48 @@ export default function CongressTracker() {
       case 'overview':
         return (
           <div key={animKey} className="pb-12">
-            <div className="mb-16 max-w-4xl border-l-4 border-[#ff4d00] pl-8 animate-stagger-item delay-1">
-              <h1 className="font-serif text-5xl md:text-7xl font-black leading-none mb-6 text-white tracking-tighter">
-                PUBLIC <br />
-                <span className="text-gray-500">TRANSPARENCY</span>
+            <div className="mb-20 max-w-4xl animate-stagger-item delay-1">
+              <h1 className="font-serif text-5xl md:text-7xl leading-tight mb-6 text-primary tracking-tight">
+                Public <br />
+                <span className="text-muted-foreground">Transparency</span>
               </h1>
-              <p className="font-mono text-lg font-bold text-gray-400 leading-relaxed max-w-2xl">
+              <p className="text-lg text-muted-foreground leading-relaxed max-w-2xl font-light">
                 Real-time monitoring of federal legislative activity, financial disclosures, and lobbying records.
               </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-16">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-20">
               <StatBox label="Active Members" value="535" delay="delay-1" />
               <StatBox label="Recent Bills" value={bills.length > 0 ? "15K+" : "Loading..."} trend="Active Session" delay="delay-2" />
-              <StatBox label="Lobbying Reports" value={filings.length > 0 ? "20K+" : "Loading..."} trend="Q3 2024" trendColor="text-[#ff4d00]" delay="delay-3" />
-              <StatBox label="Recent Trades" value={trades.length > 0 ? "10K+" : "Loading..."} trend="High Activity" trendColor="text-[#ff4d00]" delay="delay-4" />
+              <StatBox label="Lobbying Reports" value={filings.length > 0 ? "20K+" : "Loading..."} trend="Q3 2024" delay="delay-3" />
+              <StatBox label="Recent Trades" value={trades.length > 0 ? "10K+" : "Loading..."} trend="High Activity" delay="delay-4" />
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 border-t-2 border-white/20 pt-8 animate-stagger-item delay-5">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-12 border-t border-border pt-12 animate-stagger-item delay-5">
               <Briefing items={displayBriefing} />
 
-              <div className="bg-[#171717] p-8 border-2 border-white/10 hover:border-white/30 transition-colors duration-500">
+              <div className="bg-card p-8 border border-border rounded-sm shadow-sm hover:shadow-md transition-shadow duration-500">
                 <div className="flex items-center gap-3 mb-6">
-                  <Info className="text-[#ff4d00]" size={24} />
-                  <h3 className="font-mono text-sm font-black uppercase text-white">Data Sources</h3>
+                  <Info className="text-primary" size={20} />
+                  <h3 className="text-[12px] font-semibold uppercase tracking-wide text-primary">Data Sources</h3>
                 </div>
 
-                <div className="space-y-6 font-serif text-gray-300 leading-relaxed">
+                <div className="space-y-6 font-serif text-foreground leading-relaxed">
                   <p>
-                    <strong>Legislators & Bills:</strong> Congress.gov API
+                    <strong className="font-sans font-medium text-muted-foreground">Legislators & Bills:</strong> Congress.gov API
                   </p>
                   <p>
-                    <strong>Lobbying:</strong> Senate LDA API
+                    <strong className="font-sans font-medium text-muted-foreground">Lobbying:</strong> Senate LDA API
                   </p>
                   <p>
-                    <strong>Financials:</strong> STOCK Act Disclosures (Mock/ProPublica)
+                    <strong className="font-sans font-medium text-muted-foreground">Financials:</strong> STOCK Act Disclosures (Mock/ProPublica)
                   </p>
                 </div>
 
-                <div className="mt-8 pt-6 border-t border-white/10">
-                  <div className="flex items-center gap-2 text-gray-500">
+                <div className="mt-8 pt-6 border-t border-border">
+                  <div className="flex items-center gap-2 text-muted-foreground">
                     <Calendar size={14} />
-                    <span className="font-mono text-xs font-bold uppercase">Last Updated: {new Date().toLocaleDateString()}</span>
+                    <span className="text-[11px] font-medium uppercase tracking-wide">Last Updated: {new Date().toLocaleDateString()}</span>
                   </div>
                 </div>
               </div>
@@ -131,7 +131,7 @@ export default function CongressTracker() {
         return (
           <div key={animKey}>
             <SectionHeader title="Legislator Directory" subtitle="118th Congress" />
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {legislators.map((l, i) => (
                 <LegislatorCard
                   key={l.id}
@@ -155,13 +155,13 @@ export default function CongressTracker() {
             <SectionHeader title="Financial Disclosures" subtitle="Recent Transactions" />
             <DataGrid headers={['Ticker', 'Company', 'Type', 'Amount', 'Date', 'Official']}>
               {trades.map((t, i) => (
-                <div key={i} className={`grid grid-cols-6 hover:bg-white/5 transition-colors items-center group animate-stagger-item delay-${(i % 5) + 1}`}>
-                  <div className="p-4 border-r-2 border-white/10 font-black text-[#ff4d00] group-hover:translate-x-1 transition-transform">{t.ticker}</div>
-                  <div className="p-4 border-r-2 border-white/10 text-white font-bold truncate">{t.asset_description}</div>
-                  <div className={`p-4 border-r-2 border-white/10 font-black ${t.type.includes('sale') ? 'text-red-500' : 'text-green-500'}`}>{t.type.toUpperCase()}</div>
-                  <div className="p-4 border-r-2 border-white/10 text-white font-bold">{t.amount}</div>
-                  <div className="p-4 border-r-2 border-white/10 text-gray-500 font-bold">{t.transaction_date}</div>
-                  <div className="p-4 font-serif font-bold text-white group-hover:underline decoration-[#ff4d00] underline-offset-4">{t.representative}</div>
+                <div key={i} className={`grid grid-cols-6 hover:bg-muted transition-colors items-center group animate-stagger-item delay-${(i % 5) + 1}`}>
+                  <div className="p-4 border-r border-border font-semibold text-primary group-hover:pl-5 transition-all">{t.ticker}</div>
+                  <div className="p-4 border-r border-border text-foreground truncate">{t.asset_description}</div>
+                  <div className={`p-4 border-r border-border font-medium ${t.type.includes('sale') ? 'text-[#DC2626]' : 'text-[#059669]'}`}>{t.type.toUpperCase()}</div>
+                  <div className="p-4 border-r border-border text-foreground">{t.amount}</div>
+                  <div className="p-4 border-r border-border text-muted-foreground">{t.transaction_date}</div>
+                  <div className="p-4 font-serif text-primary group-hover:text-accent transition-colors">{t.representative}</div>
                 </div>
               ))}
             </DataGrid>
@@ -174,11 +174,11 @@ export default function CongressTracker() {
             <SectionHeader title="Recent Legislation" subtitle="Active Bills" />
             <DataGrid headers={['ID', 'Title', 'Status', 'Date']}>
               {bills.map((b, i) => (
-                <div key={i} className={`grid grid-cols-4 hover:bg-white/5 transition-colors items-center group animate-stagger-item delay-${(i % 5) + 1}`}>
-                  <div className="p-4 border-r-2 border-white/10 font-black text-[#ff4d00]">{b.id}</div>
-                  <div className="p-4 border-r-2 border-white/10 text-white font-bold">{b.title}</div>
-                  <div className="p-4 border-r-2 border-white/10 text-white font-bold">{b.status}</div>
-                  <div className="p-4 text-gray-500 font-bold">{b.date}</div>
+                <div key={i} className={`grid grid-cols-4 hover:bg-muted transition-colors items-center group animate-stagger-item delay-${(i % 5) + 1}`}>
+                  <div className="p-4 border-r border-border font-semibold text-primary">{b.id}</div>
+                  <div className="p-4 border-r border-border text-foreground">{b.title}</div>
+                  <div className="p-4 border-r border-border text-foreground">{b.status}</div>
+                  <div className="p-4 text-muted-foreground">{b.date}</div>
                 </div>
               ))}
             </DataGrid>
@@ -186,25 +186,23 @@ export default function CongressTracker() {
         );
 
       case 'networth':
-        // Placeholder as we don't have a real net worth API yet
         return (
           <div key={animKey}>
             <SectionHeader title="Wealth Analysis" subtitle="Net Worth Estimates" />
-            <div className="p-12 text-center border-2 border-white/10 bg-[#171717]">
-              <h3 className="text-2xl font-bold text-white mb-4">Data Unavailable</h3>
-              <p className="text-gray-400">Real-time net worth data requires a premium API subscription.</p>
+            <div className="p-16 text-center bg-card border border-border rounded-sm shadow-sm">
+              <h3 className="font-serif text-3xl text-primary mb-4">Data Unavailable</h3>
+              <p className="text-muted-foreground max-w-md mx-auto">Real-time net worth data requires a premium API subscription or deeper integration with disclosure records.</p>
             </div>
           </div>
         );
 
       case 'portfolios':
-        // Placeholder
         return (
           <div key={animKey}>
             <SectionHeader title="Sector Allocation" subtitle="Aggregate Holdings" />
-            <div className="p-12 text-center border-2 border-white/10 bg-[#171717]">
-              <h3 className="text-2xl font-bold text-white mb-4">Analysis Pending</h3>
-              <p className="text-gray-400">Sector allocation analysis requires aggregating all trade data.</p>
+            <div className="p-16 text-center bg-card border border-border rounded-sm shadow-sm">
+              <h3 className="font-serif text-3xl text-primary mb-4">Analysis Pending</h3>
+              <p className="text-muted-foreground max-w-md mx-auto">Sector allocation analysis requires aggregating all historical trade data across available members.</p>
             </div>
           </div>
         );
@@ -215,36 +213,34 @@ export default function CongressTracker() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white font-sans selection:bg-[#ff4d00] selection:text-white pb-20">
-
-
+    <div className="min-h-screen pb-20">
 
       {/* Main Container */}
-      <main className="max-w-[1600px] mx-auto px-6 md:px-12 pt-12 md:pt-16">
+      <main className="max-w-[1400px] mx-auto px-6 md:px-12 pt-12 md:pt-16">
         {renderContent()}
       </main>
 
       {/* Mobile Nav */}
-      <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-[#171717] border-t-2 border-white/10 p-4 flex justify-between overflow-x-auto z-50">
-        <button onClick={() => setActiveTab('overview')} className="flex flex-col items-center gap-2 min-w-[60px] text-gray-400 hover:text-[#ff4d00]">
+      <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-card border-t border-border p-4 flex justify-between overflow-x-auto z-50 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+        <button onClick={() => setActiveTab('overview')} className="flex flex-col items-center gap-2 min-w-[60px] text-muted-foreground hover:text-primary transition-colors">
           <Grid size={20} />
-          <span className="text-[10px] font-mono font-black uppercase">Home</span>
+          <span className="text-[10px] font-semibold uppercase tracking-wide">Home</span>
         </button>
-        <button onClick={() => setActiveTab('legislators')} className="flex flex-col items-center gap-2 min-w-[60px] text-gray-400 hover:text-[#ff4d00]">
+        <button onClick={() => setActiveTab('legislators')} className="flex flex-col items-center gap-2 min-w-[60px] text-muted-foreground hover:text-primary transition-colors">
           <Users size={20} />
-          <span className="text-[10px] font-mono font-black uppercase">PPL</span>
+          <span className="text-[10px] font-semibold uppercase tracking-wide">PPL</span>
         </button>
-        <button onClick={() => window.location.href = '/bills'} className="flex flex-col items-center gap-2 min-w-[60px] text-gray-400 hover:text-[#ff4d00]">
+        <button onClick={() => window.location.href = '/bills'} className="flex flex-col items-center gap-2 min-w-[60px] text-muted-foreground hover:text-primary transition-colors">
           <FileText size={20} />
-          <span className="text-[10px] font-mono font-black uppercase">Bills</span>
+          <span className="text-[10px] font-semibold uppercase tracking-wide">Bills</span>
         </button>
-        <button onClick={() => setActiveTab('stocks')} className="flex flex-col items-center gap-2 min-w-[60px] text-gray-400 hover:text-[#ff4d00]">
+        <button onClick={() => setActiveTab('stocks')} className="flex flex-col items-center gap-2 min-w-[60px] text-muted-foreground hover:text-primary transition-colors">
           <TrendingUp size={20} />
-          <span className="text-[10px] font-mono font-black uppercase">$</span>
+          <span className="text-[10px] font-semibold uppercase tracking-wide">$</span>
         </button>
-        <button onClick={() => setActiveTab('networth')} className="flex flex-col items-center gap-2 min-w-[60px] text-gray-400 hover:text-[#ff4d00]">
+        <button onClick={() => setActiveTab('networth')} className="flex flex-col items-center gap-2 min-w-[60px] text-muted-foreground hover:text-primary transition-colors">
           <PieChart size={20} />
-          <span className="text-[10px] font-mono font-black uppercase">Worth</span>
+          <span className="text-[10px] font-semibold uppercase tracking-wide">Worth</span>
         </button>
       </div>
 
