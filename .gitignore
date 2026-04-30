@@ -1,0 +1,10 @@
+# Local secrets
+.env
+.env.*
+!.env.example
+
+# Agent scratch files
+.codex
+
+# Generated insta snapshots pending review
+*.snap.new
