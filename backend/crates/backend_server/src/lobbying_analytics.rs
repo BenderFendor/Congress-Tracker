@@ -22,11 +22,7 @@ pub fn routes() -> Router<Arc<AppState>> {
 
 fn parse_dollar(value: &Option<String>) -> f64 {
     match value {
-        Some(s) => s
-            .replace([',', '$'], "")
-            .trim()
-            .parse()
-            .unwrap_or(0.0),
+        Some(s) => s.replace([',', '$'], "").trim().parse().unwrap_or(0.0),
         None => 0.0,
     }
 }
@@ -92,7 +88,7 @@ async fn fetch_filings_for_year(
     Ok(all)
 }
 
-// ── Overview endpoint ──
+// Overview endpoint
 
 #[derive(Serialize)]
 struct OverviewResponse {
@@ -217,7 +213,7 @@ fn has_grassroots_keywords(filing: &lobbying_client::Filing) -> bool {
     false
 }
 
-// ── Filings list endpoint ──
+// Filings list endpoint
 
 #[derive(Serialize)]
 struct FilingsListResponse {
@@ -363,7 +359,7 @@ async fn filings_list(
     }))
 }
 
-// ── Influence flow endpoint ──
+// Influence flow endpoint
 
 #[derive(Serialize)]
 struct InfluenceFlowResponse {
@@ -633,7 +629,7 @@ fn classify_impact(activity: &LobbyingActivity) -> String {
     "Policy".to_string()
 }
 
-// ── Top sectors endpoint ──
+// Top sectors endpoint
 
 #[derive(Serialize)]
 struct TopSectorsResponse {

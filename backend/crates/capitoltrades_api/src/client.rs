@@ -345,7 +345,7 @@ impl Client {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+
     use std::process::Command;
 
     #[test]

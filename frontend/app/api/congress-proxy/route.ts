@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid API url' }, { status: 400 })
   }
 
-  let headers: Record<string, string> = { 'Accept': 'application/json' }
+  const headers: Record<string, string> = { 'Accept': 'application/json' }
 
   // Handle Congress API - requires API key via X-Api-Key header
   if (isCongressAPI) {
@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
     const apiRes = await fetch(url, { headers })
     const data = await apiRes.json()
     return NextResponse.json(data, { status: apiRes.status })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : "Unknown error" }, { status: 500 })
   }
 }

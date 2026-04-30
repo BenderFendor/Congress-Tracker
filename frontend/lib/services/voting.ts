@@ -1,8 +1,7 @@
-// lib/services/voting.ts
 // Congressional voting records via Congress.gov API.
 // Based on voting schemas from unitedstates/congress community project (CC0).
 
-const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:4020';
+import { BACKEND_URL } from "@/lib/constants";
 
 export interface VoteRecord {
   vote_id: string;
@@ -64,7 +63,7 @@ export async function getRecentVotes(chamber?: 'house' | 'senate'): Promise<Vote
   params.set('limit', '20');
 
   try {
-    const res = await fetch(`${API_BASE}/api/congress/votes?${params}`);
+    const res = await fetch(`${BACKEND_URL}/api/congress/votes?${params}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     return data.votes || [];
@@ -75,7 +74,6 @@ export async function getRecentVotes(chamber?: 'house' | 'senate'): Promise<Vote
 }
 
 export async function getMemberVotes(bioguideId: string): Promise<Vote[]> {
-  try {
     const allVotes = await getRecentVotes();
     const memberVotes: Vote[] = [];
 
@@ -87,14 +85,9 @@ export async function getMemberVotes(bioguideId: string): Promise<Vote[]> {
     }
 
     return memberVotes;
-  } catch (error) {
-    console.error('Failed to fetch member votes:', error);
-    return [];
-  }
 }
 
 export async function getVotesOnTopic(topic: string): Promise<Vote[]> {
-  try {
     const allVotes = await getRecentVotes();
     const topicLower = topic.toLowerCase();
     const filtered = allVotes.filter(v =>
@@ -103,8 +96,4 @@ export async function getVotesOnTopic(topic: string): Promise<Vote[]> {
     );
 
     return filtered.map(v => mapVoteRecordToVote(v, ""));
-  } catch (error) {
-    console.error('Failed to fetch votes on topic:', error);
-    return [];
-  }
 }

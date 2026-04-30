@@ -8,11 +8,7 @@ import { getAllLegislators, type Legislator } from "@/lib/services/legislators"
 import { getRecentTrades, type StockTrade } from "@/lib/services/stocks"
 import { getRecentFilings, type Filing } from "@/lib/services/lobbying"
 import { getRecentBills, type Bill } from "@/lib/services/bills"
-
-function compactNumber(value: number) {
-  if (!Number.isFinite(value)) return "0"
-  return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(value)
-}
+import { compactNumber, formatDate } from "@/lib/format"
 
 function numericValue(value: unknown) {
   if (typeof value === "number") return Number.isFinite(value) ? value : 0
@@ -21,13 +17,6 @@ function numericValue(value: unknown) {
     return Number.isFinite(parsed) ? parsed : 0
   }
   return 0
-}
-
-function formatDate(value?: string) {
-  if (!value) return "No date"
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
 }
 
 export default function HomePage() {

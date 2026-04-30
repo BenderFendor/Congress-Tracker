@@ -1,4 +1,4 @@
-import { fetchCandidates, fetchReceipts, Candidate, Receipt, PaginatedResponse } from '@/lib/api';
+import { fetchCandidates, fetchReceipts, Candidate, Receipt } from '@/lib/api';
 
 export interface FECandidate {
     candidate_id: string;
@@ -84,7 +84,7 @@ export interface FECCommittee {
     candidate_id?: string;
 }
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:4020';
+import { BACKEND_URL } from "@/lib/constants";
 
 export async function getCommittees(): Promise<FECCommittee[]> {
     try {

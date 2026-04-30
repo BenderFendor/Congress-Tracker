@@ -38,7 +38,7 @@ export function CampaignFinanceChart({
     return `${safeName} ${(safePercent * 100).toFixed(0)}%`
   }
 
-  const CustomTooltip = ({ active, payload, label }: any) => {
+  const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: Array<{ value: number; payload: CampaignFinanceData }>; label?: string }) => {
     if (active && payload && payload.length) {
       return (
         <div className="bg-card border border-border rounded-lg p-3 shadow-lg">
@@ -53,7 +53,7 @@ export function CampaignFinanceChart({
     return null
   }
 
-  const PieTooltip = ({ active, payload }: any) => {
+  const PieTooltip = ({ active, payload }: { active?: boolean; payload?: Array<{ name: string; value: number; payload: { total: number } }> }) => {
     if (active && payload && payload.length) {
       const data = payload[0]
       return (

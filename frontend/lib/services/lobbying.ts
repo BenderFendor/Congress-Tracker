@@ -1,5 +1,3 @@
-
-// lib/services/lobbying.ts
 // Senate Lobbying Disclosure Act (LDA) data.
 // Based on lobbyR by Chris Cioffi (LGPLv3).
 
@@ -68,10 +66,6 @@ export async function getRecentFilings(page = 1, pageSize = 25): Promise<{ count
     const currentYear = new Date().getFullYear();
     const url = `${BASE_URL}/filings/?filing_year=${currentYear}&page=${page}&page_size=${pageSize}&ordering=-dt_posted`;
 
-    // Use the proxy if running in browser, or direct if server-side (though this app seems to use client-side fetching mostly)
-    // For now, we'll assume the proxy is needed for CORS if client-side, or we can try direct.
-    // The existing code used a proxy. Let's keep using the proxy pattern if we are in the browser.
-
     const fetchUrl = typeof window !== 'undefined'
         ? `/api/congress-proxy?url=${encodeURIComponent(url)}`
         : url;
@@ -96,7 +90,7 @@ export async function getRegistrants(page = 1, pageSize = 25): Promise<{ count: 
     return response.json();
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:4020';
+import { BACKEND_URL } from "@/lib/constants";
 
 export interface LobbyingClient {
   id: number;
@@ -118,7 +112,7 @@ export async function getLobbyingClients(params: {
   if (params.page) searchParams.set('page', String(params.page));
 
   try {
-    const res = await fetch(`${API_BASE}/api/lobbying/clients?${searchParams}`);
+    const res = await fetch(`${BACKEND_URL}/api/lobbying/clients?${searchParams}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch (error) {
@@ -138,7 +132,7 @@ export async function getLobbyingRegistrants(params: {
   if (params.page) searchParams.set('page', String(params.page));
 
   try {
-    const res = await fetch(`${API_BASE}/api/lobbying/registrants?${searchParams}`);
+    const res = await fetch(`${BACKEND_URL}/api/lobbying/registrants?${searchParams}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch (error) {
@@ -166,7 +160,7 @@ export async function getLobbyingLobbyists(params: {
   if (params.page) searchParams.set('page', String(params.page));
 
   try {
-    const res = await fetch(`${API_BASE}/api/lobbying/lobbyists?${searchParams}`);
+    const res = await fetch(`${BACKEND_URL}/api/lobbying/lobbyists?${searchParams}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch (error) {
@@ -177,7 +171,7 @@ export async function getLobbyingLobbyists(params: {
 
 export async function getFilingDetail(uuid: string): Promise<LobbyingFiling | null> {
   try {
-    const res = await fetch(`${API_BASE}/api/lobbying/filings/${uuid}`);
+    const res = await fetch(`${BACKEND_URL}/api/lobbying/filings/${uuid}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch (error) {
@@ -206,7 +200,7 @@ export async function getLobbyingContributions(params: {
   if (params.page) searchParams.set('page', String(params.page));
 
   try {
-    const res = await fetch(`${API_BASE}/api/lobbying/contributions?${searchParams}`);
+    const res = await fetch(`${BACKEND_URL}/api/lobbying/contributions?${searchParams}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch (error) {
@@ -231,7 +225,7 @@ export async function getLobbyingFilings(params: {
   searchParams.set('page_size', '25');
 
   try {
-    const res = await fetch(`${API_BASE}/api/lobbying/filings?${searchParams}`);
+    const res = await fetch(`${BACKEND_URL}/api/lobbying/filings?${searchParams}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch (error) {
@@ -307,13 +301,11 @@ export type TopSectorsResponse = {
   sourceNote: string;
 };
 
-const API_BASE_2 = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:4020';
-
 export async function fetchLobbyingOverview(year?: number): Promise<OverviewResponse | null> {
   try {
     const params = new URLSearchParams();
     if (year) params.set('year', String(year));
-    const res = await fetch(`${API_BASE_2}/api/lobbying/overview?${params}`);
+    const res = await fetch(`${BACKEND_URL}/api/lobbying/overview?${params}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch (error) {
@@ -334,7 +326,7 @@ export async function fetchLobbyingFilings(
     if (q) params.set('q', q);
     if (limit) params.set('limit', String(limit));
     if (offset) params.set('offset', String(offset));
-    const res = await fetch(`${API_BASE_2}/api/lobbying/filings?${params}`);
+    const res = await fetch(`${BACKEND_URL}/api/lobbying/filings?${params}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch (error) {
@@ -347,7 +339,7 @@ export async function fetchInfluenceFlow(year?: number): Promise<InfluenceFlowRe
   try {
     const params = new URLSearchParams();
     if (year) params.set('year', String(year));
-    const res = await fetch(`${API_BASE_2}/api/lobbying/influence-flow?${params}`);
+    const res = await fetch(`${BACKEND_URL}/api/lobbying/influence-flow?${params}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch (error) {
@@ -360,7 +352,7 @@ export async function fetchTopSectors(year?: number): Promise<TopSectorsResponse
   try {
     const params = new URLSearchParams();
     if (year) params.set('year', String(year));
-    const res = await fetch(`${API_BASE_2}/api/lobbying/top-sectors?${params}`);
+    const res = await fetch(`${BACKEND_URL}/api/lobbying/top-sectors?${params}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch (error) {

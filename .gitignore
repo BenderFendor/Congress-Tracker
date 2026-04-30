@@ -6,5 +6,9 @@
 # Agent scratch files
 .codex
 
+# Runtime artifacts
+*.log
+*.pid
+
 # Generated insta snapshots pending review
 *.snap.new

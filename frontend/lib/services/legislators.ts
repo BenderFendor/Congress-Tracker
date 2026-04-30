@@ -1,6 +1,11 @@
-import { getTradesByPoliticianId, StockTrade } from "./stocks";
+interface CapitolTradesMember {
+  _politicianId: number;
+  stats?: { count_trades?: number; count_issuers?: number; volume?: number; date_last_traded?: string | null };
+}
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:4020";
+import { getTradesByPoliticianId, StockTrade } from "./stocks";
+import { BACKEND_URL } from "@/lib/constants";
+
 const CONGRESS_PROXY_BASE = "/api/congress-proxy?url=https://api.congress.gov/v3";
 
 export type LegislatorTradeSummary = {
@@ -136,7 +141,7 @@ async function getCapitolTradesMap(): Promise<Map<string, LegislatorTradeSummary
         const members = Array.isArray(payload.data) ? payload.data : [];
         const map = new Map<string, LegislatorTradeSummary>();
 
-        members.forEach((member: any) => {
+        members.forEach((member: CapitolTradesMember) => {
             const id = String(member._politicianId || "");
             if (!id) return;
 
@@ -288,9 +293,7 @@ export async function getLegislator(id: string): Promise<Legislator | null> {
     }
 }
 
-export async function getAllLegislators(chamber?: string, congress?: number): Promise<Legislator[]> {
-    void congress;
-
+export async function getAllLegislators(chamber?: string): Promise<Legislator[]> {
     try {
         const params = new URLSearchParams();
         params.set("limit", "535");

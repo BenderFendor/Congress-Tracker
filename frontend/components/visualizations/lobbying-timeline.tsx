@@ -21,12 +21,12 @@ export function LobbyingTimeline({
   title = "Lobbying Activity Over Time",
   description = "Track lobbying spending and activity trends",
 }: LobbyingTimelineProps) {
-  const CustomTooltip = ({ active, payload, label }: any) => {
+  const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: Array<{ value: number; name: string; color: string }>; label?: string }) => {
     if (active && payload && payload.length) {
       return (
         <div className="bg-card border border-border rounded-lg p-3 shadow-lg">
           <p className="font-medium mb-2">{label}</p>
-          {payload.map((entry: any, index: number) => (
+          {payload.map((entry: { value: number; name: string; color: string }, index: number) => (
             <div key={index} className="flex items-center gap-2">
               <div className="w-3 h-3 rounded-full" style={{ backgroundColor: entry.color }} />
               <span className="text-sm">

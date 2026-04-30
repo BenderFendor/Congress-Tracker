@@ -878,7 +878,7 @@ fn merge_legislator(
     }
 }
 
-// ─── Enrichment handlers ─────────────────────────────────────────────
+// Enrichment handlers
 
 async fn get_enriched_trades(
     State(state): State<Arc<AppState>>,
@@ -1102,7 +1102,7 @@ async fn get_anomaly_scores(
     Ok(Json(scored))
 }
 
-// ─── Lobbying handlers ──────────────────────────────────────────────
+// Lobbying handlers
 
 async fn get_lobbying_registrants(
     State(state): State<Arc<AppState>>,
@@ -1251,7 +1251,7 @@ async fn get_lobbying_filing_detail(
     }
 }
 
-// ─── Voting handler ─────────────────────────────────────────────────
+// Voting handler
 
 async fn get_votes(
     State(state): State<Arc<AppState>>,
@@ -1287,7 +1287,7 @@ async fn get_votes(
     }
 }
 
-// ─── Committee handler ──────────────────────────────────────────────
+// Committee handler
 
 async fn get_committees(
     State(state): State<Arc<AppState>>,
@@ -1312,7 +1312,7 @@ async fn get_committees(
     }
 }
 
-// ─── Sector lookup handler ──────────────────────────────────────────
+// Sector lookup handler
 
 async fn get_all_sectors() -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let sectors: Vec<serde_json::Value> = ticker_resolver::all_sectors()
@@ -1342,7 +1342,7 @@ async fn get_committee_keywords() -> Result<Json<serde_json::Value>, (StatusCode
     Ok(Json(serde_json::json!({ "keywords": keywords })))
 }
 
-// ─── Helper functions ───────────────────────────────────────────────
+// Helper functions
 
 fn map_trade_type(tx_type: &TxType) -> TradeType {
     match tx_type {

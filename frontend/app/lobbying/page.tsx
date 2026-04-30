@@ -11,19 +11,13 @@ import {
   type FilingCardItem, type FlowNode, type FlowLink,
 } from "@/lib/services/lobbying"
 
+import { formatCompactCurrency } from "@/lib/format"
+
 const currentYear = new Date().getFullYear()
-
-function formatCurrency(value: number): string {
-  if (!value || !Number.isFinite(value)) return "$0"
-  return new Intl.NumberFormat("en-US", {
-    style: "currency", currency: "USD", notation: "compact", maximumFractionDigits: 1,
-  }).format(value)
-}
-
 const DONUT_COLORS = ["#aa332d", "#335d88", "#6e5d91", "#8a8d91"]
 const SECTOR_COLORS = ["#aa332d", "#335d88", "#6e5d91", "#8a8d91", "#d4a574"]
 
-// ── Influence Flow SVG ──
+// Influence Flow SVG
 
 function InfluenceFlowSvg({ nodes, links }: { nodes: FlowNode[]; links: FlowLink[] }) {
   const w = 380; const h = 260
@@ -89,7 +83,7 @@ function InfluenceFlowSvg({ nodes, links }: { nodes: FlowNode[]; links: FlowLink
   )
 }
 
-// ── Filing Card ──
+// Filing Card
 
 function FilingCard({ item }: { item: FilingCardItem }) {
   return (
@@ -111,7 +105,7 @@ function FilingCard({ item }: { item: FilingCardItem }) {
         </div>
       </div>
       <div className="grid grid-cols-3 gap-3 mt-4 pt-4 border-t border-border">
-        <div><div className="text-[10px] font-bold text-muted-foreground tracking-wider uppercase">{item.reportedAmountLabel}</div><div className="font-serif text-lg font-bold text-foreground mt-0.5">{formatCurrency(item.reportedAmount)}</div></div>
+        <div><div className="text-[10px] font-bold text-muted-foreground tracking-wider uppercase">{item.reportedAmountLabel}</div><div className="font-serif text-lg font-bold text-foreground mt-0.5">{formatCompactCurrency(item.reportedAmount)}</div></div>
         <div><div className="text-[10px] font-bold text-muted-foreground tracking-wider uppercase">Filing Count</div><div className="font-serif text-lg font-bold text-foreground mt-0.5">{item.filingCount}</div></div>
         <div><div className="text-[10px] font-bold text-muted-foreground tracking-wider uppercase">Clients</div><div className="font-serif text-lg font-bold text-foreground mt-0.5">{item.clientCount}</div></div>
       </div>
@@ -132,7 +126,7 @@ function FilingCard({ item }: { item: FilingCardItem }) {
   )
 }
 
-// ── Main Page ──
+// Main Page
 
 export default function LobbyingPage() {
   const [activeTab, setActiveTab] = useState("Recent Filings")
@@ -234,7 +228,7 @@ export default function LobbyingPage() {
                 </div>
                 <div className="text-center mb-4">
                   <div className="font-serif text-3xl md:text-4xl font-extrabold text-foreground">
-                    {loading ? "..." : formatCurrency(overview?.total ?? 0)}
+                    {loading ? "..." : formatCompactCurrency(overview?.total ?? 0)}
                   </div>
                   <div className="text-[10px] font-bold text-muted-foreground tracking-wider uppercase mt-1">Total Reported Lobbying</div>
                   <div className="text-[9px] text-muted-foreground mt-0.5">YTD {year}</div>
@@ -384,9 +378,9 @@ export default function LobbyingPage() {
                   <div className="h-48">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={sectorData} layout="vertical" margin={{ left: 0, right: 20, top: 0, bottom: 0 }}>
-                        <XAxis type="number" tickFormatter={v => formatCurrency(Number(v))} tick={{ fontSize: 9, fill: "#89919b" }} axisLine={false} tickLine={false} />
+                        <XAxis type="number" tickFormatter={v => formatCompactCurrency(Number(v))} tick={{ fontSize: 9, fill: "#89919b" }} axisLine={false} tickLine={false} />
                         <YAxis type="category" dataKey="sector" tick={{ fontSize: 10, fontWeight: 600, fill: "#5f6874" }} axisLine={false} tickLine={false} width={130} />
-                        <Tooltip formatter={(v: number) => [formatCurrency(v), "Amount"]} contentStyle={{ fontSize: 11, borderRadius: 8 }} />
+                        <Tooltip formatter={(v: number) => [formatCompactCurrency(v), "Amount"]} contentStyle={{ fontSize: 11, borderRadius: 8 }} />
                         <Bar dataKey="amount" radius={[0, 4, 4, 0]}>
                           {sectorData.map((_, i) => <Cell key={i} fill={SECTOR_COLORS[i % SECTOR_COLORS.length]} />)}
                         </Bar>

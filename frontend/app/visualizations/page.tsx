@@ -7,8 +7,18 @@ import { InfluenceNetwork } from "@/components/visualizations/influence-network"
 import { LobbyingTimeline } from "@/components/visualizations/lobbying-timeline"
 import { parseIndustries, parseTopSpenders, parseLobbyistRecipients, parseCSV } from "@/lib/csvUtils"
 import { Loader2, AlertTriangle } from "lucide-react"
+import { BACKEND_URL } from "@/lib/constants"
 
-// ── Enrichment API types ─────────────────────────────────────────────
+interface NetworkNode {
+  id: string
+  name: string
+  type: "organization" | "legislator" | "bill"
+  party?: string
+  amount?: number
+  connections: string[]
+}
+
+// Enrichment API types
 // Data sources: CapitolTrades, Congress.gov, OpenFEC
 
 interface EnrichedTrade {
@@ -27,9 +37,7 @@ interface EnrichedTrade {
   industry: string
 }
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:4020"
-
-// ── Enrichment data transforms ───────────────────────────────────────
+// Enrichment data transforms
 
 function buildSectorDistribution(trades: EnrichedTrade[]) {
   const sectorMap = new Map<string, number>()
@@ -94,7 +102,7 @@ function buildNetworkFromTrades(trades: EnrichedTrade[]) {
   const orgIds: string[] = []
   const legIds: string[] = []
   const billIds: string[] = []
-  const nodes: any[] = []
+  const nodes: NetworkNode[] = []
   const connMap = new Map<string, Set<string>>()
 
   sectors.forEach(s => {
@@ -173,17 +181,17 @@ function buildNetworkFromTrades(trades: EnrichedTrade[]) {
 
 export default function VisualizationsPage() {
   const [loading, setLoading] = useState(true)
-  const [financeData, setFinanceData] = useState<any[]>([])
-  const [timelineData, setTimelineData] = useState<any[]>([])
-  const [flowData, setFlowData] = useState<any>({ nodes: [], links: [] })
-  const [networkNodes, setNetworkNodes] = useState<any[]>([])
+  const [financeData, setFinanceData] = useState<Array<{ name: string; amount: number; industry?: string }>>([])
+  const [timelineData, setTimelineData] = useState<Array<{ date: string; amount: number; bills: number; organizations: number }>>([])
+  const [flowData, setFlowData] = useState<{ nodes: Array<{ name: string; category?: string }>; links: Array<{ source: number; target: number; value: number }> }>({ nodes: [], links: [] })
+  const [networkNodes, setNetworkNodes] = useState<NetworkNode[]>([])
   const [enrichmentAvailable, setEnrichmentAvailable] = useState(false)
   const [enrichmentError, setEnrichmentError] = useState(false)
 
   useEffect(() => {
     async function loadData() {
       try {
-        // ── 1. Fetch CSV files (lobbying data from OpenSecrets) ──────
+        // 1. Fetch CSV files (lobbying data from OpenSecrets)
         const [
           industriesRes,
           spendersRes,
@@ -252,7 +260,7 @@ export default function VisualizationsPage() {
         )
         const topBills = billsRaw.slice(0, 3)
 
-        // ── 2. Fetch enrichment API data ────────────────────────────
+        // 2. Fetch enrichment API data
         // Data sources: CapitolTrades via /api/enrichment/trades,
         //               Congress.gov, OpenFEC via ticker_resolver
         let enrichmentOk = false
@@ -291,7 +299,7 @@ export default function VisualizationsPage() {
         }
         setEnrichmentAvailable(enrichmentOk)
 
-        // ── 3. Fallback: CSV-only flow/network (deterministic, no random) ──
+        // 3. Fallback: CSV-only flow/network
         if (!enrichmentOk) {
           const flowNodes = [
             ...topSpenders.map(s => ({
@@ -315,7 +323,7 @@ export default function VisualizationsPage() {
           })
           setFlowData({ nodes: flowNodes, links: flowLinks })
 
-          const netNodes: any[] = []
+          const netNodes: NetworkNode[] = []
           let idCounter = 1
           const orgIds: string[] = []
           const legIds: string[] = []

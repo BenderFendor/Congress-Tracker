@@ -13,7 +13,21 @@ export interface StockTrade {
     cap_gains_over_200_usd: boolean;
 }
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:4020';
+interface BackendTradeRaw {
+    filingDate: string | null;
+    pubDate: string;
+    txDate: string;
+    owner: string;
+    asset?: { assetTicker: string | null; instrument: string | null };
+    issuer?: { issuerTicker: string | null; issuerName: string };
+    txType: string;
+    value: number;
+    politician?: { firstName: string; lastName: string; _stateId: string; state: string };
+    filingURL: string | null;
+    hasCapitalGains: boolean;
+}
+
+import { BACKEND_URL } from "@/lib/constants";
 
 export async function getAllTrades(): Promise<StockTrade[]> {
     try {
@@ -23,7 +37,7 @@ export async function getAllTrades(): Promise<StockTrade[]> {
         const data = await response.json();
         const trades = data.data || [];
 
-        return trades.map((trade: any) => ({
+        return trades.map((trade: BackendTradeRaw) => ({
             disclosure_year: trade.filingDate ? new Date(trade.filingDate).getFullYear() : (trade.pubDate ? new Date(trade.pubDate).getFullYear() : 0),
             disclosure_date: trade.filingDate || trade.pubDate || "",
             transaction_date: trade.txDate || "",
@@ -68,7 +82,7 @@ export async function getTradesByPoliticianId(id: string): Promise<StockTrade[]>
         const data = await response.json();
         const trades = data.data || [];
 
-        return trades.map((trade: any) => ({
+        return trades.map((trade: BackendTradeRaw) => ({
             disclosure_year: trade.filingDate ? new Date(trade.filingDate).getFullYear() : (trade.pubDate ? new Date(trade.pubDate).getFullYear() : 0),
             disclosure_date: trade.filingDate || trade.pubDate || "",
             transaction_date: trade.txDate || "",

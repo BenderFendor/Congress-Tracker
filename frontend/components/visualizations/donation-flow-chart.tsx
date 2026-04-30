@@ -19,7 +19,7 @@ export function DonationFlowChart({
   title = "Money Flow Analysis",
   description = "Track how donations flow from organizations to legislators",
 }: DonationFlowChartProps) {
-  const CustomTooltip = ({ active, payload }: any) => {
+  const CustomTooltip = ({ active, payload }: { active?: boolean; payload?: Array<{ payload: { source?: { name: string }; target?: { name: string }; value: number } }> }) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload
       return (

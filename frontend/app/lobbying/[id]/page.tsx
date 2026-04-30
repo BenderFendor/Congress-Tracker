@@ -14,7 +14,7 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { getRecentFilings, getRegistrants, Filing, Registrant } from "@/lib/services/lobbying"
-
+import { formatCurrency } from "@/lib/format"
 export default function OrganizationProfilePage() {
     const { id } = useParams<{ id: string }>()
     const decodedName = decodeURIComponent(id || "")
@@ -46,24 +46,15 @@ export default function OrganizationProfilePage() {
 
                 setFilings(matchedFilings)
                 setRegistrant(matchedRegistrant || null)
-            } catch (e: any) {
+            } catch (e) {
                 console.error("Organization profile fetch error:", e)
-                setError(e.message)
+                setError(e instanceof Error ? e.message : "Failed to load organization")
             } finally {
                 setLoading(false)
             }
         }
         fetchData()
     }, [id, searchName])
-
-    const formatCurrency = (amount: number) => {
-        return new Intl.NumberFormat("en-US", {
-            style: "currency",
-            currency: "USD",
-            minimumFractionDigits: 0,
-            maximumFractionDigits: 0,
-        }).format(amount)
-    }
 
     const totalIncome = filings.reduce((sum, f) => sum + (f.income || 0), 0)
     const totalExpenses = filings.reduce((sum, f) => sum + (f.expenses || 0), 0)

@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { getRecentBills, Bill } from "@/lib/services/bills"
 import { getRecentFilings, Filing } from "@/lib/services/lobbying"
 import { getEnrichedTrades, EnrichedTrade } from "@/lib/services/enrichment"
-
+import { formatCurrency } from "@/lib/format"
 export default function BillDetailPage() {
     const { id } = useParams<{ id: string }>()
     const [bill, setBill] = useState<Bill | null>(null)
@@ -46,24 +46,15 @@ export default function BillDetailPage() {
                     setRelatedFilings(matched.slice(0, 5))
                     setRelatedTrades(tradesData.slice(0, 10))
                 }
-            } catch (e: any) {
+            } catch (e) {
                 console.error("Bill detail fetch error:", e)
-                setError(e.message)
+                setError(e instanceof Error ? e.message : "Failed to load bill")
             } finally {
                 setLoading(false)
             }
         }
         fetchData()
     }, [id])
-
-    const formatCurrency = (amount: number) => {
-        return new Intl.NumberFormat("en-US", {
-            style: "currency",
-            currency: "USD",
-            minimumFractionDigits: 0,
-            maximumFractionDigits: 0,
-        }).format(amount)
-    }
 
     if (loading) {
         return (

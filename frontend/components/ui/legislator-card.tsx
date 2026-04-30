@@ -17,7 +17,7 @@ function compactCurrency(value: number) {
 
 export function LegislatorCard({ member }: LegislatorCardProps) {
   const tradeStats = member.trade_summary?.stats
-  const matchConfidence = member.trade_summary?.match_confidence === "exact_id" ? 100 : 92 // Default for mockup look
+  const matchConfidence = member.trade_summary?.match_confidence === "exact_id" ? 100 : null
   const party = member.party || "Unknown"
   const isDemocrat = party.toLowerCase().includes("democrat")
   const isRepublican = party.toLowerCase().includes("republican")
@@ -84,6 +84,7 @@ export function LegislatorCard({ member }: LegislatorCardProps) {
           </div>
 
           {/* Match Confidence Circle */}
+          {matchConfidence !== null && (
           <div className="flex shrink-0 flex-col items-center justify-center gap-1">
             <div className="relative flex h-12 w-12 items-center justify-center">
               <svg className="h-full w-full -rotate-90">
@@ -115,6 +116,7 @@ export function LegislatorCard({ member }: LegislatorCardProps) {
             </div>
             <span className="text-[8px] font-bold tracking-widest uppercase text-muted-foreground">Match</span>
           </div>
+          )}
         </div>
 
         {/* Stats Section with miniature charts */}
@@ -161,10 +163,8 @@ export function LegislatorCard({ member }: LegislatorCardProps) {
         {/* Footer */}
         <div className="mt-auto pt-4">
           <div className="flex items-center border-t border-border/50 pt-3 text-[10px] text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <Calendar className="h-3 w-3" />
-              Member since 2011 • Next election 2028
-            </span>
+            <Calendar className="h-3 w-3 mr-1" />
+            {member.chamber} &middot; {member.state}
           </div>
         </div>
       </div>

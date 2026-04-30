@@ -1,10 +1,7 @@
-// lib/services/enrichment.ts
 // Backend enrichment endpoints: sector lookup, committee conflicts, anomaly scores.
-// Based on poli-ticker by ibotzhub (committee conflict detection),
-// CongressWatch by OpenSourcePatents (anomaly scoring),
-// and congress-trading-monitor by Adrian Krebs (trade metrics).
+// Based on poli-ticker, CongressWatch, and congress-trading-monitor.
 
-const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:4020';
+import { BACKEND_URL } from "@/lib/constants";
 
 export interface EnrichedTrade {
   ticker: string;
@@ -97,7 +94,7 @@ export async function getEnrichedTrades(options?: {
   params.set('limit', String(options?.limit ?? 100));
 
   try {
-    const res = await fetch(`${API_BASE}/api/enrichment/trades?${params}`);
+    const res = await fetch(`${BACKEND_URL}/api/enrichment/trades?${params}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch (error) {
@@ -112,7 +109,7 @@ export async function getEnrichedMember(id: string): Promise<{
   trades: EnrichedTrade[];
 } | null> {
   try {
-    const res = await fetch(`${API_BASE}/api/enrichment/member/${id}`);
+    const res = await fetch(`${BACKEND_URL}/api/enrichment/member/${id}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch (error) {
@@ -126,7 +123,7 @@ export async function getAnomalyScores(memberId?: string): Promise<AnomalyScore[
   if (memberId) params.set('member_id', memberId);
 
   try {
-    const res = await fetch(`${API_BASE}/api/enrichment/anomaly?${params}`);
+    const res = await fetch(`${BACKEND_URL}/api/enrichment/anomaly?${params}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch (error) {
@@ -137,7 +134,7 @@ export async function getAnomalyScores(memberId?: string): Promise<AnomalyScore[
 
 export async function getAllSectors(): Promise<SectorInfo[]> {
   try {
-    const res = await fetch(`${API_BASE}/api/enrichment/sectors`);
+    const res = await fetch(`${BACKEND_URL}/api/enrichment/sectors`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     return data.sectors;
@@ -149,7 +146,7 @@ export async function getAllSectors(): Promise<SectorInfo[]> {
 
 export async function getCommitteeKeywords(): Promise<CommitteeKeyword[]> {
   try {
-    const res = await fetch(`${API_BASE}/api/enrichment/committee-keywords`);
+    const res = await fetch(`${BACKEND_URL}/api/enrichment/committee-keywords`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     return data.keywords;

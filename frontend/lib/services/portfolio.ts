@@ -1,4 +1,4 @@
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4020';
+import { BACKEND_URL } from "@/lib/constants";
 
 export interface PortfolioSummary {
     total_politicians: number;

@@ -9,6 +9,15 @@ export interface Bill {
     url: string;
 }
 
+interface CongressBillRaw {
+  type: string;
+  number: string;
+  title: string;
+  latestAction?: { text: string };
+  updateDate: string;
+  url?: string;
+}
+
 export async function getRecentBills(limit = 10): Promise<Bill[]> {
     if (!CONGRESS_GOV_API_KEY) {
         console.warn("Congress.gov API key not found. Returning empty bills.");
@@ -33,7 +42,7 @@ export async function getRecentBills(limit = 10): Promise<Bill[]> {
             return [];
         }
 
-        return data.bills.map((bill: any) => ({
+        return data.bills.map((bill: CongressBillRaw) => ({
             id: `${bill.type.toUpperCase()}-${bill.number}`,
             title: bill.title,
             status: bill.latestAction ? bill.latestAction.text.substring(0, 20) + (bill.latestAction.text.length > 20 ? '...' : '') : 'N/A',

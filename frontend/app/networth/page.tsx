@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { DollarSign, TrendingUp, TrendingDown, Info, AlertTriangle } from "lucide-react"
 import { getEnrichedTrades, EnrichedTrade } from "@/lib/services/enrichment"
-
+import { formatCurrency } from "@/lib/format"
 export default function NetWorthPage() {
     const [trades, setTrades] = useState<EnrichedTrade[]>([])
     const [loading, setLoading] = useState(true)
@@ -15,24 +15,15 @@ export default function NetWorthPage() {
                 setLoading(true)
                 const data = await getEnrichedTrades()
                 setTrades(data)
-            } catch (e: any) {
+            } catch (e) {
                 console.error("Net worth data fetch error:", e)
-                setError(e.message)
+                setError(e instanceof Error ? e.message : "Failed to load net worth data")
             } finally {
                 setLoading(false)
             }
         }
         fetchData()
     }, [])
-
-    const formatCurrency = (amount: number) => {
-        return new Intl.NumberFormat("en-US", {
-            style: "currency",
-            currency: "USD",
-            minimumFractionDigits: 0,
-            maximumFractionDigits: 0,
-        }).format(amount)
-    }
 
     const memberTotals = new Map<string, { name: string; buys: number; sells: number; count: number }>()
     trades.forEach((t) => {
