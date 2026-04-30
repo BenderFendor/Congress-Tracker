@@ -50,6 +50,49 @@ export interface Receipt {
     occupation?: string;
 }
 
+export interface BackendTrade {
+    _txId: number;
+    _politicianId: string;
+    _assetId: number | null;
+    _issuerId: number;
+    pubDate: string;
+    filingDate: string | null;
+    txDate: string;
+    txType: string;
+    hasCapitalGains: boolean;
+    owner: string;
+    chamber: string;
+    price: number | null;
+    size: number | null;
+    sizeRangeHigh: number | null;
+    sizeRangeLow: number | null;
+    value: number;
+    filingId: number | null;
+    filingURL: string | null;
+    reportingGap: number;
+    committees: string[];
+    asset: {
+        assetType: string;
+        assetTicker: string | null;
+        instrument: string | null;
+    } | null;
+    issuer: {
+        issuerName: string;
+        issuerTicker: string | null;
+        sector: string | null;
+    };
+    politician: {
+        _stateId: string;
+        chamber: string;
+        firstName: string;
+        lastName: string;
+        party: string;
+        gender: string | null;
+        dob: string | null;
+        nickname: string | null;
+    };
+}
+
 export interface Trade {
     disclosure_year: number;
     disclosure_date: string;
@@ -90,13 +133,46 @@ export async function fetchPoliticians(): Promise<PaginatedResponse<Politician>>
 
 export async function fetchTrades(politicianId?: string): Promise<PaginatedResponse<Trade>> {
     const url = politicianId 
-        ? `${BACKEND_URL}/api/trades?politician=${encodeURIComponent(politicianId)}`
-        : `${BACKEND_URL}/api/trades`;
+        ? `${BACKEND_URL}/api/trades?size=1000&politician=${encodeURIComponent(politicianId)}`
+        : `${BACKEND_URL}/api/trades?size=1000`;
     const response = await fetch(url);
     if (!response.ok) {
         throw new Error("Failed to fetch trades");
     }
-    return response.json();
+    const raw = await response.json() as { data: BackendTrade[]; meta?: { paging?: { totalItems?: number; page?: number; size?: number; totalPages?: number } } };
+    return {
+        data: (raw.data || []).map(mapBackendTrade),
+        meta: {
+            paging: {
+                page: raw.meta?.paging?.page ?? 1,
+                size: raw.meta?.paging?.size ?? raw.data?.length ?? 0,
+                totalItems: raw.meta?.paging?.totalItems ?? raw.data?.length ?? 0,
+                totalPages: raw.meta?.paging?.totalPages ?? 1,
+            },
+        },
+    };
+}
+
+function mapBackendTrade(bt: BackendTrade): Trade {
+    const repName = bt.politician 
+        ? `${bt.politician.firstName} ${bt.politician.lastName}`.trim()
+        : "Unknown";
+    const ticker = bt.asset?.assetTicker || bt.issuer?.issuerTicker || "N/A";
+    const assetDesc = bt.asset?.assetType || bt.issuer?.issuerName || "Unknown";
+    return {
+        disclosure_year: new Date(bt.pubDate).getFullYear(),
+        disclosure_date: bt.pubDate,
+        transaction_date: bt.txDate,
+        owner: bt.owner,
+        ticker,
+        asset_description: assetDesc,
+        type: bt.txType,
+        amount: bt.value ? `$${bt.value.toLocaleString()}` : "Undisclosed",
+        representative: repName,
+        district: bt.chamber,
+        ptr_link: bt.filingURL || "",
+        cap_gains_over_200_usd: bt.hasCapitalGains,
+    };
 }
 
 // Congress.gov Endpoints

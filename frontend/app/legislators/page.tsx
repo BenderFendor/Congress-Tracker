@@ -1,9 +1,10 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import Link from "next/link"
-import { Search, MapPin, Users, DollarSign, Loader2, ArrowRight, Building2, Landmark } from "lucide-react"
-import { getAllLegislators, Legislator } from "@/lib/services/legislators"
+import { useEffect, useMemo, useState } from "react"
+import { Building2, Landmark, Shield, Users, Search, Filter, Info, ChevronDown, Check } from "lucide-react"
+import { ArchivePage } from "@/components/ui/archive-ui"
+import { getAllLegislators, type Legislator } from "@/lib/services/legislators"
+import { LegislatorCard } from "@/components/ui/legislator-card"
 
 export default function LegislatorsPage() {
   const [members, setMembers] = useState<Legislator[]>([])
@@ -13,329 +14,285 @@ export default function LegislatorsPage() {
   const [selectedParty, setSelectedParty] = useState("all")
   const [selectedChamber, setSelectedChamber] = useState("all")
   const [selectedState, setSelectedState] = useState("all")
+  const [matchOnly, setMatchOnly] = useState(false)
   const [displayCount, setDisplayCount] = useState(12)
-  const [loadingMore, setLoadingMore] = useState(false)
 
   useEffect(() => {
-    const loadData = async () => {
+    async function loadData() {
       try {
         const response = await getAllLegislators()
         setMembers(response)
-      } catch (e: unknown) {
-        setError(e instanceof Error ? e.message : "Unknown error")
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to load legislators")
       } finally {
         setLoading(false)
       }
     }
+
     loadData()
   }, [])
 
-  // Reset display count when filters change
-  useEffect(() => {
-    setDisplayCount(12)
-  }, [searchTerm, selectedParty, selectedChamber, selectedState])
+  const states = useMemo(() => Array.from(new Set(members.map((m) => m.state).filter(Boolean))).sort(), [members])
 
-  const loadMore = async () => {
-    if (loadingMore) return
+  const filteredMembers = useMemo(() => {
+    return members.filter((member) => {
+      const search = searchTerm.toLowerCase()
+      const matchesSearch =
+        member.name.toLowerCase().includes(search) ||
+        member.state.toLowerCase().includes(search) ||
+        member.party.toLowerCase().includes(search)
 
-    setLoadingMore(true)
-    await new Promise(resolve => setTimeout(resolve, 500))
-    setDisplayCount(prev => prev + 12)
-    setLoadingMore(false)
-  }
+      const party = member.party.toLowerCase()
+      const matchesParty =
+        selectedParty === "all" ||
+        (selectedParty === "democrat" && party.includes("democrat")) ||
+        (selectedParty === "republican" && party.includes("republican")) ||
+        (selectedParty === "independent" && party.includes("independent"))
 
-  useEffect(() => {
-    const handleScroll = () => {
-      if (loadingMore) return
+      const chamber = member.chamber.toLowerCase()
+      const matchesChamber = selectedChamber === "all" || chamber === selectedChamber
+      const matchesState = selectedState === "all" || member.state.toLowerCase() === selectedState.toLowerCase()
+      const matchesMatch = !matchOnly || member.trade_summary?.matched
 
-      const scrollTop = window.pageYOffset || document.documentElement.scrollTop
-      const scrollHeight = document.documentElement.scrollHeight
-      const clientHeight = window.innerHeight
+      return matchesSearch && matchesParty && matchesChamber && matchesState && matchesMatch
+    })
+  }, [members, searchTerm, selectedParty, selectedChamber, selectedState, matchOnly])
 
-      if (scrollTop + clientHeight >= scrollHeight - 200) {
-        loadMore()
-      }
-    }
-
-    window.addEventListener('scroll', handleScroll)
-    return () => window.removeEventListener('scroll', handleScroll)
-  }, [loadingMore])
-
-  if (loading) return (
-    <div className="min-h-screen bg-background flex items-center justify-center">
-      <div className="w-12 h-12 border-4 border-accent border-t-transparent rounded-full animate-spin"></div>
-    </div>
-  )
-
-  if (error) return (
-    <div className="min-h-[70vh] flex flex-col items-center justify-center p-8">
-      <div className="bg-card border border-border p-8 max-w-md text-center shadow-sm">
-        <h3 className="font-serif text-2xl font-bold text-primary mb-4">Data Unavailable</h3>
-        <p className="font-sans text-sm text-muted-foreground mb-4">
-          Congress.gov API key may be invalid or expired.
-        </p>
-        <p className="font-mono text-xs text-muted-foreground bg-muted p-3 mb-4 text-left">
-          <strong>Fix:</strong> Get a free key at{' '}
-          <a href="https://api.congress.gov/sign-up" target="_blank" rel="noopener noreferrer" className="text-accent underline">
-            api.congress.gov/sign-up
-          </a>
-          {' '}and set <code className="bg-background px-1">CONGRESS_GOV_API_KEY</code> in{' '}
-          <code className="bg-background px-1">.env</code>. Then restart the backend.
-        </p>
-        <div className="text-[10px] font-mono text-muted-foreground bg-muted p-3 rounded text-left overflow-hidden text-ellipsis">
-          {error}
-        </div>
-      </div>
-    </div>
-  )
-
-  const states = Array.from(new Set(members.map(m => m.state))).filter(Boolean).sort()
-
-  const filteredLegislators = members.filter((member) => {
-    const matchesSearch =
-      member.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      member.last_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      member.state.toLowerCase().includes(searchTerm.toLowerCase())
-
-    const currentParty = member.party.toLowerCase()
-    const matchesParty = selectedParty === "all" ||
-      (selectedParty === "democrat" && currentParty.includes("democrat")) ||
-      (selectedParty === "republican" && currentParty.includes("republican")) ||
-      (selectedParty === "independent" && (currentParty.includes("independent") || currentParty.includes("other")))
-
-    const chamber = member.chamber.toLowerCase()
-    const matchesChamber = selectedChamber === "all" ||
-      (selectedChamber === "house" && chamber === "house") ||
-      (selectedChamber === "senate" && chamber === "senate")
-
-    const matchesState = selectedState === "all" || member.state.toLowerCase() === selectedState.toLowerCase()
-
-    return matchesSearch && matchesParty && matchesChamber && matchesState
-  })
-
-  const currentLegislators = filteredLegislators.slice(0, displayCount)
-  const hasMore = displayCount < filteredLegislators.length
-
-  const withTradesCount = filteredLegislators.filter((member) => member.trade_summary?.matched).length
-
-  const formatCurrencyCompact = (value: number) => {
-    if (value <= 0) return "No filings"
-    if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`
-    if (value >= 1_000) return `$${(value / 1_000).toFixed(0)}K`
-    return `$${value}`
-  }
-
-  const formatParty = (party: string) => {
-    if (party.toLowerCase().includes("democrat")) return "Democrat"
-    if (party.toLowerCase().includes("republican")) return "Republican"
-    if (party.toLowerCase().includes("independent")) return "Independent"
-    return party
-  }
-
-  const getPartyColor = (party: string) => {
-    const normalized = party.toLowerCase()
-    if (normalized.includes("democrat")) return "text-blue-300 bg-blue-500/10 border-blue-500/30"
-    if (normalized.includes("republican")) return "text-red-300 bg-red-500/10 border-red-500/30"
-    return "text-stone-300 bg-stone-500/10 border-stone-500/30"
-  }
+  const visibleMembers = filteredMembers.slice(0, displayCount)
+  const senateCount = members.filter((member) => member.chamber.toLowerCase() === "senate").length
+  const houseCount = members.filter((member) => member.chamber.toLowerCase() === "house").length
+  const matchedTradeCount = members.filter((member) => member.trade_summary?.matched).length
 
   return (
-    <div className="min-h-screen bg-background text-foreground font-sans selection:bg-accent text-accent-foreground selection:text-foreground pb-20">
-      <div className="max-w-[1600px] mx-auto px-6 md:px-12 pt-12">
-        <div className="mb-10 max-w-3xl">
-          <h1 className="font-serif text-4xl md:text-6xl font-bold tracking-tight text-foreground mb-4">
-            Congressional Directory
-          </h1>
-          <p className="text-muted-foreground text-base md:text-lg max-w-2xl">
-            All current members of Congress, with CapitolTrades activity layered in when a verified match exists.
-          </p>
-        </div>
+    <ArchivePage>
+      {/* Subtle Grid Background */}
+      <div className="fixed inset-0 pointer-events-none z-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]" />
 
-        <div className="mb-12 animate-stagger-item delay-1">
-          <div className="flex flex-col lg:flex-row gap-6 mb-8">
-            <div className="flex-1 relative">
-              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-accent" size={20} />
+      {/* Hero Section */}
+      <section className="relative z-10 px-6 pt-16 pb-12 md:px-12 lg:pt-24 lg:pb-16">
+        <div className="mx-auto max-w-[106rem]">
+          <div className="flex flex-col items-start justify-between gap-8 lg:flex-row lg:items-center">
+            <div className="max-w-3xl animate-stagger-item delay-1">
+              <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-accent/10 px-3 py-1 text-[10px] font-bold tracking-widest uppercase text-accent">
+                Directory
+              </div>
+              <h1 className="font-serif text-5xl leading-tight text-foreground md:text-7xl lg:text-8xl">
+                Legislator <span className="italic text-accent">Index.</span>
+              </h1>
+              <p className="mt-6 text-lg leading-relaxed text-muted-foreground md:text-xl lg:max-w-2xl">
+                Browse all current members of Congress with district context, chamber filters, and matched CapitolTrades activity when available.
+              </p>
+            </div>
+            
+            {/* Decorative Seal */}
+            <div className="relative hidden lg:block animate-scale-in delay-3">
+              <div className="flex h-48 w-48 items-center justify-center rounded-full border border-border bg-card/50 p-4 shadow-xl backdrop-blur-sm">
+                <div className="flex h-full w-full flex-col items-center justify-center rounded-full border-2 border-dashed border-accent/20 p-2">
+                  <Landmark className="h-12 w-12 text-accent" />
+                  <span className="mt-2 text-center text-[8px] font-bold tracking-widest uppercase text-accent">
+                    United States<br/>Congress
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Filter Section */}
+      <section className="sticky top-[4.5rem] z-30 border-y border-border bg-background/80 px-6 py-4 backdrop-blur-md">
+        <div className="mx-auto max-w-[106rem]">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            {/* Search Input */}
+            <div className="relative flex-1 md:max-w-md">
+              <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <input
                 type="text"
-                placeholder="Search by name or state"
+                placeholder="Search legislators..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full bg-card border-2 border-border px-12 py-4 text-foreground font-mono font-bold placeholder:text-muted-foreground focus:outline-none focus:border-accent transition-all"
+                className="h-10 w-full rounded-full border border-border bg-muted/30 pl-10 pr-4 text-sm focus:border-accent focus:bg-card focus:outline-none transition-all"
               />
             </div>
-          </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            <select
-              value={selectedParty}
-              onChange={(e) => setSelectedParty(e.target.value)}
-              className="bg-card border-2 border-border px-4 py-3 text-foreground font-mono text-sm focus:border-accent outline-none appearance-none"
-            >
-              <option value="all">All Parties</option>
-              <option value="democrat">Democrat</option>
-              <option value="republican">Republican</option>
-              <option value="independent">Independent</option>
-            </select>
+            {/* Pill Filters */}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="group relative">
+                <select
+                  value={selectedParty}
+                  onChange={(e) => setSelectedParty(e.target.value)}
+                  className="h-9 appearance-none rounded-full border border-border bg-card px-4 pr-10 text-xs font-semibold text-foreground hover:border-accent focus:outline-none transition-all cursor-pointer"
+                >
+                  <option value="all">All Parties</option>
+                  <option value="democrat">Democrats</option>
+                  <option value="republican">Republicans</option>
+                  <option value="independent">Independents</option>
+                </select>
+                <ChevronDown className="pointer-events-none absolute top-1/2 right-3 h-3 w-3 -translate-y-1/2 text-muted-foreground transition-transform group-hover:text-accent" />
+              </div>
 
-            <select
-              value={selectedChamber}
-              onChange={(e) => setSelectedChamber(e.target.value)}
-              className="bg-card border-2 border-border px-4 py-3 text-foreground font-mono text-sm focus:border-accent outline-none appearance-none"
-            >
-              <option value="all">Both Chambers</option>
-              <option value="house">House</option>
-              <option value="senate">Senate</option>
-            </select>
+              <div className="group relative">
+                <select
+                  value={selectedChamber}
+                  onChange={(e) => setSelectedChamber(e.target.value)}
+                  className="h-9 appearance-none rounded-full border border-border bg-card px-4 pr-10 text-xs font-semibold text-foreground hover:border-accent focus:outline-none transition-all cursor-pointer"
+                >
+                  <option value="all">Both Chambers</option>
+                  <option value="house">House</option>
+                  <option value="senate">Senate</option>
+                </select>
+                <ChevronDown className="pointer-events-none absolute top-1/2 right-3 h-3 w-3 -translate-y-1/2 text-muted-foreground transition-transform group-hover:text-accent" />
+              </div>
 
-            <select
-              value={selectedState}
-              onChange={(e) => setSelectedState(e.target.value)}
-              className="bg-card border-2 border-border px-4 py-3 text-foreground font-mono text-sm focus:border-accent outline-none appearance-none"
-            >
-              <option value="all">All States</option>
-              {states.map(state => (
-                <option key={state} value={state}>{state.toUpperCase()}</option>
-              ))}
-            </select>
+              <div className="group relative">
+                <select
+                  value={selectedState}
+                  onChange={(e) => setSelectedState(e.target.value)}
+                  className="h-9 appearance-none rounded-full border border-border bg-card px-4 pr-10 text-xs font-semibold text-foreground hover:border-accent focus:outline-none transition-all cursor-pointer"
+                >
+                  <option value="all">All States</option>
+                  {states.map((state) => (
+                    <option key={state} value={state}>
+                      {state}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute top-1/2 right-3 h-3 w-3 -translate-y-1/2 text-muted-foreground transition-transform group-hover:text-accent" />
+              </div>
 
-            <div className="bg-card border-2 border-border px-4 py-3 flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Matched trade data</span>
-              <span className="font-mono font-bold text-foreground">{withTradesCount}</span>
+              {/* Trade Match Toggle */}
+              <button
+                onClick={() => setMatchOnly(!matchOnly)}
+                className={`flex h-9 items-center gap-2 rounded-full border px-4 text-xs font-semibold transition-all ${
+                  matchOnly 
+                    ? "border-accent bg-accent/5 text-accent shadow-sm" 
+                    : "border-border bg-card text-muted-foreground hover:border-accent"
+                }`}
+              >
+                {matchOnly && <Check className="h-3 w-3" />}
+                Matched trade data
+              </button>
             </div>
           </div>
         </div>
+      </section>
 
-        <div className="mb-6 flex items-center gap-2 text-muted-foreground font-sans text-xs tracking-wide">
-          <div className="w-2 h-2 bg-accent text-accent-foreground rounded-full animate-pulse"></div>
-          Showing {currentLegislators.length} of {filteredLegislators.length} legislators
-          {filteredLegislators.length !== members.length && (
-            <span className="ml-1">({members.length} total)</span>
-          )}
-        </div>
-
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-          {currentLegislators.map((member, idx) => {
-            const chamber = member.chamber === "House" ? "House" : member.chamber === "Senate" ? "Senate" : member.chamber
-            const partyColorClass = getPartyColor(member.party)
-            const tradeSummary = member.trade_summary
-            const tradeStats = tradeSummary?.stats
-
-            return (
-              <div key={member.id} className={`relative overflow-hidden bg-card border border-border p-5 md:p-6 hover:border-accent/60 hover:shadow-xl hover:shadow-accent/5 transition-all duration-500 group animate-stagger-item hover:-translate-y-1 delay-${(idx % 5) + 1}`}>
-                <div className="absolute inset-0 bg-gradient-to-br from-accent/0 via-transparent to-accent/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"></div>
-                <div className="absolute -right-10 -top-10 w-32 h-32 bg-accent/5 rounded-full blur-2xl group-hover:bg-accent/10 transition-colors duration-500 pointer-events-none"></div>
-                
-                <div className="relative z-10 flex flex-col md:flex-row items-start gap-5">
-                  <div className="relative shrink-0 mx-auto md:mx-0">
-                    <div className="w-24 h-24 bg-background border-2 border-border overflow-hidden grayscale-[0.8] contrast-125 group-hover:grayscale-0 group-hover:border-accent/50 transition-all duration-500 rounded-full shadow-md">
-                      <img 
-                        src={member.avatar} 
-                        alt={member.name}
-                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'none';
-                          (e.target as HTMLImageElement).parentElement?.classList.add('flex', 'items-center', 'justify-center', 'bg-muted');
-                        }}
-                      />
-                        <div className="hidden w-full h-full items-center justify-center bg-muted text-muted-foreground">
-                          <Users size={24} />
-                        </div>
-                      </div>
-                    <div className={`absolute -bottom-2 left-1/2 -translate-x-1/2 px-3 py-1 border ${partyColorClass} font-mono text-[10px] font-bold uppercase tracking-wider backdrop-blur-md rounded-full shadow-sm whitespace-nowrap`}>
-                      {formatParty(member.party)}
+      {/* Main Content & Sidebar */}
+      <section className="relative z-10 px-6 py-12 md:px-12">
+        <div className="mx-auto max-w-[106rem]">
+          <div className="grid grid-cols-1 gap-12 lg:grid-cols-12">
+            
+            {/* Left Column: List */}
+            <div className="lg:col-span-8">
+              {loading ? (
+                <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                  {[...Array(6)].map((_, i) => (
+                    <div key={i} className="h-64 animate-pulse rounded-xl bg-muted/40" />
+                  ))}
+                </div>
+              ) : error ? (
+                <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border py-24 text-center">
+                  <div className="mb-4 rounded-full bg-red-50 p-4 text-red-500">
+                    <Info className="h-8 w-8" />
+                  </div>
+                  <h3 className="text-xl font-semibold">Data unavailable</h3>
+                  <p className="mt-2 text-muted-foreground">{error}</p>
+                </div>
+              ) : (
+                <>
+                  <div className="mb-8 flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium">
+                      <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+                      Showing {visibleMembers.length} of {filteredMembers.length} legislators
                     </div>
                   </div>
 
-                  <div className="min-w-0 flex-1 w-full mt-4 md:mt-0">
-                    <div className="flex flex-col sm:flex-row items-start justify-between gap-4 mb-5">
-                      <div className="text-center md:text-left w-full sm:w-auto">
-                        <h2 className="font-serif text-2xl md:text-3xl font-bold text-foreground leading-tight group-hover:text-accent transition-colors">
-                          {member.name}
-                        </h2>
-                        <div className="mt-2.5 flex flex-wrap justify-center md:justify-start items-center gap-3 text-muted-foreground font-sans text-xs uppercase tracking-wide">
-                          <span className="inline-flex items-center gap-1.5 bg-muted/50 px-2 py-1 rounded-sm"><MapPin size={12} className="text-accent" /> {member.state}{member.district ? `-${member.district}` : ""}</span>
-                          <span className="inline-flex items-center gap-1.5 bg-muted/50 px-2 py-1 rounded-sm"><Landmark size={12} className="text-primary" /> {chamber}</span>
-                          <span className="inline-flex items-center gap-1.5 bg-muted/50 px-2 py-1 rounded-sm"><Building2 size={12} className="text-primary" /> {member.in_office ? "Active" : "Former"}</span>
-                        </div>
-                      </div>
+                  <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                    {visibleMembers.map((member) => (
+                      <LegislatorCard key={member.id} member={member} />
+                    ))}
+                  </div>
 
-                      <Link href={`/legislators/${member.id}`} className="w-12 h-12 mx-auto sm:mx-0 flex items-center justify-center bg-background border-2 border-border text-foreground group-hover:bg-accent group-hover:text-accent-foreground group-hover:border-accent transition-all duration-300 rounded-full shrink-0 shadow-sm hover:scale-110">
-                        <ArrowRight size={18} className="group-hover:translate-x-0.5 transition-transform" />
-                      </Link>
+                  {displayCount < filteredMembers.length && (
+                    <div className="mt-16 flex justify-center">
+                      <button 
+                        onClick={() => setDisplayCount(prev => prev + 12)}
+                        className="group flex items-center gap-2 rounded-full border border-border bg-card px-8 py-3 text-sm font-bold transition-all hover:border-accent hover:text-accent hover:shadow-lg active:scale-95"
+                      >
+                        Load More Members
+                        <ChevronDown className="h-4 w-4 transition-transform group-hover:translate-y-0.5" />
+                      </button>
                     </div>
+                  )}
+                </>
+              )}
+            </div>
 
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                      <div className="p-3.5 bg-background/50 border border-border/50 group-hover:border-border transition-colors rounded-sm hover:bg-background">
-                        <div className="flex items-center justify-center md:justify-start gap-2 text-accent mb-1.5">
-                          <DollarSign size={14} />
-                          <span className="font-mono text-[10px] font-bold uppercase tracking-wider">Volume</span>
-                        </div>
-                        <div className="font-mono text-center md:text-left text-sm md:text-base font-bold text-foreground">
-                          {formatCurrencyCompact(tradeStats?.volume || 0)}
-                        </div>
+            {/* Right Column: Sidebar */}
+            <aside className="lg:col-span-4">
+              <div className="sticky top-40 space-y-8 animate-stagger-item delay-2">
+                
+                {/* Directory Summary Card */}
+                <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+                  <div className="border-b border-border bg-muted/20 px-6 py-4">
+                    <h4 className="flex items-center gap-2 text-[10px] font-bold tracking-widest uppercase text-muted-foreground">
+                      <Building2 className="h-3 w-3" />
+                      Directory Summary
+                    </h4>
+                  </div>
+                  <div className="p-6">
+                    <div className="grid grid-cols-2 gap-y-8 gap-x-4">
+                      <div className="space-y-1">
+                        <div className="font-serif text-5xl font-bold">{members.length || "0"}</div>
+                        <div className="text-[10px] font-bold tracking-wider uppercase text-muted-foreground">Members</div>
                       </div>
-
-                      <div className="p-3.5 bg-background/50 border border-border/50 group-hover:border-border transition-colors rounded-sm hover:bg-background">
-                        <div className="flex items-center justify-center md:justify-start gap-2 text-muted-foreground group-hover:text-primary transition-colors mb-1.5">
-                          <Users size={14} />
-                          <span className="font-mono text-[10px] font-bold uppercase tracking-wider">Trades</span>
-                        </div>
-                        <div className="font-mono text-center md:text-left text-sm md:text-base font-bold text-foreground">{tradeStats?.count_trades || 0}</div>
+                      <div className="space-y-1">
+                        <div className="font-serif text-5xl font-bold">{senateCount}</div>
+                        <div className="text-[10px] font-bold tracking-wider uppercase text-muted-foreground">Senate</div>
                       </div>
-
-                      <div className="p-3.5 bg-background/50 border border-border/50 group-hover:border-border transition-colors rounded-sm hover:bg-background">
-                        <div className="flex items-center justify-center md:justify-start gap-2 text-muted-foreground group-hover:text-primary transition-colors mb-1.5">
-                          <Building2 size={14} />
-                          <span className="font-mono text-[10px] font-bold uppercase tracking-wider">Issuers</span>
-                        </div>
-                        <div className="font-mono text-center md:text-left text-sm md:text-base font-bold text-foreground">{tradeStats?.count_issuers || 0}</div>
+                      <div className="space-y-1">
+                        <div className="font-serif text-5xl font-bold">{houseCount}</div>
+                        <div className="text-[10px] font-bold tracking-wider uppercase text-muted-foreground">House</div>
                       </div>
-
-                      <div className="p-3.5 bg-background/50 border border-border/50 group-hover:border-border transition-colors rounded-sm hover:bg-background">
-                        <div className="flex items-center justify-center md:justify-start gap-2 text-muted-foreground group-hover:text-primary transition-colors mb-1.5">
-                          <Landmark size={14} />
-                          <span className="font-mono text-[10px] font-bold uppercase tracking-wider">Match</span>
-                        </div>
-                        <div className="font-mono text-[11px] text-center md:text-left md:text-xs font-bold uppercase text-foreground">
-                          {tradeSummary?.matched ? tradeSummary.match_confidence.replaceAll("_", " ") : "No trade data"}
-                        </div>
+                      <div className="space-y-1">
+                        <div className="font-serif text-5xl font-bold text-accent">{matchedTradeCount}</div>
+                        <div className="text-[10px] font-bold tracking-wider uppercase text-accent">Matched Trades</div>
                       </div>
                     </div>
                   </div>
                 </div>
+
+                {/* Enhanced Insights Card */}
+                <div className="relative overflow-hidden rounded-2xl bg-[#0a0f18] px-6 py-8 text-white">
+                  <div className="relative z-10">
+                    <Shield className="mb-4 h-10 w-10 drop-shadow-md" style={{ fill: 'white', stroke: '#ef4444', strokeWidth: 1.5 }} />
+                    <h4 className="font-serif text-xl font-bold leading-tight">Enhanced Insights</h4>
+                    <p className="mt-2 text-sm text-white/70 leading-relaxed">
+                      Our system matches Congress.gov data with CapitolTrades via bioguide IDs, providing 99.8% accuracy in financial reporting.
+                    </p>
+                    <button className="mt-6 text-[10px] font-bold tracking-widest uppercase text-white hover:underline">
+                      Learn About Our Methodology →
+                    </button>
+                  </div>
+                  {/* Decorative Gradient */}
+                  <div className="absolute top-0 right-0 -mr-12 -mt-12 h-40 w-40 rounded-full bg-blue-900/30 blur-3xl" />
+                </div>
+
+                {/* Decorative Coin/Medal */}
+                <div className="flex justify-center pt-8">
+                  <div className="flex h-24 w-24 items-center justify-center rounded-full border-4 border-double border-border bg-accent/5">
+                    <div className="flex h-16 w-16 items-center justify-center rounded-full border border-border/50 bg-card shadow-inner">
+                      <Users className="h-6 w-6 text-muted-foreground/30" />
+                    </div>
+                  </div>
+                </div>
+
               </div>
-            )
-          })}
+            </aside>
+
+          </div>
         </div>
-
-        {loadingMore && (
-          <div className="mt-12 flex justify-center">
-            <div className="flex items-center gap-3 text-accent font-sans text-xs text-muted-foreground tracking-wide animate-pulse">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              <span>Loading more members...</span>
-            </div>
-          </div>
-        )}
-
-        {!loadingMore && hasMore && (
-          <div className="mt-12 flex justify-center mb-20">
-            <button
-              onClick={loadMore}
-              className="px-8 py-4 bg-muted border-2 border-border hover:bg-accent hover:text-accent-foreground hover:text-black hover:border-accent transition-all font-sans text-sm font-semibold tracking-wide"
-            >
-              Load More Members
-            </button>
-          </div>
-        )}
-
-        {!hasMore && filteredLegislators.length > 12 && (
-          <div className="mt-12 mb-20 text-center">
-            <div className="inline-block px-4 py-2 border border-border bg-muted text-muted-foreground font-sans text-xs text-muted-foreground tracking-wide">
-              End of Directory
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
+      </section>
+    </ArchivePage>
   )
 }

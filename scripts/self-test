@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "== Self-test =="
+echo "Working directory: $(pwd)"
+echo
+
+# ---- Backend ----
+echo "--- Backend ---"
+if [[ -f backend/Cargo.toml ]]; then
+  cd backend
+
+  echo "  cargo fmt --check"
+  cargo fmt --check
+
+  echo "  cargo clippy --all-targets --all-features"
+  cargo clippy --all-targets --all-features
+
+  echo "  cargo check"
+  cargo check
+
+  echo "  cargo test"
+  cargo test
+
+  cd ..
+  echo "  backend checks passed"
+else
+  echo "  no Cargo.toml; skipping backend"
+fi
+
+echo
+
+# ---- Frontend ----
+echo "--- Frontend ---"
+if [[ -f frontend/package.json ]]; then
+  cd frontend
+
+  if [[ -f pnpm-lock.yaml ]]; then
+    PM="pnpm"
+  elif [[ -f yarn.lock ]]; then
+    PM="yarn"
+  else
+    PM="npm run"
+  fi
+
+  echo "  typecheck: npx tsc --noEmit"
+  npx tsc --noEmit
+
+  if [[ "$PM" == "npm run" ]]; then
+    if node -e "const p=require('./package.json'); process.exit(p.scripts && p.scripts.lint ? 0 : 1)" 2>/dev/null; then
+      echo "  lint: $PM lint"
+      $PM lint
+    else
+      echo "  lint: no lint script; skipping"
+    fi
+  else
+    if node -e "const p=require('./package.json'); process.exit(p.scripts && p.scripts.lint ? 0 : 1)" 2>/dev/null; then
+      echo "  lint: $PM lint"
+      $PM lint
+    else
+      echo "  lint: no lint script; skipping"
+    fi
+  fi
+
+  cd ..
+  echo "  frontend checks passed"
+else
+  echo "  no package.json; skipping frontend"
+fi
+
+echo
+echo "Self-test completed."

@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "== Agent Summary =="
+echo "Root: $(pwd)"
+echo
+
+echo "== Stack =="
+echo "Backend: Rust (Axum)"
+echo "Frontend: Next.js 14 + TypeScript + Tailwind"
+echo
+
+echo "== Key files =="
+for f in AGENTS.md README.md backend/Cargo.toml frontend/package.json .env.example run_all.sh; do
+  if [[ -f "$f" ]]; then echo "  - $f"; else echo "  - MISSING: $f"; fi
+done
+
+echo
+echo "== Package manager =="
+if [[ -f frontend/pnpm-lock.yaml ]]; then echo "  pnpm"
+elif [[ -f frontend/yarn.lock ]]; then echo "  yarn"
+elif [[ -f frontend/package-lock.json ]]; then echo "  npm"
+fi
+
+echo
+echo "== Package scripts =="
+if [[ -f frontend/package.json ]]; then
+  node -e "const p=require('./frontend/package.json'); Object.entries(p.scripts||{}).forEach(([k,v])=>console.log('  '+k+': '+v))" 2>/dev/null || true
+fi
+
+echo
+echo "== Top-level directories =="
+find . -maxdepth 1 -type d | sed 's#^\./##' | sort | grep -v '^\.\|^target\|^node_modules\|^.git\|^.next' || true
+
+echo
+echo "== Backend crates =="
+find backend/crates -maxdepth 2 -name Cargo.toml 2>/dev/null | sed 's#/Cargo.toml##' | sort | while read d; do echo "  $d"; done
+
+echo
+echo "== Source layout =="
+echo "  frontend/app/        Next.js pages & API routes"
+echo "  frontend/lib/        API client, services"
+echo "  frontend/components/  Shared React components"
+echo "  backend/crates/       Rust libraries + server"
+
+echo
+echo "== Agent docs =="
+find docs/agent -maxdepth 2 -type f 2>/dev/null | sort || echo "  none found"
+
+echo
+echo "== Environment =="
+for e in CONGRESS_GOV_API_KEY OPENFEC_API_KEY SENATE_LDA_API_KEY; do
+  if grep -q "^${e}=" .env 2>/dev/null; then echo "  $e: set"; else echo "  $e: NOT SET"; fi
+done
+
+echo
+echo "== Recent git activity =="
+git log --oneline -5 2>/dev/null || echo "  no git history"

@@ -11,7 +11,7 @@ pub mod types;
 pub use error::LobbyingError;
 pub use types::{
     Client, ClientQuery, Contribution, ContributionQuery, Filing, FilingQuery, IssueJoiner,
-    Lobbyist, LobbyistQuery, PaginatedResponse, Registrant, RegistrantQuery,
+    LobbyingActivity, Lobbyist, LobbyistQuery, PaginatedResponse, Registrant, RegistrantQuery,
 };
 
 /// The Senate LDA REST API base URL.

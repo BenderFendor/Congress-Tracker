@@ -15,7 +15,7 @@ use congress_api::{
     BillQuery, Client as CongressClient, MemberQuery, VoteQuery,
 };
 use lobbying_client::{
-    ClientQuery, ContributionQuery, FilingQuery, LobbyingClient, LobbyistQuery, RegistrantQuery,
+    ClientQuery, ContributionQuery, LobbyingClient, LobbyistQuery, RegistrantQuery,
 };
 use openfec_api::{
     types::{Candidate, PaginatedResponse as OpenFECPaginatedResponse, Receipt},
@@ -26,11 +26,18 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use ticker_resolver;
 use tower_http::cors::{Any, CorsLayer};
+
+mod lobbying_analytics;
+mod portfolio;
 use trade_enricher::{compute_filer_metrics, EnrichedTrade, TradeType};
 
 #[derive(serde::Deserialize)]
 struct TradeParams {
     politician: Option<String>,
+    #[serde(default)]
+    size: Option<i64>,
+    #[serde(default)]
+    page: Option<i64>,
 }
 
 #[derive(serde::Deserialize)]
@@ -192,7 +199,6 @@ async fn main() {
         .route("/api/enrichment/member/{id}", get(get_enriched_member))
         .route("/api/enrichment/anomaly", get(get_anomaly_scores))
         // Lobbying endpoints
-        .route("/api/lobbying/filings", get(get_lobbying_filings))
         .route("/api/lobbying/registrants", get(get_lobbying_registrants))
         .route("/api/lobbying/clients", get(get_lobbying_clients))
         .route("/api/lobbying/lobbyists", get(get_lobbying_lobbyists))
@@ -215,6 +221,8 @@ async fn main() {
             "/api/enrichment/committee-keywords",
             get(get_committee_keywords),
         )
+        .merge(portfolio::routes())
+        .merge(lobbying_analytics::routes())
         .layer(cors)
         .with_state(app_state);
 
@@ -362,6 +370,12 @@ async fn get_trades(
     if let Some(p) = &params.politician {
         query = query.with_politician_id(p.clone());
     }
+    if let Some(s) = params.size {
+        query = query.with_page_size(s);
+    }
+    if let Some(pg) = params.page {
+        query = query.with_page(pg);
+    }
     match state.capitoltrades.get_trades(&query).await {
         Ok(trades) => Ok(Json(trades)),
         Err(e) => {
@@ -458,18 +472,36 @@ async fn get_legislators(
     // Try Congress.gov first, fall back to CIV.IQ
     if let Some(ref client) = state.congress {
         let mut query = MemberQuery::default();
-        if let Some(state_code) = &params.state { query = query.with_state(state_code.clone()); }
-        if let Some(district) = &params.district { query = query.with_district(district.clone()); }
-        if let Some(chamber) = &params.chamber { query = query.with_chamber(chamber.clone()); }
-        if let Some(party) = &params.party { query = query.with_party(party.clone()); }
-        if let Some(limit) = params.limit { query = query.with_limit(limit); }
-        if let Some(offset) = params.offset { query = query.with_offset(offset); }
+        if let Some(state_code) = &params.state {
+            query = query.with_state(state_code.clone());
+        }
+        if let Some(district) = &params.district {
+            query = query.with_district(district.clone());
+        }
+        if let Some(chamber) = &params.chamber {
+            query = query.with_chamber(chamber.clone());
+        }
+        if let Some(party) = &params.party {
+            query = query.with_party(party.clone());
+        }
+        if let Some(limit) = params.limit {
+            query = query.with_limit(limit);
+        }
+        if let Some(offset) = params.offset {
+            query = query.with_offset(offset);
+        }
 
         match client.get_members(&query).await {
             Ok(base) => {
-                let legislators: Vec<_> = base.data.iter()
-                    .map(|m| merge_legislator(m, &trading_map)).collect();
-                return Ok(Json(CongressPaginatedResponse { data: legislators, meta: base.meta }));
+                let legislators: Vec<_> = base
+                    .data
+                    .iter()
+                    .map(|m| merge_legislator(m, &trading_map))
+                    .collect();
+                return Ok(Json(CongressPaginatedResponse {
+                    data: legislators,
+                    meta: base.meta,
+                }));
             }
             Err(e) => tracing::warn!("Congress.gov failed, falling back to CIV.IQ: {:?}", e),
         }
@@ -477,58 +509,99 @@ async fn get_legislators(
 
     // CIV.IQ fallback
     let mut query = CiviqQuery::new();
-    if let Some(ref s) = params.state { query = query.with_state(s.clone()); }
-    if let Some(ref c) = params.chamber { query = query.with_chamber(c.clone()); }
-    if let Some(ref p) = params.party { query = query.with_party(p.clone()); }
-    if let Some(l) = params.limit { query = query.with_limit(l); }
-    if let Some(o) = params.offset { query = query.with_offset(o); }
+    if let Some(ref s) = params.state {
+        query = query.with_state(s.clone());
+    }
+    if let Some(ref c) = params.chamber {
+        query = query.with_chamber(c.clone());
+    }
+    if let Some(ref p) = params.party {
+        query = query.with_party(p.clone());
+    }
+    if let Some(l) = params.limit {
+        query = query.with_limit(l);
+    }
+    if let Some(o) = params.offset {
+        query = query.with_offset(o);
+    }
 
     let resp = state.civiq.get_representatives(&query).await.map_err(|e| {
-        (StatusCode::SERVICE_UNAVAILABLE, format!("Failed to fetch legislators: {}", e))
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            format!("Failed to fetch legislators: {}", e),
+        )
     })?;
 
-    let legislators: Vec<UnifiedLegislator> = resp.data.iter().map(|rep| {
-        let (first_name, last_name) = split_member_name(&rep.name);
-        let chamber = rep.chamber.clone().unwrap_or_else(|| "Congress".to_string());
-        let committees: Vec<String> = rep.committees.clone().unwrap_or_default()
-            .iter().map(|c| c.name.clone()).collect();
-        let trade_summary = trading_map.values()
-            .find(|p| p.politician_id == rep.bioguide_id)
-            .map(|politician| LegislatorTradeSummary {
-                politician_id: politician.politician_id.clone(),
-                matched: true,
-                match_confidence: "exact_id".to_string(),
-                source: "capitoltrades".to_string(),
-                stats: LegislatorTradeStats {
-                    count_trades: politician.stats.count_trades.unwrap_or(0),
-                    count_issuers: politician.stats.count_issuers.unwrap_or(0),
-                    volume: politician.stats.volume.unwrap_or(0),
-                    last_traded: politician.stats.date_last_traded.map(|d| d.to_string()),
-                },
-            });
-        UnifiedLegislator {
-            id: rep.bioguide_id.clone(), bioguide_id: rep.bioguide_id.clone(),
-            name: rep.name.clone(), first_name, last_name,
-            party: rep.party.clone(), state: rep.state.clone(),
-            district: rep.district.clone().unwrap_or_default(),
-            chamber: chamber.clone(),
-            avatar: build_avatar_url(&rep.bioguide_id),
-            bio: format!("{} serves {}.", rep.title.clone().unwrap_or_default(), rep.state),
-            url: rep.website.clone().unwrap_or_default(),
-            in_office: true,
-            next_election: rep.next_election.clone().unwrap_or_default(),
-            trade_summary,
-            committees,
-            bills_sponsored: 0,
-        }
-    }).collect();
+    let legislators: Vec<UnifiedLegislator> = resp
+        .data
+        .iter()
+        .map(|rep| {
+            let (first_name, last_name) = split_member_name(&rep.name);
+            let chamber = rep
+                .chamber
+                .clone()
+                .unwrap_or_else(|| "Congress".to_string());
+            let committees: Vec<String> = rep
+                .committees
+                .clone()
+                .unwrap_or_default()
+                .iter()
+                .map(|c| c.name.clone())
+                .collect();
+            let trade_summary = trading_map
+                .values()
+                .find(|p| p.politician_id == rep.bioguide_id)
+                .map(|politician| LegislatorTradeSummary {
+                    politician_id: politician.politician_id.clone(),
+                    matched: true,
+                    match_confidence: "exact_id".to_string(),
+                    source: "capitoltrades".to_string(),
+                    stats: LegislatorTradeStats {
+                        count_trades: politician.stats.count_trades.unwrap_or(0),
+                        count_issuers: politician.stats.count_issuers.unwrap_or(0),
+                        volume: politician.stats.volume.unwrap_or(0),
+                        last_traded: politician.stats.date_last_traded.map(|d| d.to_string()),
+                    },
+                });
+            UnifiedLegislator {
+                id: rep.bioguide_id.clone(),
+                bioguide_id: rep.bioguide_id.clone(),
+                name: rep.name.clone(),
+                first_name,
+                last_name,
+                party: rep.party.clone(),
+                state: rep.state.clone(),
+                district: rep.district.clone().unwrap_or_default(),
+                chamber: chamber.clone(),
+                avatar: build_avatar_url(&rep.bioguide_id),
+                bio: format!(
+                    "{} serves {}.",
+                    rep.title.clone().unwrap_or_default(),
+                    rep.state
+                ),
+                url: rep.website.clone().unwrap_or_default(),
+                in_office: true,
+                next_election: rep.next_election.clone().unwrap_or_default(),
+                trade_summary,
+                committees,
+                bills_sponsored: 0,
+            }
+        })
+        .collect();
 
-    let total = resp.pagination.as_ref().map(|p| p.total as u32).unwrap_or(legislators.len() as u32);
+    let total = resp
+        .pagination
+        .as_ref()
+        .map(|p| p.total as u32)
+        .unwrap_or(legislators.len() as u32);
     let pagination = congress_api::types::Pagination {
         count: total,
-        next_url: resp.pagination.as_ref()
-            .and_then(|_| Some(format!("/api/legislators?offset={}", 
-                params.offset.unwrap_or(0) + legislators.len() as u32))),
+        next_url: resp.pagination.as_ref().and_then(|_| {
+            Some(format!(
+                "/api/legislators?offset={}",
+                params.offset.unwrap_or(0) + legislators.len() as u32
+            ))
+        }),
         previous_url: None,
     };
 
@@ -548,7 +621,11 @@ async fn get_legislator_by_id(
     if let Some(ref client) = state.congress {
         match client.get_member_by_id(&id).await {
             Ok(member) => return Ok(Json(merge_legislator(&member, &trading_map))),
-            Err(e) => tracing::warn!("Congress.gov failed for {}: {:?}, falling back to CIV.IQ", id, e),
+            Err(e) => tracing::warn!(
+                "Congress.gov failed for {}: {:?}, falling back to CIV.IQ",
+                id,
+                e
+            ),
         }
     }
 
@@ -561,13 +638,15 @@ async fn get_legislator_by_id(
     let rep = civiq_resp.data;
     let (first_name, last_name) = split_member_name(&rep.name);
     let chamber = rep.chamber.unwrap_or_else(|| "Congress".to_string());
-    let committees: Vec<String> = rep.committees
+    let committees: Vec<String> = rep
+        .committees
         .unwrap_or_default()
         .iter()
         .map(|c| c.name.clone())
         .collect();
 
-    let trade_summary = trading_map.values()
+    let trade_summary = trading_map
+        .values()
         .find(|p| p.politician_id == rep.bioguide_id)
         .map(|politician| LegislatorTradeSummary {
             politician_id: politician.politician_id.clone(),
@@ -593,8 +672,18 @@ async fn get_legislator_by_id(
         district: rep.district.unwrap_or_default(),
         chamber: chamber.clone(),
         avatar: build_avatar_url(&rep.bioguide_id),
-        bio: format!("{} serves {}.", rep.title.unwrap_or_else(|| if chamber == "Senate" { "Senator".to_string() } else { "Representative".to_string() }), rep.state),
-        url: rep.website.unwrap_or_else(|| rep.current_term.and_then(|t| t.website).unwrap_or_default()),
+        bio: format!(
+            "{} serves {}.",
+            rep.title.unwrap_or_else(|| if chamber == "Senate" {
+                "Senator".to_string()
+            } else {
+                "Representative".to_string()
+            }),
+            rep.state
+        ),
+        url: rep
+            .website
+            .unwrap_or_else(|| rep.current_term.and_then(|t| t.website).unwrap_or_default()),
         in_office: true,
         next_election: rep.next_election.unwrap_or_default(),
         trade_summary,
@@ -1014,72 +1103,6 @@ async fn get_anomaly_scores(
 }
 
 // ─── Lobbying handlers ──────────────────────────────────────────────
-
-async fn get_lobbying_filings(
-    State(state): State<Arc<AppState>>,
-    params: Query<LobbyingFilingParams>,
-) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let client = state.lobbying.as_ref().ok_or_else(|| {
-        (
-            StatusCode::SERVICE_UNAVAILABLE,
-            "Lobbying API not configured. Set SENATE_LDA_API_KEY.".to_string(),
-        )
-    })?;
-
-    let mut query = FilingQuery::default();
-    if let Some(ref name) = params.client_name {
-        query = query.with_client(name.clone());
-    }
-    if let Some(ref name) = params.registrant_name {
-        query = query.with_registrant(name.clone());
-    }
-    if let Some(year) = params.year {
-        query = query.with_year(year);
-    }
-    if let Some(ref period) = params.period {
-        query = query.with_period(period.clone());
-    }
-    if let Some(ref date) = params.with_posted_before {
-        query = query.with_posted_before(date.clone());
-    }
-    if let Some(ref date) = params.with_posted_after {
-        query = query.with_posted_after(date.clone());
-    }
-    if let Some(ref amount) = params.with_amount_min {
-        query = query.with_amount_min(amount.clone());
-    }
-    if let Some(ref amount) = params.with_amount_max {
-        query = query.with_amount_max(amount.clone());
-    }
-    if let Some(ref issues_str) = params.with_issues {
-        let issues: Vec<String> = issues_str
-            .split(',')
-            .map(|s| s.trim().to_string())
-            .collect();
-        query = query.with_issues(&issues);
-    }
-    if let Some(page_size) = params.page_size {
-        query = query.with_page_size(page_size);
-    }
-    if let Some(page) = params.page {
-        query = query.with_page(page);
-    }
-
-    match client.get_filings(&query).await {
-        Ok(response) => Ok(Json(serde_json::json!({
-            "count": response.count,
-            "next": response.next,
-            "results": response.results,
-        }))),
-        Err(e) => {
-            tracing::error!("Failed to fetch lobbying filings: {:?}", e);
-            Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to fetch lobbying filings: {:?}", e),
-            ))
-        }
-    }
-}
 
 async fn get_lobbying_registrants(
     State(state): State<Arc<AppState>>,

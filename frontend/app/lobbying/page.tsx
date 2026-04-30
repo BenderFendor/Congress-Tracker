@@ -1,711 +1,409 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import Link from "next/link"
+import React, { useCallback, useEffect, useState } from "react"
 import {
-    Search,
-    Building2,
-    DollarSign,
-    Users,
-    FileText,
-    TrendingUp,
-    ExternalLink,
-    HardHat,
-    BarChart3,
+  ExternalLink, Info, Landmark,
+  RefreshCw, Search
 } from "lucide-react"
-import { getRecentFilings, getRegistrants, getLobbyingRegistrants, getLobbyingClients, getLobbyingContributions, Filing, Registrant, LobbyingClient, Contribution } from "@/lib/services/lobbying"
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts"
+import {
+  fetchLobbyingOverview, fetchLobbyingFilings, fetchInfluenceFlow, fetchTopSectors,
+  type FilingCardItem, type FlowNode, type FlowLink,
+} from "@/lib/services/lobbying"
 
 const currentYear = new Date().getFullYear()
-const CLIENTS_PER_PAGE = 25
+
+function formatCurrency(value: number): string {
+  if (!value || !Number.isFinite(value)) return "$0"
+  return new Intl.NumberFormat("en-US", {
+    style: "currency", currency: "USD", notation: "compact", maximumFractionDigits: 1,
+  }).format(value)
+}
+
+const DONUT_COLORS = ["#aa332d", "#335d88", "#6e5d91", "#8a8d91"]
+const SECTOR_COLORS = ["#aa332d", "#335d88", "#6e5d91", "#8a8d91", "#d4a574"]
+
+// ── Influence Flow SVG ──
+
+function InfluenceFlowSvg({ nodes, links }: { nodes: FlowNode[]; links: FlowLink[] }) {
+  const w = 380; const h = 260
+  const leftNodes = nodes.filter(n => n.side === "left")
+  const rightNodes = nodes.filter(n => n.side === "right")
+  const centerNode = nodes.find(n => n.side === "center")
+
+  const leftY = (i: number) => h * 0.15 + (h * 0.7 / Math.max(leftNodes.length, 1)) * (i + 0.5)
+  const rightY = (i: number) => h * 0.15 + (h * 0.7 / Math.max(rightNodes.length, 1)) * (i + 0.5)
+  const cx = w * 0.25; const c2x = w * 0.75
+
+  const maxVal = links.reduce((m, l) => Math.max(m, l.value || 0), 1)
+  const bandScale = (v: number) => Math.max(3, (v / maxVal) * 18)
+
+  function curvePath(x1: number, y1: number, x2: number, y2: number, bw: number): string {
+    const mx = (x1 + x2) / 2
+    return `M ${x1} ${y1 - bw / 2} C ${mx} ${y1 - bw / 2}, ${mx} ${y2 - bw / 2}, ${x2} ${y2 - bw / 2} L ${x2} ${y2 + bw / 2} C ${mx} ${y2 + bw / 2}, ${mx} ${y1 + bw / 2}, ${x1} ${y1 + bw / 2} Z`
+  }
+
+  const leftLinks = links.filter(l => l.target === "senate_influence")
+  const rightLinks = links.filter(l => l.source === "senate_influence")
+
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-auto">
+      <defs>
+        <linearGradient id="flowGrad" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stopColor="#aa332d" stopOpacity={0.7} />
+          <stop offset="50%" stopColor="#335d88" stopOpacity={0.6} />
+          <stop offset="100%" stopColor="#6e5d91" stopOpacity={0.7} />
+        </linearGradient>
+      </defs>
+      {leftLinks.map((l, i) => {
+        const sn = leftNodes.findIndex(n => n.id === l.source)
+        const bw = bandScale(l.value)
+        return <path key={`l${i}`} d={curvePath(cx + 30, leftY(sn), w * 0.48, h * 0.5, bw)} fill="url(#flowGrad)" opacity={0.75} />
+      })}
+      {rightLinks.map((l, i) => {
+        const tn = rightNodes.findIndex(n => n.id === l.target)
+        const bw = bandScale(l.value)
+        return <path key={`r${i}`} d={curvePath(w * 0.52, h * 0.5, c2x - 30, rightY(tn), bw)} fill="url(#flowGrad)" opacity={0.75} />
+      })}
+      {leftNodes.map((n, i) => (
+        <g key={n.id}>
+          <rect x={10} y={leftY(i) - 12} width={cx - 20} height={24} rx={6} fill="#fffdf8" stroke="#dfd5c6" />
+          <text x={cx / 2} y={leftY(i) + 4} textAnchor="middle" className="fill-foreground text-[10px] font-sans">{n.label}</text>
+        </g>
+      ))}
+      {centerNode && (
+        <g>
+          <circle cx={w / 2} cy={h * 0.5} r={28} fill="#aa332d" />
+          <Landmark width={18} height={18} x={w / 2 - 9} y={h * 0.5 - 9} color="#fffdf8" />
+          <text x={w / 2} y={h * 0.5 + 42} textAnchor="middle" className="fill-muted-foreground text-[9px] font-sans">SENATE</text>
+          <text x={w / 2} y={h * 0.5 + 54} textAnchor="middle" className="fill-muted-foreground text-[9px] font-sans">INFLUENCE</text>
+        </g>
+      )}
+      {rightNodes.map((n, i) => (
+        <g key={n.id}>
+          <rect x={c2x + 10} y={rightY(i) - 12} width={w - c2x - 20} height={24} rx={6} fill="#fffdf8" stroke="#dfd5c6" />
+          <text x={c2x + (w - c2x) / 2} y={rightY(i) + 4} textAnchor="middle" className="fill-foreground text-[10px] font-sans">{n.label}</text>
+        </g>
+      ))}
+    </svg>
+  )
+}
+
+// ── Filing Card ──
+
+function FilingCard({ item }: { item: FilingCardItem }) {
+  return (
+    <div className="bg-card border border-border rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow">
+      <div className="flex gap-4">
+        <div className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-accent/10 border border-accent/20 font-serif text-lg text-accent font-bold">
+          {item.avatarText}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="w-2 h-2 rounded-full bg-accent" />
+            <span className="text-[10px] font-bold text-accent tracking-widest uppercase">{item.entityRole}</span>
+            <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-mono uppercase">{item.jurisdiction}</span>
+          </div>
+          <h3 className="font-serif text-xl text-foreground truncate">{item.registrantName}</h3>
+          <p className="text-xs text-muted-foreground mt-1">
+            {item.filingCount} FILING{item.filingCount !== 1 ? "S" : ""} THIS YEAR &bull; {item.clientCount} CLIENT{item.clientCount !== 1 ? "S" : ""}
+          </p>
+        </div>
+      </div>
+      <div className="grid grid-cols-3 gap-3 mt-4 pt-4 border-t border-border">
+        <div><div className="text-[10px] font-bold text-muted-foreground tracking-wider uppercase">{item.reportedAmountLabel}</div><div className="font-serif text-lg font-bold text-foreground mt-0.5">{formatCurrency(item.reportedAmount)}</div></div>
+        <div><div className="text-[10px] font-bold text-muted-foreground tracking-wider uppercase">Filing Count</div><div className="font-serif text-lg font-bold text-foreground mt-0.5">{item.filingCount}</div></div>
+        <div><div className="text-[10px] font-bold text-muted-foreground tracking-wider uppercase">Clients</div><div className="font-serif text-lg font-bold text-foreground mt-0.5">{item.clientCount}</div></div>
+      </div>
+      {item.topIssueAreas.length > 0 && (
+        <div className="mt-4 pt-3 border-t border-border">
+          <div className="text-[10px] font-bold text-muted-foreground tracking-wider uppercase mb-2">Top Issue Areas</div>
+          <div className="flex flex-wrap gap-1.5">
+            {item.topIssueAreas.slice(0, 4).map(issue => (
+              <span key={issue} className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 bg-accent/5 border border-accent/15 text-accent rounded">{issue}</span>
+            ))}
+          </div>
+        </div>
+      )}
+      <a href={`/lobbying/${encodeURIComponent(item.registrantName.replace(/\s+/g, "-"))}`} className="inline-flex items-center gap-1 mt-4 text-xs font-bold text-accent hover:text-accent-dark transition-colors">
+        View Details <ExternalLink size={11} />
+      </a>
+    </div>
+  )
+}
+
+// ── Main Page ──
 
 export default function LobbyingPage() {
-    const [filings, setFilings] = useState<Filing[]>([])
-    const [registrants, setRegistrants] = useState<Registrant[]>([])
-    const [clients, setClients] = useState<LobbyingClient[]>([])
-    const [clientSearchTerm, setClientSearchTerm] = useState("")
-    const [clientPage, setClientPage] = useState(1)
-    const [loading, setLoading] = useState(true)
-    const [error, setError] = useState<string | null>(null)
-    const [searchTerm, setSearchTerm] = useState("")
-    const [selectedYear, setSelectedYear] = useState(currentYear.toString())
-    const [activeTab, setActiveTab] = useState("filings")
+  const [activeTab, setActiveTab] = useState("Recent Filings")
+  const [search, setSearch] = useState("")
+  const [year, setYear] = useState(currentYear)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [overview, setOverview] = useState<{ total: number; breakdown: { label: string; amount: number; percent: number }[]; sourceNote: string } | null>(null)
+  const [filingItems, setFilingItems] = useState<FilingCardItem[]>([])
+  const [hasMore, setHasMore] = useState(false)
+  const [flowData, setFlowData] = useState<{ nodes: FlowNode[]; links: FlowLink[] } | null>(null)
+  const [sectorData, setSectorData] = useState<{ sector: string; amount: number }[]>([])
+  const [sectorSource, setSectorSource] = useState("")
 
-    const formatCurrency = (amount: number) => {
-        return new Intl.NumberFormat("en-US", {
-            style: "currency",
-            currency: "USD",
-            minimumFractionDigits: 0,
-            maximumFractionDigits: 0,
-        }).format(amount)
+  const loadOverview = useCallback(async () => {
+    const data = await fetchLobbyingOverview(year)
+    if (data) setOverview({ total: data.totalReportedLobbying, breakdown: data.breakdown, sourceNote: data.sourceNote })
+  }, [year])
+
+  const loadFilings = useCallback(async () => {
+    const data = await fetchLobbyingFilings(year, search || undefined, 12, 0)
+    if (data) { setFilingItems(data.items); setHasMore(data.hasMore) }
+  }, [year, search])
+
+  const loadFlow = useCallback(async () => {
+    const data = await fetchInfluenceFlow(year)
+    if (data) setFlowData(data)
+  }, [year])
+
+  const loadSectors = useCallback(async () => {
+    const data = await fetchTopSectors(year)
+    if (data) {
+      setSectorData(data.items.slice(0, 5).map(i => ({ sector: i.sector, amount: i.amount })))
+      setSectorSource(data.sourceNote)
     }
+  }, [year])
 
-    useEffect(() => {
-        const fetchLobbyingData = async () => {
-            try {
-                setLoading(true)
+  useEffect(() => {
+    setLoading(true)
+    setError(null)
+    Promise.all([loadOverview(), loadFilings(), loadFlow(), loadSectors()])
+      .catch(e => setError(e instanceof Error ? e.message : "Failed to load"))
+      .finally(() => setLoading(false))
+  }, [loadOverview, loadFilings, loadFlow, loadSectors])
 
-                const [filingsData, registrantsData, backendRegistrants, clientsData, contribData] = await Promise.all([
-                    getRecentFilings(1, 50),
-                    getRegistrants(1, 50),
-                    getLobbyingRegistrants({ page_size: 50 }),
-                    getLobbyingClients({ page_size: 200 }),
-                    getLobbyingContributions({ year: Number(currentYear) }),
-                ])
+  const handleSearch = useCallback((value: string) => {
+    setSearch(value)
+  }, [])
 
-                setFilings(filingsData.results || [])
-                setRegistrants(backendRegistrants?.results || registrantsData.results || [])
-                setClients(clientsData?.results || [])
-            } catch (e: any) {
-                console.error("Lobbying data fetch error:", e)
-                setError(e.message)
-            } finally {
-                setLoading(false)
-            }
-        }
+  const handleRefresh = useCallback(() => {
+    setLoading(true)
+    Promise.all([loadOverview(), loadFilings(), loadFlow(), loadSectors()])
+      .catch(e => setError(e instanceof Error ? e.message : "Failed to load"))
+      .finally(() => setLoading(false))
+  }, [loadOverview, loadFilings, loadFlow, loadSectors])
 
-        fetchLobbyingData()
-    }, [])
+  const tabs = ["Recent Filings", "Top Spenders", "Top Firms", "Industry Spend", "Top Recipients"]
 
-    const registrantFilings = new Map<number, Filing[]>()
-    filings.forEach((filing) => {
-        const registrantId = filing.registrant.id
-        if (!registrantFilings.has(registrantId)) {
-            registrantFilings.set(registrantId, [])
-        }
-        registrantFilings.get(registrantId)?.push(filing)
-    })
-
-    const lobbyingOrganizations = Array.from(registrantFilings.entries()).map(
-        ([registrantId, orgFilings]) => {
-            const registrant = orgFilings[0].registrant
-            const totalIncome = orgFilings.reduce(
-                (sum, filing) => sum + (filing.income || 0),
-                0
-            )
-            const totalExpenses = orgFilings.reduce(
-                (sum, filing) => sum + (filing.expenses || 0),
-                0
-            )
-            const uniqueClients = new Set(
-                orgFilings.map((f) => f.client?.name).filter(Boolean)
-            )
-            const allIssues = new Set(
-                orgFilings.flatMap(
-                    (f) =>
-                        f.lobbying_activities
-                            ?.map((a) => a.general_issue_area_display)
-                            .filter(Boolean) || []
-                )
-            )
-
-            return {
-                id: registrantId,
-                registrant,
-                filings: orgFilings,
-                totalIncome,
-                totalExpenses,
-                clientCount: uniqueClients.size,
-                issueAreas: Array.from(allIssues).slice(0, 5),
-                mostRecentFiling: orgFilings[0],
-            }
-        }
-    )
-
-    const filteredOrgs = lobbyingOrganizations.filter((org) => {
-        const matchesSearch =
-            org.registrant.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            org.issueAreas.some(
-                (issue) => issue && issue.toLowerCase().includes(searchTerm.toLowerCase())
-            )
-        return matchesSearch
-    })
-
-    const getIssueColor = (issue: string) => {
-        const colors = [
-            "border-blue-500/50 text-blue-400 bg-blue-900/20",
-            "border-green-500/50 text-green-400 bg-green-900/20",
-            "border-purple-500/50 text-purple-400 bg-purple-900/20",
-            "border-orange-500/50 text-orange-400 bg-orange-900/20",
-            "border-red-500/50 text-red-400 bg-red-900/20",
-            "border-yellow-500/50 text-yellow-400 bg-yellow-900/20",
-            "border-pink-500/50 text-pink-400 bg-pink-900/20",
-            "border-indigo-500/50 text-indigo-400 bg-indigo-900/20",
-        ]
-        if (!issue || typeof issue !== "string") {
-            return colors[0]
-        }
-        const index = issue.length % colors.length
-        return colors[index]
-    }
-
-    const topSpenders = [...lobbyingOrganizations]
-        .sort((a, b) => b.totalIncome - a.totalIncome)
-        .slice(0, 10)
-
-    const topFirms = [...registrants]
-        .sort((a, b) => (b.name > a.name ? -1 : 1))
-        .slice(0, 15)
-
-    const issueSpend = new Map<string, number>()
-    filings.forEach((f) => {
-        const income = f.income || 0
-        ;(f.lobbying_activities || []).forEach((a) => {
-            if (a.general_issue_area_display) {
-                const existing = issueSpend.get(a.general_issue_area_display) || 0
-                issueSpend.set(a.general_issue_area_display, existing + income)
-            }
-        })
-    })
-    const topIssues = Array.from(issueSpend.entries())
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 12)
-
-    const clientSpend = new Map<string, number>()
-    filings.forEach((f) => {
-        if (f.client?.name) {
-            const existing = clientSpend.get(f.client.name) || 0
-            clientSpend.set(f.client.name, existing + (f.income || 0))
-        }
-    })
-    const topRecipients = [...clients]
-        .filter((c) => clientSpend.has(c.name))
-        .map((c) => ({
-            ...c,
-            totalSpend: clientSpend.get(c.name) || 0,
-        }))
-        .sort((a, b) => b.totalSpend - a.totalSpend)
-        .slice(0, 10)
-
-    const renderTopSpenders = () => (
-        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-            {topSpenders.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-24 text-center border border-border bg-card rounded-sm shadow-sm">
-                    <HardHat size={48} className="text-muted-foreground mb-6" />
-                    <h3 className="font-serif text-3xl font-bold text-primary mb-4">
-                        Top Spenders
-                    </h3>
-                    <p className="text-muted-foreground max-w-md mx-auto">
-                        Spending data unavailable. The Senate LDA API may not be configured. Set
-                        SENATE_LDA_API_KEY in your environment and restart the backend.
-                    </p>
+  return (
+    <div className="min-h-screen bg-background text-foreground font-sans">
+      {/* Hero */}
+      <section className="relative overflow-hidden border-b border-border bg-gradient-to-br from-card to-background">
+        <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: "radial-gradient(circle, #aa332d 0.5px, transparent 0.5px)", backgroundSize: "24px 24px" }} />
+        <div className="absolute top-8 right-16 text-[72px] font-serif font-bold text-muted-foreground/5 rotate-12 select-none pointer-events-none">SENATE RECORD</div>
+        <div className="max-w-7xl mx-auto px-6 md:px-10 py-12 md:py-16 relative z-10">
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 items-center">
+            <div className="lg:col-span-3">
+              <h1 className="text-5xl md:text-6xl lg:text-7xl font-extrabold tracking-tight leading-none mb-4 font-serif">
+                <span className="text-foreground">Influence</span><br />
+                <span className="text-accent italic font-normal tracking-normal">Tracker</span>
+              </h1>
+              <p className="text-xs font-bold text-muted-foreground tracking-[0.25em] uppercase max-w-lg leading-relaxed">
+                Trace lobbying money and political influence through Senate filings.
+              </p>
+              {/* Folder art */}
+              <div className="mt-8 flex gap-2">
+                <div className="relative w-32 h-40">
+                  <div className="absolute bottom-0 left-0 w-28 h-36 bg-[#f5ecd7] border border-[#d4c5a0] rounded-sm shadow-sm flex flex-col items-center justify-center p-2 z-10">
+                    <div className="text-[9px] font-mono font-bold text-accent tracking-wide text-center leading-tight">LOBBYING<br />DISCLOSURE<br />SENATE FILINGS</div>
+                    <div className="w-8 h-0.5 bg-accent/40 my-1.5" />
+                    <div className="text-[7px] font-mono font-bold text-muted-foreground text-center">PUBLIC<br />RECORD</div>
+                  </div>
+                  <div className="absolute bottom-1 left-3 w-28 h-36 bg-[#ede1c8] border border-[#d4c5a0] rounded-sm -rotate-3 opacity-80" />
+                  <div className="absolute bottom-2 left-6 w-28 h-36 bg-[#e8d9bf] border border-[#d4c5a0] rounded-sm rotate-2 opacity-60" />
                 </div>
-            ) : (
-                <div className="space-y-4">
-                    {topSpenders.map((org, i) => (
-                        <Link
-                            key={org.id}
-                            href={`/lobbying/${encodeURIComponent(org.registrant.name.replace(/\s+/g, "-"))}`}
-                            className="block bg-card border-2 border-border p-6 hover:border-accent/50 transition-all duration-300 group"
-                        >
-                            <div className="flex items-center gap-4">
-                                <span className="font-mono text-2xl text-muted-foreground/40 font-bold w-8">
-                                    {i + 1}
-                                </span>
-                                <div className="flex-1">
-                                    <h3 className="font-serif text-xl font-bold text-foreground group-hover:text-accent transition-colors">
-                                        {org.registrant.name}
-                                    </h3>
-                                    <div className="flex items-center gap-4 text-xs text-muted-foreground mt-1">
-                                        <span>{org.filings.length} filings</span>
-                                        <span>{org.clientCount} clients</span>
-                                    </div>
-                                </div>
-                                <div className="text-right">
-                                    <p className="font-serif text-xl font-bold text-foreground">
-                                        {formatCurrency(org.totalIncome)}
-                                    </p>
-                                    <p className="text-[10px] text-muted-foreground uppercase">
-                                        Total Income
-                                    </p>
-                                </div>
-                            </div>
-                        </Link>
-                    ))}
+                <div className="flex flex-col gap-1 justify-end pb-1">
+                  {["Disclosures", "Clients", "Issue Areas", "Payments"].map(tab => (
+                    <div key={tab} className="text-[8px] font-mono font-bold text-muted-foreground bg-[#ede1c8] border border-[#d4c5a0] px-2 py-0.5 rounded-sm uppercase tracking-wider">{tab}</div>
+                  ))}
                 </div>
-            )}
-        </div>
-    )
-
-    const renderTopFirms = () => (
-        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-            {topFirms.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-24 text-center border border-border bg-card rounded-sm shadow-sm">
-                    <HardHat size={48} className="text-muted-foreground mb-6" />
-                    <h3 className="font-serif text-3xl font-bold text-primary mb-4">
-                        Top Lobbying Firms
-                    </h3>
-                    <p className="text-muted-foreground max-w-md mx-auto">
-                        Registrant data unavailable. The Senate LDA API may not be configured. Set
-                        SENATE_LDA_API_KEY in your environment and restart the backend.
-                    </p>
-                </div>
-            ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {topFirms.map((firm) => (
-                        <Link
-                            key={firm.id}
-                            href={`/lobbying/${encodeURIComponent(firm.name.replace(/\s+/g, "-"))}`}
-                            className="block bg-card border-2 border-border p-6 hover:border-accent/50 transition-all duration-300 group"
-                        >
-                            <div className="flex items-center gap-2 mb-3">
-                                <Building2 size={16} className="text-accent" />
-                                <span className="font-mono text-[10px] text-accent font-bold uppercase">
-                                    {firm.state_display || "Federal"}
-                                </span>
-                            </div>
-                            <h3 className="font-serif text-lg font-bold text-foreground group-hover:text-accent transition-colors mb-2">
-                                {firm.name}
-                            </h3>
-                            {firm.description && (
-                                <p className="text-xs text-muted-foreground line-clamp-2">
-                                    {firm.description}
-                                </p>
-                            )}
-                            <div className="mt-3">
-                                <a
-                                    href={firm.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-[10px] font-mono uppercase text-muted-foreground hover:text-accent transition-colors flex items-center gap-1"
-                                >
-                                    Senate.gov <ExternalLink size={10} />
-                                </a>
-                            </div>
-                        </Link>
-                    ))}
-                </div>
-            )}
-        </div>
-    )
-
-    const renderIndustrySpend = () => (
-        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-            {topIssues.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-24 text-center border border-border bg-card rounded-sm shadow-sm">
-                    <HardHat size={48} className="text-muted-foreground mb-6" />
-                    <h3 className="font-serif text-3xl font-bold text-primary mb-4">
-                        Industry Spend
-                    </h3>
-                    <p className="text-muted-foreground max-w-md mx-auto">
-                        Issue data unavailable. The Senate LDA API may not be configured. Set
-                        SENATE_LDA_API_KEY in your environment and restart the backend.
-                    </p>
-                </div>
-            ) : (
-                <div className="space-y-3">
-                    {topIssues.map(([issue, spend], i) => {
-                        const maxSpend = topIssues[0]?.[1] || 1
-                        const pct = Math.round((spend / maxSpend) * 100)
-                        return (
-                            <div
-                                key={issue}
-                                className="bg-card border-2 border-border p-6"
-                            >
-                                <div className="flex items-center justify-between mb-3">
-                                    <div className="flex items-center gap-3">
-                                        <span className="font-mono text-sm text-muted-foreground w-6">
-                                            {i + 1}
-                                        </span>
-                                        <span className="font-medium text-foreground">{issue}</span>
-                                    </div>
-                                    <span className="font-serif text-lg font-bold text-foreground">
-                                        {formatCurrency(spend)}
-                                    </span>
-                                </div>
-                                <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
-                                    <div
-                                        className="h-full bg-accent rounded-full transition-all duration-700"
-                                        style={{ width: `${pct}%` }}
-                                    />
-                                </div>
-                            </div>
-                        )
-                    })}
-                </div>
-            )}
-        </div>
-    )
-
-    const renderTopRecipients = () => (
-        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-            {topRecipients.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-24 text-center border border-border bg-card rounded-sm shadow-sm">
-                    <HardHat size={48} className="text-muted-foreground mb-6" />
-                    <h3 className="font-serif text-3xl font-bold text-primary mb-4">
-                        Top Recipients
-                    </h3>
-                    <p className="text-muted-foreground max-w-md mx-auto">
-                        Recipient data unavailable. The Senate LDA API may not be configured. Set
-                        SENATE_LDA_API_KEY in your environment and restart the backend.
-                    </p>
-                </div>
-            ) : (
-                <div className="space-y-4">
-                    {topRecipients.map((client, i) => {
-                        const filingsForClient = filings.filter(
-                            (f) => f.client?.name === client.name
-                        )
-                        const registrantsForClient = new Set(
-                            filingsForClient.map((f) => f.registrant.name)
-                        )
-                        return (
-                            <div
-                                key={client.id}
-                                className="bg-card border-2 border-border p-6 hover:border-accent/50 transition-all duration-300 group"
-                            >
-                                <div className="flex items-center gap-4">
-                                    <span className="font-mono text-2xl text-muted-foreground/40 font-bold w-8">
-                                        {i + 1}
-                                    </span>
-                                    <div className="flex-1">
-                                        <h3 className="font-serif text-xl font-bold text-foreground group-hover:text-accent transition-colors">
-                                            {client.name}
-                                        </h3>
-                                        <div className="flex items-center gap-4 text-xs text-muted-foreground mt-1">
-                                            <span className="flex items-center gap-1">
-                                                <Building2 size={12} />
-                                                {registrantsForClient.size} registrant
-                                                {registrantsForClient.size !== 1 ? "s" : ""}
-                                            </span>
-                                            <span>{filingsForClient.length} filings</span>
-                                        </div>
-                                    </div>
-                                    <div className="text-right">
-                                        <p className="font-serif text-xl font-bold text-foreground">
-                                            {formatCurrency(client.totalSpend)}
-                                        </p>
-                                        <p className="text-[10px] text-muted-foreground uppercase">
-                                            Total Lobbying
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-                        )
-                    })}
-                </div>
-            )}
-        </div>
-    )
-
-    const filteredClients = clients.filter(
-        (c) =>
-            c.name.toLowerCase().includes(clientSearchTerm.toLowerCase()) ||
-            (c.description &&
-                c.description.toLowerCase().includes(clientSearchTerm.toLowerCase()))
-    )
-    const totalClientPages = Math.ceil(filteredClients.length / CLIENTS_PER_PAGE)
-    const paginatedClients = filteredClients.slice(
-        (clientPage - 1) * CLIENTS_PER_PAGE,
-        clientPage * CLIENTS_PER_PAGE
-    )
-
-    const renderClients = () => (
-        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-            {clients.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-24 text-center border border-border bg-card rounded-sm shadow-sm">
-                    <HardHat size={48} className="text-muted-foreground mb-6" />
-                    <h3 className="font-serif text-3xl font-bold text-primary mb-4">
-                        Lobbying Clients
-                    </h3>
-                    <p className="text-muted-foreground max-w-md mx-auto">
-                        Client data unavailable. The Senate LDA API may not be configured. Set
-                        SENATE_LDA_API_KEY in your environment and restart the backend.
-                    </p>
-                </div>
-            ) : (
-                <>
-                    <div className="relative group mb-8">
-                        <Search
-                            className="absolute left-4 top-1/2 transform -translate-y-1/2 text-muted-foreground group-focus-within:text-accent transition-colors"
-                            size={18}
-                        />
-                        <input
-                            type="text"
-                            placeholder="SEARCH CLIENTS..."
-                            value={clientSearchTerm}
-                            onChange={(e) => {
-                                setClientSearchTerm(e.target.value)
-                                setClientPage(1)
-                            }}
-                            className="w-full bg-card border-2 border-border px-12 py-3 text-foreground font-mono text-sm font-bold placeholder:text-muted-foreground focus:outline-none focus:border-accent transition-all uppercase tracking-wider"
-                        />
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-                        {paginatedClients.map((client) => (
-                            <div
-                                key={client.id}
-                                className="bg-card border-2 border-border p-6 hover:border-accent/50 transition-all duration-300 group"
-                            >
-                                <h3 className="font-serif text-lg font-bold text-foreground group-hover:text-accent transition-colors mb-2">
-                                    {client.name}
-                                </h3>
-                                {client.description && (
-                                    <p className="text-xs text-muted-foreground line-clamp-2 mb-3">
-                                        {client.description}
-                                    </p>
-                                )}
-                                <div className="flex items-center gap-2 mb-3">
-                                    {client.state && (
-                                        <span className="font-mono text-[10px] text-accent font-bold uppercase border border-accent/30 px-2 py-0.5">
-                                            {client.state}
-                                        </span>
-                                    )}
-                                    {client.country &&
-                                        client.country !== "United States" && (
-                                            <span className="font-mono text-[10px] text-muted-foreground font-bold uppercase border border-border px-2 py-0.5">
-                                                {client.country}
-                                            </span>
-                                        )}
-                                </div>
-                                <a
-                                    href={client.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-[10px] font-mono uppercase text-muted-foreground hover:text-accent transition-colors flex items-center gap-1"
-                                >
-                                    Senate.gov <ExternalLink size={10} />
-                                </a>
-                            </div>
-                        ))}
-                    </div>
-
-                    {totalClientPages > 1 && (
-                        <div className="flex items-center justify-center gap-2">
-                            <button
-                                onClick={() => setClientPage((p) => Math.max(1, p - 1))}
-                                disabled={clientPage === 1}
-                                className="px-4 py-2 bg-muted border-2 border-border text-foreground font-mono text-xs font-bold hover:bg-accent hover:text-black hover:border-accent transition-all disabled:opacity-30 disabled:cursor-not-allowed"
-                            >
-                                Previous
-                            </button>
-                            <span className="font-mono text-sm text-muted-foreground px-4">
-                                Page {clientPage} of {totalClientPages}
-                            </span>
-                            <button
-                                onClick={() =>
-                                    setClientPage((p) => Math.min(totalClientPages, p + 1))
-                                }
-                                disabled={clientPage === totalClientPages}
-                                className="px-4 py-2 bg-muted border-2 border-border text-foreground font-mono text-xs font-bold hover:bg-accent hover:text-black hover:border-accent transition-all disabled:opacity-30 disabled:cursor-not-allowed"
-                            >
-                                Next
-                            </button>
-                        </div>
-                    )}
-                </>
-            )}
-        </div>
-    )
-
-    return (
-        <div className="min-h-screen bg-background text-foreground font-sans selection:bg-accent text-accent-foreground selection:text-foreground pb-20">
-            <div className="max-w-[1600px] mx-auto px-6 md:px-12 pt-12">
-                <div className="mb-12">
-                    <h2 className="font-serif text-5xl md:text-6xl font-bold text-foreground mb-4 leading-none tracking-tight">
-                        INFLUENCE <span className="text-accent">TRACKER</span>
-                    </h2>
-                    <p className="font-mono text-muted-foreground max-w-xl text-sm uppercase tracking-wide">
-                        Follow the flow of money and political influence. Comprehensive data from
-                        Senate filings.
-                    </p>
-                </div>
-
-                <div className="flex border-b-2 border-border mb-8 overflow-x-auto">
-                    {["filings", "spenders", "firms", "industries", "recipients", "clients"].map((tab) => (
-                        <button
-                            key={tab}
-                            onClick={() => setActiveTab(tab)}
-                            className={`px-8 py-4 font-sans text-sm font-semibold tracking-wide transition-all relative ${
-                                activeTab === tab
-                                    ? "text-accent"
-                                    : "text-muted-foreground hover:text-foreground"
-                            }`}
-                        >
-                            {tab === "filings"
-                                ? "Recent Filings"
-                                : tab === "spenders"
-                                  ? "Top Spenders"
-                                  : tab === "firms"
-                                    ? "Top Firms"
-                                    : tab === "industries"
-                                      ? "Industry Spend"
-                                      : tab === "clients"
-                                        ? "Clients"
-                                        : "Top Recipients"}
-                            {activeTab === tab && (
-                                <div className="absolute bottom-0 left-0 right-0 h-1 bg-accent text-accent-foreground" />
-                            )}
-                        </button>
-                    ))}
-                </div>
-
-                <div className="min-h-[400px]">
-                    {loading && activeTab === "filings" ? (
-                        <div className="flex items-center justify-center h-64">
-                            <div className="w-12 h-12 border-4 border-accent border-t-transparent rounded-full animate-spin" />
-                        </div>
-                    ) : error && activeTab === "filings" ? (
-                        <div className="flex items-center justify-center h-64 text-red-500 font-mono">
-                            Error: {error}
-                        </div>
-                    ) : (
-                        <>
-                            {activeTab === "filings" && (
-                                <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                                    <div className="flex flex-col md:flex-row gap-4 mb-8">
-                                        <div className="relative group flex-1">
-                                            <Search
-                                                className="absolute left-4 top-1/2 transform -translate-y-1/2 text-muted-foreground group-focus-within:text-accent transition-colors"
-                                                size={18}
-                                            />
-                                            <input
-                                                type="text"
-                                                placeholder="SEARCH ORGANIZATIONS..."
-                                                value={searchTerm}
-                                                onChange={(e) => setSearchTerm(e.target.value)}
-                                                className="w-full bg-card border-2 border-border px-12 py-3 text-foreground font-mono text-sm font-bold placeholder:text-muted-foreground focus:outline-none focus:border-accent transition-all uppercase tracking-wider"
-                                            />
-                                        </div>
-
-                                        <select
-                                            value={selectedYear}
-                                            onChange={(e) => setSelectedYear(e.target.value)}
-                                            className="w-full md:w-48 bg-card border-2 border-border px-4 py-3 text-foreground font-sans text-sm font-semibold focus:border-accent outline-none appearance-none cursor-pointer"
-                                        >
-                                            <option value={currentYear.toString()}>{currentYear}</option>
-                                            <option value={(currentYear - 1).toString()}>
-                                                {currentYear - 1}
-                                            </option>
-                                            <option value={(currentYear - 2).toString()}>
-                                                {currentYear - 2}
-                                            </option>
-                                        </select>
-
-                                        <button
-                                            onClick={() => window.location.reload()}
-                                            className="px-6 py-3 bg-muted border-2 border-border text-foreground font-sans text-sm font-semibold hover:bg-accent hover:text-accent-foreground hover:text-black hover:border-accent transition-all"
-                                        >
-                                            Refresh
-                                        </button>
-                                    </div>
-
-                                    <div className="grid gap-6">
-                                        {filteredOrgs.map((org) => (
-                                            <div
-                                                key={org.id}
-                                                className="bg-card border-2 border-border p-8 hover:border-accent/50 transition-all duration-300 group"
-                                            >
-                                                <div className="flex flex-col md:flex-row justify-between items-start gap-6 mb-8">
-                                                    <div>
-                                                        <div className="flex items-center gap-3 mb-2">
-                                                            <span className="w-2 h-2 bg-accent text-accent-foreground rounded-full" />
-                                                            <span className="font-mono text-xs text-accent font-bold uppercase tracking-wide">
-                                                                Registrant
-                                                            </span>
-                                                            <span className="font-mono text-xs text-muted-foreground uppercase border border-border px-2 py-0.5">
-                                                                {org.registrant.state_display || "Federal"}
-                                                            </span>
-                                                        </div>
-                                                        <h3 className="font-serif text-3xl font-bold text-foreground mb-2">
-                                                            {org.registrant.name}
-                                                        </h3>
-                                                        <div className="flex items-center gap-4 font-mono text-xs text-muted-foreground uppercase">
-                                                            <span>
-                                                                {org.filings.length} filings this year
-                                                            </span>
-                                                            <span className="text-gray-700">|</span>
-                                                            <span>{org.clientCount} clients</span>
-                                                        </div>
-                                                    </div>
-
-                                                    <a
-                                                        href={org.registrant.url}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="px-4 py-2 border border-border text-xs font-mono font-bold uppercase hover:bg-card hover:text-black transition-colors flex items-center gap-2"
-                                                    >
-                                                        View Details <ExternalLink size={12} />
-                                                    </a>
-                                                </div>
-
-                                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-                                                    <div className="p-4 bg-muted border border-white/5">
-                                                        <div className="flex items-center gap-2 mb-2 text-muted-foreground">
-                                                            <DollarSign size={14} />
-                                                            <span className="font-sans text-xs text-muted-foreground">
-                                                                Total Income
-                                                            </span>
-                                                        </div>
-                                                        <div className="font-serif text-xl font-bold text-foreground">
-                                                            {org.totalIncome > 0
-                                                                ? formatCurrency(org.totalIncome)
-                                                                : "N/A"}
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="p-4 bg-muted border border-white/5">
-                                                        <div className="flex items-center gap-2 mb-2 text-muted-foreground">
-                                                            <FileText size={14} />
-                                                            <span className="font-sans text-xs text-muted-foreground">
-                                                                Filings
-                                                            </span>
-                                                        </div>
-                                                        <div className="font-serif text-xl font-bold text-foreground">
-                                                            {org.filings.length}
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="p-4 bg-muted border border-white/5">
-                                                        <div className="flex items-center gap-2 mb-2 text-muted-foreground">
-                                                            <Users size={14} />
-                                                            <span className="font-sans text-xs text-muted-foreground">
-                                                                Clients
-                                                            </span>
-                                                        </div>
-                                                        <div className="font-serif text-xl font-bold text-foreground">
-                                                            {org.clientCount}
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="p-4 bg-muted border border-white/5">
-                                                        <div className="flex items-center gap-2 mb-2 text-muted-foreground">
-                                                            <TrendingUp size={14} />
-                                                            <span className="font-sans text-xs text-muted-foreground">
-                                                                Issue Areas
-                                                            </span>
-                                                        </div>
-                                                        <div className="font-serif text-xl font-bold text-foreground">
-                                                            {org.issueAreas.length}
-                                                        </div>
-                                                    </div>
-                                                </div>
-
-                                                <div className="flex flex-wrap gap-2">
-                                                    {org.issueAreas.map((issue, index) => (
-                                                        <span
-                                                            key={index}
-                                                            className={`px-2 py-1 border text-[10px] font-mono font-bold uppercase ${getIssueColor(issue)}`}
-                                                        >
-                                                            {issue}
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-
-                            {activeTab === "spenders" && renderTopSpenders()}
-                            {activeTab === "firms" && renderTopFirms()}
-                            {activeTab === "industries" && renderIndustrySpend()}
-                            {activeTab === "recipients" && renderTopRecipients()}
-                            {activeTab === "clients" && renderClients()}
-                        </>
-                    )}
-                </div>
+              </div>
             </div>
+            {/* Overview Card */}
+            <div className="lg:col-span-2">
+              <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground">Influence Overview</h3>
+                  <Info size={14} className="text-muted-foreground" />
+                </div>
+                <div className="text-center mb-4">
+                  <div className="font-serif text-3xl md:text-4xl font-extrabold text-foreground">
+                    {loading ? "..." : formatCurrency(overview?.total ?? 0)}
+                  </div>
+                  <div className="text-[10px] font-bold text-muted-foreground tracking-wider uppercase mt-1">Total Reported Lobbying</div>
+                  <div className="text-[9px] text-muted-foreground mt-0.5">YTD {year}</div>
+                </div>
+                {loading ? (
+                  <div className="h-40 flex items-center justify-center"><div className="w-10 h-10 rounded-full border-4 border-accent border-t-transparent animate-spin" /></div>
+                ) : overview && overview.breakdown.some(b => b.percent > 0) ? (
+                  <div className="flex items-center gap-4">
+                    <div className="w-28 h-28 shrink-0">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie data={overview.breakdown.filter(b => b.percent > 0)} cx="50%" cy="50%" innerRadius={30} outerRadius={50} dataKey="percent" nameKey="label" strokeWidth={0}>
+                            {overview.breakdown.filter(b => b.percent > 0).map((_, i) => <Cell key={i} fill={DONUT_COLORS[i % DONUT_COLORS.length]} />)}
+                          </Pie>
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="flex-1 space-y-2">
+                      {overview.breakdown.map((b, i) => (
+                        <div key={b.label} className="flex items-center gap-2 text-xs">
+                          <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: DONUT_COLORS[i % DONUT_COLORS.length] }} />
+                          <span className="text-foreground font-medium flex-1">{b.label}</span>
+                          <span className="font-mono text-muted-foreground">{b.percent}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center text-xs text-muted-foreground py-6">No data available</div>
+                )}
+                <div className="mt-4 pt-3 border-t border-border text-[9px] text-muted-foreground font-mono">
+                  Source: {overview?.sourceNote ?? "LDA filings"}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
-    )
+      </section>
+
+      {/* Tabs */}
+      <div className="border-b border-border bg-card/50 sticky top-0 z-20 backdrop-blur-sm">
+        <div className="max-w-7xl mx-auto px-6 md:px-10 flex gap-0 overflow-x-auto">
+          {tabs.map(tab => (
+            <button key={tab} onClick={() => setActiveTab(tab)}
+              className={`px-4 py-3 text-sm font-bold border-b-[3px] transition-colors whitespace-nowrap ${
+                activeTab === tab ? "text-accent border-accent" : "text-muted-foreground border-transparent hover:text-foreground"
+              }`}
+            >{tab}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* Search Controls */}
+      <div className="max-w-7xl mx-auto px-6 md:px-10 py-4 flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
+          <input type="text" value={search} onChange={e => handleSearch(e.target.value)}
+            placeholder="Search organizations, clients, or issues..."
+            className="w-full bg-card border border-border rounded-lg py-2.5 pl-9 pr-4 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <select value={year} onChange={e => setYear(Number(e.target.value))}
+            className="bg-card border border-border rounded-lg py-2.5 px-3 text-sm font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
+          >
+            {[currentYear, currentYear - 1, currentYear - 2, currentYear - 3].map(y => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+          <button onClick={handleRefresh} className="flex items-center gap-2 border border-border bg-card hover:bg-muted rounded-lg py-2.5 px-4 text-sm font-bold text-foreground transition-colors">
+            <RefreshCw size={14} /> Refresh
+          </button>
+        </div>
+      </div>
+
+      {/* Error */}
+      {error && (
+        <div className="max-w-7xl mx-auto px-6 md:px-10 pb-4">
+          <div className="p-3 border border-red-500/30 bg-red-950/10 text-sm text-red-600 dark:text-red-400 rounded-lg">{error}</div>
+        </div>
+      )}
+
+      {/* Main Content */}
+      <div className="max-w-7xl mx-auto px-6 md:px-10 pb-16">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left - Filing Cards */}
+          <div className="lg:col-span-2 space-y-4">
+            {loading ? (
+              <div className="flex justify-center py-16"><div className="w-10 h-10 rounded-full border-4 border-accent border-t-transparent animate-spin" /></div>
+            ) : filingItems.length === 0 ? (
+              <div className="text-center py-16 text-muted-foreground text-sm">No filings found for the selected criteria.</div>
+            ) : (
+              <>
+                {filingItems.map(item => (
+                  <FilingCard key={`${item.registrantId}-${item.registrantName}`} item={item} />
+                ))}
+                {hasMore && (
+                  <button onClick={() => { setLoading(true); fetchLobbyingFilings(year, search || undefined, filingItems.length + 12, 0).then(d => { if (d) { setFilingItems(d.items); setHasMore(d.hasMore); } setLoading(false); }) }}
+                    className="w-full py-3 text-sm font-bold text-accent border border-accent/20 rounded-xl hover:bg-accent/5 transition-colors"
+                  >
+                    View more filings &#x2193;
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Right - Analytics */}
+          <div className="lg:col-span-1 space-y-5">
+            {/* Influence Flow */}
+            <div className="bg-card border border-border rounded-xl p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground">Influence Flow</h3>
+                <div className="flex items-center gap-1.5">
+                  <Info size={13} className="text-muted-foreground" />
+                  <span className="text-[9px] font-mono text-muted-foreground">YTD {year}</span>
+                </div>
+              </div>
+              {loading ? (
+                <div className="flex justify-center py-10"><div className="w-8 h-8 rounded-full border-3 border-accent border-t-transparent animate-spin" /></div>
+              ) : flowData && flowData.links.length > 0 ? (
+                <>
+                  <div className="flex justify-between items-center px-2 mb-1">
+                    <span className="text-[9px] font-bold text-muted-foreground tracking-wider uppercase">Spenders</span>
+                    <span className="text-[9px] font-bold text-muted-foreground tracking-wider uppercase">Policy Targets</span>
+                  </div>
+                  <InfluenceFlowSvg nodes={flowData.nodes} links={flowData.links} />
+                </>
+              ) : (
+                <div className="text-center text-xs text-muted-foreground py-8">No flow data available</div>
+              )}
+            </div>
+
+            {/* Top Sectors */}
+            <div className="bg-card border border-border rounded-xl p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground">Top Sectors by Spend</h3>
+                <div className="flex items-center gap-1.5">
+                  <Info size={13} className="text-muted-foreground" />
+                  <span className="text-[9px] font-mono text-muted-foreground">YTD {year}</span>
+                </div>
+              </div>
+              {loading ? (
+                <div className="flex justify-center py-10"><div className="w-8 h-8 rounded-full border-3 border-accent border-t-transparent animate-spin" /></div>
+              ) : sectorData.length > 0 ? (
+                <>
+                  <div className="h-48">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={sectorData} layout="vertical" margin={{ left: 0, right: 20, top: 0, bottom: 0 }}>
+                        <XAxis type="number" tickFormatter={v => formatCurrency(Number(v))} tick={{ fontSize: 9, fill: "#89919b" }} axisLine={false} tickLine={false} />
+                        <YAxis type="category" dataKey="sector" tick={{ fontSize: 10, fontWeight: 600, fill: "#5f6874" }} axisLine={false} tickLine={false} width={130} />
+                        <Tooltip formatter={(v: number) => [formatCurrency(v), "Amount"]} contentStyle={{ fontSize: 11, borderRadius: 8 }} />
+                        <Bar dataKey="amount" radius={[0, 4, 4, 0]}>
+                          {sectorData.map((_, i) => <Cell key={i} fill={SECTOR_COLORS[i % SECTOR_COLORS.length]} />)}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="mt-3 pt-3 border-t border-border text-[9px] text-muted-foreground font-mono">
+                    {sectorSource}
+                  </div>
+                </>
+              ) : (
+                <div className="text-center text-xs text-muted-foreground py-8">No sector data available</div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
 }

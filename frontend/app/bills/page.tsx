@@ -1,434 +1,197 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Search, Filter, Calendar, FileText, ExternalLink, ChevronDown, ChevronUp, Info } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import { Calendar, ChevronDown, ChevronUp, FileText, Filter, Landmark } from "lucide-react"
+import { ArchiveHero, ArchiveMetrics, ArchivePage, ArchivePanel, ArchiveSearch } from "@/components/ui/archive-ui"
 
-interface Bill {
+type CongressBill = {
   congress: number
-  latestAction: {
-    actionDate: string
-    text: string
-  } | null
+  latestAction: { actionDate: string; text: string } | null
   number: string
   originChamber: string
   title: string
   type: string
   updateDate: string
   url: string
-  legislationUrl?: string
 }
 
-interface BillDetails {
-  sponsors?: Array<{
-    bioguideId?: string
-    fullName: string
-    url: string
-  }>
-  actions?: {
-    count: number
-    url: string
-  }
-  committees?: {
-    count: number
-    url: string
-  }
-  committeeReports?: Array<{
-    citation: string
-    url: string
-  }>
-  textVersions?: {
-    count: number
-    url: string
-  }
-  titles?: {
-    count: number
-    url: string
-  }
-}
-
-interface MemberDetails {
-  bioguideId: string
-  directOrderName: string
-  honorificName?: string
-  state: string
-  partyHistory?: Array<{
-    partyName: string
-  }>
-  officialWebsiteUrl?: string
-  addressInformation?: {
-    city: string
-    district?: string
-    zipCode?: string
-  }
-  birthYear?: number
-  currentMember: boolean
-  updateDate?: string
-  sponsoredLegislation?: {
-    count: number
-    url: string
-  }
-  cosponsoredLegislation?: {
-    count: number
-    url: string
-  }
-  terms?: Array<{
-    chamber: string
-    memberType: string
-    congress: number
-    stateName: string
-    stateCode: string
-    startYear: number
-    endYear?: number
-  }>
-  depiction?: {
-    attribution: string
-    imageUrl: string
-  }
+type BillDetail = {
+  sponsors?: Array<{ bioguideId?: string; fullName: string; url: string }>
+  actions?: { count: number; url: string }
+  committees?: { count: number; url: string }
+  textVersions?: { count: number; url: string }
 }
 
 export default function BillsPage() {
-  const [bills, setBills] = useState<Bill[]>([])
+  const [bills, setBills] = useState<CongressBill[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
-  const [selectedStatus, setSelectedStatus] = useState("all")
-  const [selectedCategory, setSelectedCategory] = useState("all")
+  const [selectedChamber, setSelectedChamber] = useState("all")
   const [sortBy, setSortBy] = useState("recent")
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
-  const [details, setDetails] = useState<Record<string, BillDetails | null>>({})
-  const [detailsLoading, setDetailsLoading] = useState<Record<string, boolean>>({})
-  const [detailsError, setDetailsError] = useState<Record<string, string | null>>({})
-  const [memberDetails, setMemberDetails] = useState<Record<string, MemberDetails>>({})
-  const [memberLoading, setMemberLoading] = useState<Record<string, boolean>>({})
-  const [memberError, setMemberError] = useState<Record<string, string | null>>({})
-  const [titlesData, setTitlesData] = useState<Record<string, any>>({})
-  const [committeesData, setCommitteesData] = useState<Record<string, any>>({})
-  const [actionsData, setActionsData] = useState<Record<string, any>>({})
+  const [details, setDetails] = useState<Record<string, BillDetail | null>>({})
 
   useEffect(() => {
-    const fetchBills = async () => {
+    async function fetchBills() {
       try {
         const url = "https://api.congress.gov/v3/bill?format=json&limit=100&sort=updateDate+desc"
-        const res = await fetch(`/api/congress-proxy?url=${encodeURIComponent(url)}`)
-        if (!res.ok) throw new Error("Failed to fetch bills")
-        const data = await res.json()
-        setBills(data.bills || [])
-      } catch (e: any) {
-        setError(e.message)
+        const response = await fetch(`/api/congress-proxy?url=${encodeURIComponent(url)}`)
+        if (!response.ok) throw new Error(`Failed to fetch bills: ${response.statusText}`)
+        const data = await response.json()
+        setBills(Array.isArray(data.bills) ? data.bills : [])
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to load bills")
       } finally {
         setLoading(false)
       }
     }
+
     fetchBills()
   }, [])
 
-  const filteredBills = bills.filter((bill) => {
-    const matchesSearch =
-      bill.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      bill.number?.toLowerCase().includes(searchTerm.toLowerCase())
-    return matchesSearch
-  }).sort((a, b) => {
-    const dateA = new Date(a.updateDate || a.latestAction?.actionDate || 0).getTime()
-    const dateB = new Date(b.updateDate || b.latestAction?.actionDate || 0).getTime()
+  const filteredBills = useMemo(() => {
+    return bills
+      .filter((bill) => {
+        const search = searchTerm.toLowerCase()
+        const matchesSearch = bill.title?.toLowerCase().includes(search) || bill.number?.toLowerCase().includes(search)
+        const chamber = bill.originChamber?.toLowerCase()
+        const matchesChamber = selectedChamber === "all" || chamber === selectedChamber
+        return matchesSearch && matchesChamber
+      })
+      .sort((a, b) => {
+        const dateA = new Date(a.updateDate || a.latestAction?.actionDate || 0).getTime()
+        const dateB = new Date(b.updateDate || b.latestAction?.actionDate || 0).getTime()
+        if (sortBy === "title") return a.title.localeCompare(b.title)
+        return dateB - dateA
+      })
+  }, [bills, searchTerm, selectedChamber, sortBy])
 
-    if (sortBy === "recent") {
-      return dateB - dateA
+  const houseBills = bills.filter((bill) => bill.originChamber === "House").length
+  const senateBills = bills.filter((bill) => bill.originChamber === "Senate").length
+  const recentActions = bills.filter((bill) => bill.latestAction?.actionDate).length
+
+  async function toggleBill(bill: CongressBill) {
+    const key = bill.url || `${bill.type}-${bill.number}`
+    setExpanded((current) => ({ ...current, [key]: !current[key] }))
+    if (details[key] || !bill.url) return
+
+    const response = await fetch(`/api/congress-proxy?url=${encodeURIComponent(bill.url)}`)
+    if (!response.ok) {
+      setDetails((current) => ({ ...current, [key]: null }))
+      return
     }
-
-    if (sortBy === "cosponsors") {
-      const countA = details[a.url]?.sponsors?.length || 0
-      const countB = details[b.url]?.sponsors?.length || 0
-      return countB - countA || dateB - dateA
-    }
-
-    return dateB - dateA
-  })
+    const data = await response.json()
+    setDetails((current) => ({ ...current, [key]: data.bill || null }))
+  }
 
   return (
-    <div className="min-h-screen bg-background text-foreground font-sans selection:bg-accent text-accent-foreground selection:text-foreground pb-20">
-
-
-
-      <div className="max-w-[1600px] mx-auto px-6 md:px-12 pt-12">
-
-        {/* Search & Filter Section */}
-        <div className="mb-12 animate-stagger-item delay-1">
-          <div className="flex flex-col lg:flex-row gap-6 mb-8">
-            <div className="flex-1 relative">
-              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-accent" size={20} />
-              <input
-                type="text"
-                placeholder="SEARCH LEGISLATION..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full bg-card border-2 border-border px-12 py-4 text-foreground font-mono font-bold placeholder:text-muted-foreground focus:outline-none focus:border-accent transition-all uppercase tracking-wider"
-              />
-            </div>
-            <button className="flex items-center justify-center gap-2 bg-muted border-2 border-border px-8 py-4 font-mono font-bold uppercase hover:bg-muted/50 hover:border-accent transition-all text-accent">
-              <Filter size={16} />
-              Advanced Filters
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <select
-              value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
-              className="bg-card border-2 border-border px-4 py-3 text-foreground font-mono text-sm uppercase focus:border-accent outline-none appearance-none"
-            >
-              <option value="all">All Statuses</option>
-              <option value="committee">Committee Review</option>
-              <option value="passed">Passed</option>
-              <option value="signed">Signed into Law</option>
-            </select>
-
-            <select
-              value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
-              className="bg-card border-2 border-border px-4 py-3 text-foreground font-mono text-sm uppercase focus:border-accent outline-none appearance-none"
-            >
-              <option value="all">All Categories</option>
-              <option value="environment">Environment</option>
-              <option value="healthcare">Healthcare</option>
-              <option value="infrastructure">Infrastructure</option>
-              <option value="tax policy">Tax Policy</option>
-            </select>
-
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
-              className="bg-card border-2 border-border px-4 py-3 text-foreground font-mono text-sm uppercase focus:border-accent outline-none appearance-none"
-            >
-              <option value="recent">Most Recent</option>
-              <option value="lobbying">Lobbying Spend</option>
-              <option value="cosponsors">Most Cosponsors</option>
-              <option value="donations">Related Donations</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Results */}
-        <div className="mb-6 flex items-center gap-2 text-muted-foreground font-sans text-xs text-muted-foreground tracking-wide">
-          <div className="w-2 h-2 bg-accent text-accent-foreground rounded-full animate-pulse"></div>
-          Showing {filteredBills.length} of {bills.length} bills
-        </div>
-
-        {loading ? (
-          <div className="flex justify-center py-20">
-            <div className="w-12 h-12 border-4 border-accent border-t-transparent rounded-full animate-spin"></div>
-          </div>
-        ) : error ? (
-          <div className="text-red-500 font-mono text-center py-20">{error}</div>
-        ) : (
-          <div className="space-y-6">
-            {filteredBills.map((bill, idx) => (
-              <div key={bill.number + bill.type + idx} className="bg-card border-2 border-border p-6 hover:border-accent/50 transition-all duration-300 group animate-stagger-item">
-                <div className="flex flex-col md:flex-row justify-between items-start gap-6">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-4">
-                      <span className="font-mono text-xs font-bold bg-muted/50 px-2 py-1 text-accent uppercase">
-                        {bill.type}.{bill.number}
-                      </span>
-                      <span className={`font-mono text-xs font-bold px-2 py-1 uppercase ${bill.originChamber === 'Senate' ? 'text-blue-400 bg-blue-900/20' :
-                        bill.originChamber === 'House' ? 'text-green-400 bg-green-900/20' : 'text-muted-foreground'
-                        }`}>
-                        {bill.originChamber}
-                      </span>
-                    </div>
-
-                    <h2 className="font-serif text-2xl font-bold text-foreground mb-3 group-hover:text-accent transition-colors leading-tight">
-                      {bill.title}
-                    </h2>
-
-                    <p className="font-mono text-sm text-muted-foreground mb-4 border-l-2 border-border pl-4">
-                      {bill.latestAction?.text || "No recent action."}
-                    </p>
-
-                    <div className="flex flex-wrap items-center gap-6 text-xs font-mono font-bold text-muted-foreground uppercase">
-                      <div className="flex items-center gap-2">
-                        <Calendar size={14} />
-                        Updated: {bill.updateDate}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Info size={14} />
-                        Action: {bill.latestAction?.actionDate || "N/A"}
-                      </div>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={async () => {
-                      setExpanded((prev) => ({ ...prev, [bill.url]: !prev[bill.url] }))
-                      if (!details[bill.url] && !detailsLoading[bill.url]) {
-                        setDetailsLoading((prev) => ({ ...prev, [bill.url]: true }))
-                        setDetailsError((prev) => ({ ...prev, [bill.url]: null }))
-                        try {
-                          const url = `${bill.url}?format=json`
-                          const res = await fetch(`/api/congress-proxy?url=${encodeURIComponent(url)}`)
-                          if (!res.ok) throw new Error("Failed to fetch bill details")
-                          const data = await res.json()
-                          setDetails((prev) => ({ ...prev, [bill.url]: data.bill }))
-
-                          // Auto-load titles, committees, actions
-                          const billDetails = data.bill
-                          const fetchSubResource = async (subUrl: string, setter: any) => {
-                            try {
-                              const r = await fetch(`/api/congress-proxy?url=${encodeURIComponent(subUrl)}`)
-                              if (r.ok) {
-                                const data = await r.json()
-                                setter((prev: any) => ({ ...prev, [bill.url]: data }))
-                              }
-                            } catch (e) { console.error(e) }
-                          }
-
-                          if (billDetails.titles?.url) fetchSubResource(billDetails.titles.url, setTitlesData);
-                          if (billDetails.committees?.url) fetchSubResource(billDetails.committees.url, setCommitteesData);
-                          if (billDetails.actions?.url) fetchSubResource(billDetails.actions.url, setActionsData);
-
-                          // Auto-load sponsor member details
-                          if (billDetails.sponsors && billDetails.sponsors.length > 0) {
-                            billDetails.sponsors.forEach(async (sponsor: any) => {
-                              if (sponsor.bioguideId && !memberDetails[sponsor.bioguideId]) {
-                                setMemberLoading(prev => ({ ...prev, [sponsor.bioguideId]: true }));
-                                try {
-                                  const memberUrl = `https://api.congress.gov/v3/member/${sponsor.bioguideId}`;
-                                  const memberRes = await fetch(`/api/congress-proxy?url=${encodeURIComponent(memberUrl)}`);
-                                  if (memberRes.ok) {
-                                    const memberData = await memberRes.json();
-                                    setMemberDetails(prev => ({ ...prev, [sponsor.bioguideId]: memberData.member }));
-                                    setExpanded(prev => ({ ...prev, [sponsor.bioguideId]: true }));
-                                  }
-                                } catch (e: any) {
-                                  setMemberError(prev => ({ ...prev, [sponsor.bioguideId]: e.message }));
-                                } finally {
-                                  setMemberLoading(prev => ({ ...prev, [sponsor.bioguideId]: false }));
-                                }
-                              }
-                            });
-                          }
-                        } catch (e: any) {
-                          setDetailsError((prev) => ({ ...prev, [bill.url]: e.message }))
-                        } finally {
-                          setDetailsLoading((prev) => ({ ...prev, [bill.url]: false }))
-                        }
-                      }
-                    }}
-                    className="flex items-center gap-2 px-6 py-3 border border-border hover:bg-accent hover:text-accent-foreground hover:text-black hover:border-accent transition-all font-sans text-xs font-semibold tracking-wide tracking-wide"
-                  >
-                    {expanded[bill.url] ? "Hide Details" : "View Details"}
-                    {expanded[bill.url] ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                  </button>
-                </div>
-
-                {/* Expanded Details */}
-                {expanded[bill.url] && (
-                  <div className="mt-8 pt-8 border-t-2 border-border animate-fadeInUp">
-                    {detailsLoading[bill.url] && <div className="font-mono text-xs text-accent animate-pulse">LOADING INTELLIGENCE...</div>}
-                    {detailsError[bill.url] && <div className="text-red-500 font-mono text-xs">{detailsError[bill.url]}</div>}
-
-                    {details[bill.url] && (
-                      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                        <div className="lg:col-span-1 space-y-6">
-                          <div>
-                            <h3 className="font-mono text-xs font-bold text-accent uppercase mb-2">Metadata</h3>
-                            <div className="space-y-2">
-                              <a href={bill.legislationUrl} target="_blank" rel="noopener noreferrer" className="block font-mono text-xs text-foreground hover:text-accent underline decoration-white/30 underline-offset-4">
-                                Official Congress.gov Page <ExternalLink size={10} className="inline ml-1" />
-                              </a>
-                              <a href="#" onClick={e => { e.preventDefault(); window.open(`/api/congress-proxy?url=${encodeURIComponent(bill.url + '?format=json')}`, '_blank') }} className="block font-mono text-xs text-muted-foreground hover:text-foreground underline decoration-white/10 underline-offset-4">
-                                Raw JSON Data
-                              </a>
-                            </div>
-                          </div>
-
-                          {details[bill.url]?.sponsors && details[bill.url]!.sponsors!.length > 0 && (
-                            <div>
-                              <h3 className="font-mono text-xs font-bold text-accent uppercase mb-2">Sponsors</h3>
-                              <ul className="space-y-1">
-                                {details[bill.url]!.sponsors!.map((s: any, i: number) => (
-                                  <li key={i} className="font-serif text-sm text-foreground">{s.fullName}</li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-
-                          {committeesData[bill.url] && (
-                            <div>
-                              <h3 className="font-mono text-xs font-bold text-accent uppercase mb-2">Committees</h3>
-                              <ul className="space-y-1">
-                                {committeesData[bill.url].committees?.map((c: any, i: number) => (
-                                  <li key={i} className="font-mono text-xs text-muted-foreground">{c.name}</li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="lg:col-span-2 space-y-6">
-                          {actionsData[bill.url] && (
-                            <div>
-                              <h3 className="font-mono text-xs font-bold text-accent uppercase mb-4">Recent Actions</h3>
-                              <div className="space-y-4 border-l border-border pl-4">
-                                {actionsData[bill.url].actions?.slice(0, 5).map((action: any, i: number) => (
-                                  <div key={i} className="relative">
-                                    <div className="absolute -left-[21px] top-1.5 w-2 h-2 rounded-full bg-card/20"></div>
-                                    <p className="font-serif text-sm text-foreground mb-1">{action.text}</p>
-                                    <span className="font-mono text-[10px] text-muted-foreground uppercase">{action.actionDate}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Member Cards Grid */}
-                          {details[bill.url]?.sponsors?.some(s => s.bioguideId && memberDetails[s.bioguideId]) && (
-                            <div className="pt-6 border-t border-border">
-                              <h3 className="font-mono text-xs font-bold text-accent uppercase mb-4">Sponsor Profiles</h3>
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {details[bill.url]!.sponsors!.map((s, i) => {
-                                  if (!s.bioguideId || !memberDetails[s.bioguideId]) return null;
-                                  const m = memberDetails[s.bioguideId];
-                                  const isDem = m.partyHistory?.[0]?.partyName === 'Democratic';
-                                  const isRep = m.partyHistory?.[0]?.partyName === 'Republican';
-                                  const partyColor = isDem ? 'border-blue-500' : isRep ? 'border-red-500' : 'border-yellow-500';
-
-                                  return (
-                                    <div key={s.bioguideId} className={`bg-background border-l-4 ${partyColor} p-4 flex gap-4 items-start`}>
-                                      {m.depiction?.imageUrl && (
-                                        <img src={m.depiction.imageUrl} alt={m.directOrderName} className="w-12 h-12 object-cover grayscale contrast-125" />
-                                      )}
-                                      <div>
-                                        <h4 className="font-serif font-bold text-foreground leading-none mb-1">{m.directOrderName}</h4>
-                                        <p className="font-mono text-xs text-muted-foreground uppercase mb-2">{m.state} — {m.partyHistory?.[0]?.partyName}</p>
-                                        <div className="flex gap-2 text-[10px] font-mono font-bold text-muted-foreground">
-                                          <span>BORN: {m.birthYear}</span>
-                                          <span>•</span>
-                                          <span>{m.currentMember ? 'ACTIVE' : 'INACTIVE'}</span>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  )
-                                })}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
+    <ArchivePage>
+      <ArchiveHero
+        eyebrow="Bills"
+        title="Legislative"
+        accent="Stream."
+        description="Real-time visibility into proposed legislation, chamber origin, latest actions, sponsors, committees, and bill text availability."
+        mode="files"
+        aside={
+          <div>
+            <div className="archive-panel-kicker">Bills overview</div>
+            <div className="mt-5 grid place-items-center">
+              <div className="grid h-36 w-36 place-items-center rounded-full border-[18px] border-accent/75 bg-card text-center">
+                <span className="font-serif text-3xl">{bills.length || "..."}</span>
+                <span className="-mt-8 text-xs text-muted-foreground">Total bills</span>
               </div>
-            ))}
+            </div>
           </div>
-        )}
+        }
+      />
 
-        <div className="flex justify-center mt-12 mb-20">
-          <button className="px-8 py-4 bg-muted border-2 border-border hover:bg-accent hover:text-accent-foreground hover:text-black hover:border-accent transition-all font-sans text-sm font-semibold tracking-wide">
-            Load More Legislation
-          </button>
-        </div>
+      <ArchiveSearch value={searchTerm} onChange={setSearchTerm} placeholder="Search bills, keywords, sponsors, or topics">
+        <select value={selectedChamber} onChange={(event) => setSelectedChamber(event.target.value)}>
+          <option value="all">All Chambers</option>
+          <option value="house">House</option>
+          <option value="senate">Senate</option>
+        </select>
+        <select value={sortBy} onChange={(event) => setSortBy(event.target.value)}>
+          <option value="recent">Most Recent</option>
+          <option value="title">Title A-Z</option>
+        </select>
+        <button className="inline-flex h-[3.2rem] items-center gap-2 border border-border bg-card px-4 text-sm font-semibold text-accent">
+          <Filter size={15} /> More Filters
+        </button>
+      </ArchiveSearch>
 
+      <ArchiveMetrics
+        metrics={[
+          { label: "Loaded bills", value: loading ? "..." : bills.length, detail: "Congress.gov feed", icon: <FileText size={20} /> },
+          { label: "House origin", value: houseBills, detail: "Introduced in House", icon: <Landmark size={20} /> },
+          { label: "Senate origin", value: senateBills, detail: "Introduced in Senate", icon: <Landmark size={20} /> },
+          { label: "Latest actions", value: recentActions, detail: "With action dates", icon: <Calendar size={20} /> },
+        ]}
+      />
+
+      <div className="archive-content archive-grid-two">
+        <ArchivePanel title="Bill results" kicker="Legislative journey">
+          {loading ? (
+            <div className="h-12 w-12 animate-spin rounded-full border-4 border-accent border-t-transparent" />
+          ) : error ? (
+            <p className="py-10 text-sm text-red-500">{error}</p>
+          ) : filteredBills.length === 0 ? (
+            <p className="py-10 text-sm text-muted-foreground">No bills match the current filters.</p>
+          ) : (
+            <div className="archive-list">
+              {filteredBills.slice(0, 40).map((bill, index) => {
+                const key = bill.url || `${bill.type}-${bill.number}-${index}`
+                const isExpanded = expanded[key]
+                const detail = details[key]
+                return (
+                  <div key={key} className="archive-row">
+                    <div className="grid gap-4 md:grid-cols-[7rem_minmax(0,1fr)_auto] md:items-center">
+                      <div>
+                        <div className="font-mono text-lg font-bold text-accent">{bill.type}.{bill.number}</div>
+                        <span className="archive-chip mt-2">{bill.originChamber || "Congress"}</span>
+                      </div>
+                      <div className="min-w-0">
+                        <h2 className="font-serif text-2xl text-foreground">{bill.title}</h2>
+                        <p className="mt-2 text-sm leading-6 text-muted-foreground">{bill.latestAction?.text || "No latest action listed."}</p>
+                        <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
+                          <span className="inline-flex items-center gap-1"><Calendar size={13} /> Updated {bill.updateDate || "N/A"}</span>
+                          <span>Action {bill.latestAction?.actionDate || "N/A"}</span>
+                        </div>
+                      </div>
+                      <button onClick={() => toggleBill(bill)} className="inline-flex items-center gap-2 border border-border px-4 py-2 text-sm font-semibold text-foreground hover:border-accent hover:text-accent">
+                        Details {isExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                      </button>
+                    </div>
+                    {isExpanded ? (
+                      <div className="mt-4 grid gap-3 border-t border-border pt-4 text-sm text-muted-foreground md:grid-cols-4">
+                        <div><span className="archive-metric-label">Sponsors</span><strong className="mt-1 block text-foreground">{detail?.sponsors?.length ?? "Loading"}</strong></div>
+                        <div><span className="archive-metric-label">Actions</span><strong className="mt-1 block text-foreground">{detail?.actions?.count ?? "Loading"}</strong></div>
+                        <div><span className="archive-metric-label">Committees</span><strong className="mt-1 block text-foreground">{detail?.committees?.count ?? "Loading"}</strong></div>
+                        <div><span className="archive-metric-label">Text versions</span><strong className="mt-1 block text-foreground">{detail?.textVersions?.count ?? "Loading"}</strong></div>
+                      </div>
+                    ) : null}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </ArchivePanel>
+
+        <ArchivePanel title="Trending topics" kicker="From loaded titles">
+          <div className="space-y-4">
+            {["Health", "Security", "Tax", "Technology", "Energy"].map((topic) => {
+              const count = bills.filter((bill) => bill.title.toLowerCase().includes(topic.toLowerCase())).length
+              return (
+                <div key={topic}>
+                  <div className="mb-1 flex justify-between text-sm"><span>{topic}</span><span>{count}</span></div>
+                  <div className="h-2 rounded-full bg-muted"><div className="h-full rounded-full bg-accent" style={{ width: `${Math.max(8, (count / Math.max(1, bills.length)) * 100)}%` }} /></div>
+                </div>
+              )
+            })}
+          </div>
+        </ArchivePanel>
       </div>
-    </div>
+    </ArchivePage>
   )
 }

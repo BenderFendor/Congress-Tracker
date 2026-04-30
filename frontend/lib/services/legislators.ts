@@ -51,19 +51,28 @@ type LegislatorsResponse = {
 
 type CongressProxyMember = {
     bioguideId: string;
-    name: string;
+    name?: string;
+    firstName?: string;
+    lastName?: string;
+    directOrderName?: string;
+    invertedOrderName?: string;
     partyName?: string;
+    partyHistory?: Array<{
+        partyAbbreviation?: string;
+        partyName?: string;
+        startYear?: number;
+    }>;
     state?: string;
     district?: number;
-    terms?: {
-        item?: Array<{
-            chamber?: string;
-        }>;
-    };
+    terms?: Array<{
+        chamber?: string;
+        memberType?: string;
+    }>;
     depiction?: {
         imageUrl?: string;
     };
     url?: string;
+    officialWebsiteUrl?: string;
 };
 
 function mapLegislator(raw: Record<string, unknown>, recentTrades: StockTrade[] = []): Legislator {
@@ -153,14 +162,20 @@ async function getCapitolTradesMap(): Promise<Map<string, LegislatorTradeSummary
 }
 
 function mergeProxyMember(member: CongressProxyMember, trades: Map<string, LegislatorTradeSummary>): Legislator {
-    const currentTerm = member.terms?.item?.[member.terms.item.length - 1];
+    const terms = member.terms;
+    const currentTerm = Array.isArray(terms) ? terms[terms.length - 1] : undefined;
     const tradeSummary = trades.get(member.bioguideId) ?? null;
-    const name = member.name.includes(",")
-        ? member.name.split(",").slice(1).join(",").trim() + " " + member.name.split(",")[0].trim()
-        : member.name;
+
+    const rawName = member.name || member.directOrderName || member.invertedOrderName || `${member.firstName || ""} ${member.lastName || ""}`.trim() || "Unknown";
+    const name = rawName.includes(",")
+        ? rawName.split(",").slice(1).join(",").trim() + " " + rawName.split(",")[0].trim()
+        : rawName;
     const cleanedName = normalizeName(name).split(" ");
-    const first_name = cleanedName.slice(0, -1).join(" ") || cleanedName[0] || "";
-    const last_name = cleanedName.length > 1 ? cleanedName[cleanedName.length - 1] : "";
+    const first_name = member.firstName || cleanedName.slice(0, -1).join(" ") || cleanedName[0] || "";
+    const last_name = member.lastName || (cleanedName.length > 1 ? cleanedName[cleanedName.length - 1] : "");
+
+    const latestParty = member.partyHistory?.[member.partyHistory.length - 1]?.partyName;
+    const party = member.partyName || latestParty || "Unknown";
 
     return {
         id: member.bioguideId,
@@ -168,11 +183,11 @@ function mergeProxyMember(member: CongressProxyMember, trades: Map<string, Legis
         name,
         first_name,
         last_name,
-        party: normalizeParty(member.partyName || "Unknown"),
+        party: normalizeParty(party),
         state: member.state || "",
         district: member.district ? String(member.district) : "",
         chamber: currentTerm?.chamber || "Congress",
-        avatar: member.depiction?.imageUrl || `https://theunitedstates.io/images/congress/225x275/${member.bioguideId}.jpg`,
+        avatar: member.depiction?.imageUrl || `https://www.congress.gov/img/member/${member.bioguideId.toLowerCase()}_200.jpg`,
         bio: `${currentTerm?.chamber === "Senate" ? "Senator" : "Representative"} ${name} serves ${member.state || ""}.`.trim(),
         totalDonations: 0,
         billsSponsored: 0,
@@ -181,7 +196,7 @@ function mergeProxyMember(member: CongressProxyMember, trades: Map<string, Legis
         topDonors: [],
         recentBills: [],
         recentTrades: [],
-        url: member.url || "",
+        url: member.officialWebsiteUrl || member.url || "",
         twitter_account: "",
         facebook_account: "",
         youtube_account: "",

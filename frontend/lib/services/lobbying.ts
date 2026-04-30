@@ -240,3 +240,132 @@ export async function getLobbyingFilings(params: {
   }
 }
 
+// ── Lobbying analytics types ──
+
+export type OverviewResponse = {
+  year: number;
+  totalReportedLobbying: number;
+  periodLabel: string;
+  breakdown: BreakdownItem[];
+  sourceNote: string;
+};
+
+export type BreakdownItem = {
+  label: string;
+  amount: number;
+  percent: number;
+  derived?: boolean;
+  source?: string;
+};
+
+export type FilingCardItem = {
+  registrantId?: number;
+  registrantName: string;
+  jurisdiction: string;
+  entityRole: string;
+  filingCount: number;
+  clientCount: number;
+  reportedAmount: number;
+  reportedAmountLabel: string;
+  topIssueAreas: string[];
+  avatarText: string;
+};
+
+export type FilingsListResponse = {
+  items: FilingCardItem[];
+  hasMore: boolean;
+};
+
+export type FlowNode = {
+  id: string;
+  label: string;
+  side: string;
+};
+
+export type FlowLink = {
+  source: string;
+  target: string;
+  value: number;
+};
+
+export type InfluenceFlowResponse = {
+  nodes: FlowNode[];
+  links: FlowLink[];
+};
+
+export type SectorSpendItem = {
+  sector: string;
+  amount: number;
+  filingCount: number;
+  entityCount: number;
+};
+
+export type TopSectorsResponse = {
+  year: number;
+  allocationMethod: string;
+  items: SectorSpendItem[];
+  sourceNote: string;
+};
+
+const API_BASE_2 = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:4020';
+
+export async function fetchLobbyingOverview(year?: number): Promise<OverviewResponse | null> {
+  try {
+    const params = new URLSearchParams();
+    if (year) params.set('year', String(year));
+    const res = await fetch(`${API_BASE_2}/api/lobbying/overview?${params}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (error) {
+    console.error('Failed to fetch lobbying overview:', error);
+    return null;
+  }
+}
+
+export async function fetchLobbyingFilings(
+  year?: number,
+  q?: string,
+  limit?: number,
+  offset?: number
+): Promise<FilingsListResponse | null> {
+  try {
+    const params = new URLSearchParams();
+    if (year) params.set('year', String(year));
+    if (q) params.set('q', q);
+    if (limit) params.set('limit', String(limit));
+    if (offset) params.set('offset', String(offset));
+    const res = await fetch(`${API_BASE_2}/api/lobbying/filings?${params}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (error) {
+    console.error('Failed to fetch lobbying filings:', error);
+    return null;
+  }
+}
+
+export async function fetchInfluenceFlow(year?: number): Promise<InfluenceFlowResponse | null> {
+  try {
+    const params = new URLSearchParams();
+    if (year) params.set('year', String(year));
+    const res = await fetch(`${API_BASE_2}/api/lobbying/influence-flow?${params}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (error) {
+    console.error('Failed to fetch influence flow:', error);
+    return null;
+  }
+}
+
+export async function fetchTopSectors(year?: number): Promise<TopSectorsResponse | null> {
+  try {
+    const params = new URLSearchParams();
+    if (year) params.set('year', String(year));
+    const res = await fetch(`${API_BASE_2}/api/lobbying/top-sectors?${params}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (error) {
+    console.error('Failed to fetch top sectors:', error);
+    return null;
+  }
+}
+
