@@ -2,25 +2,32 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
-import { ArrowLeft, MapPin, DollarSign, FileText, Users, TrendingUp, ExternalLink, Grid, Calendar, Shield, PieChart } from "lucide-react"
+import { ArrowLeft, MapPin, DollarSign, FileText, Users, TrendingUp, ExternalLink, Grid, Calendar, Shield, PieChart, AlertTriangle } from "lucide-react"
 import { getLegislator, Legislator } from "@/lib/services/legislators"
 import { getMemberVotes, Vote } from "@/lib/services/voting"
+import { getEnrichedMember, EnrichedTrade, FilerMetrics } from "@/lib/services/enrichment"
 
 export default function LegislatorProfilePage({ params }: { params: { id: string } }) {
   const [activeTab, setActiveTab] = useState("overview")
   const [legislator, setLegislator] = useState<Legislator | null>(null)
   const [votes, setVotes] = useState<Vote[]>([])
+  const [enriched, setEnriched] = useState<{
+    metrics: FilerMetrics;
+    trades: EnrichedTrade[];
+  } | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     async function loadData() {
       try {
-        const [legData, votesData] = await Promise.all([
+        const [legData, votesData, enrichedData] = await Promise.all([
           getLegislator(params.id),
-          getMemberVotes(params.id)
+          getMemberVotes(params.id),
+          getEnrichedMember(params.id),
         ])
         setLegislator(legData)
         setVotes(votesData)
+        if (enrichedData) setEnriched(enrichedData)
       } catch (error) {
         console.error("Failed to load legislator data", error)
       } finally {
@@ -39,9 +46,19 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
   if (!legislator) return (
     <div className="min-h-[70vh] flex flex-col items-center justify-center p-8">
       <div className="bg-card border border-border p-8 max-w-md text-center shadow-sm">
-        <h3 className="font-serif text-2xl font-bold text-primary mb-4">Database Offline</h3>
-        <p className="font-sans text-sm text-muted-foreground mb-6">
-          This legislator's detailed profile is currently unavailable as the database is being integrated.
+        <h3 className="font-serif text-2xl font-bold text-primary mb-4">Data Unavailable</h3>
+        <p className="font-sans text-sm text-muted-foreground mb-4">
+          This legislator's detailed profile could not be loaded.
+        </p>
+        <p className="font-mono text-xs text-muted-foreground bg-muted p-3 mb-6 text-left">
+          The most common cause is an invalid or expired Congress.gov API key.
+          <br /><br />
+          <strong>Fix:</strong> Get a free key at{' '}
+          <a href="https://api.congress.gov/sign-up" target="_blank" rel="noopener noreferrer" className="text-accent underline">
+            api.congress.gov/sign-up
+          </a>
+          {' '}and set <code className="bg-background px-1">CONGRESS_GOV_API_KEY</code> in <code className="bg-background px-1">.env</code>.
+          Then restart the backend.
         </p>
         <Link href="/legislators" className="inline-flex items-center gap-2 px-6 py-3 bg-muted border border-border hover:bg-accent hover:text-accent-foreground transition-all font-sans text-xs font-semibold tracking-wide">
           <ArrowLeft size={14} /> Back to Directory
@@ -58,7 +75,8 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
   }
 
   const partyColorClass = getPartyColor(legislator.party)
-  const partyName = legislator.party === "D" ? "Democrat" : legislator.party === "R" ? "Republican" : legislator.party
+  const partyName = legislator.party
+  const tradeStats = legislator.trade_summary?.stats
 
   return (
     <div className="min-h-screen bg-background text-foreground font-sans selection:bg-accent text-accent-foreground selection:text-foreground pb-20">
@@ -100,7 +118,7 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
                   <div className="flex flex-wrap items-center gap-4 text-muted-foreground font-mono text-sm uppercase tracking-wide">
                     <div className="flex items-center gap-2">
                       <MapPin size={16} className="text-accent" />
-                      <span>{legislator.state}-{legislator.district}</span>
+                      <span>{legislator.state}{legislator.district ? `-${legislator.district}` : ""}</span>
                     </div>
                     <span className="text-foreground/20">|</span>
                     <div className="flex items-center gap-2">
@@ -125,6 +143,12 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
                 {legislator.bio || "No biography available."}
               </p>
 
+              {legislator.trade_summary && (
+                <div className="mb-6 inline-flex items-center gap-2 px-3 py-2 border border-border bg-muted text-xs font-mono uppercase tracking-wide text-muted-foreground">
+                  CapitolTrades match: {legislator.trade_summary.match_confidence.replaceAll("_", " ")}
+                </div>
+              )}
+
               <div className="flex flex-wrap gap-2">
                 {legislator.committees.map((committee, index) => (
                   <div key={index} className="px-3 py-1 bg-muted border border-border text-xs font-mono text-muted-foreground uppercase">
@@ -141,12 +165,12 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
           <div className="bg-card border-2 border-border p-6 hover:border-accent/50 transition-colors group">
             <div className="flex items-center gap-3 mb-4 text-muted-foreground group-hover:text-accent transition-colors">
               <DollarSign size={20} />
-              <span className="font-sans text-xs font-semibold tracking-wide">Total Donations</span>
+              <span className="font-sans text-xs font-semibold tracking-wide">Trade Volume</span>
             </div>
             <div className="text-3xl font-serif font-bold text-foreground mb-1">
-              ${(legislator.totalDonations / 1000000).toFixed(1)}M
+              {tradeStats ? `$${(tradeStats.volume / 1000000).toFixed(1)}M` : "N/A"}
             </div>
-            <div className="text-xs font-mono text-muted-foreground uppercase">Current Cycle</div>
+            <div className="text-xs font-mono text-muted-foreground uppercase">CapitolTrades Matched</div>
           </div>
 
           <div className="bg-card border-2 border-border p-6 hover:border-accent/50 transition-colors group">
@@ -163,25 +187,23 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
           <div className="bg-card border-2 border-border p-6 hover:border-accent/50 transition-colors group">
             <div className="flex items-center gap-3 mb-4 text-muted-foreground group-hover:text-accent transition-colors">
               <Users size={20} />
-              <span className="font-sans text-xs font-semibold tracking-wide">Voting Score</span>
+              <span className="font-sans text-xs font-semibold tracking-wide">Trade Count</span>
             </div>
             <div className="text-3xl font-serif font-bold text-foreground mb-1">
-              {legislator.votingScore}%
+              {tradeStats?.count_trades || 0}
             </div>
-            <div className="w-full h-1 bg-muted/50 mt-2">
-              <div className="h-full bg-accent text-accent-foreground" style={{ width: `${legislator.votingScore}%` }}></div>
-            </div>
+            <div className="text-xs font-mono text-muted-foreground uppercase">Transactions Reported</div>
           </div>
 
           <div className="bg-card border-2 border-border p-6 hover:border-accent/50 transition-colors group">
             <div className="flex items-center gap-3 mb-4 text-muted-foreground group-hover:text-accent transition-colors">
               <TrendingUp size={20} />
-              <span className="font-sans text-xs font-semibold tracking-wide">Influence Score</span>
+              <span className="font-sans text-xs font-semibold tracking-wide">Issuers Traded</span>
             </div>
             <div className="text-3xl font-serif font-bold text-foreground mb-1">
-              8.7
+              {tradeStats?.count_issuers || 0}
             </div>
-            <div className="text-xs font-mono text-muted-foreground uppercase">Committee Weighted</div>
+            <div className="text-xs font-mono text-muted-foreground uppercase">Distinct Holdings</div>
           </div>
         </div>
 
@@ -256,6 +278,130 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
                     )}
                   </div>
                 </div>
+
+                {enriched && enriched.trades.length > 0 && (
+                  <>
+                    <div className="bg-card border-2 border-border p-8">
+                      <h3 className="font-mono text-xs font-bold text-accent uppercase mb-6 flex items-center gap-2">
+                        <AlertTriangle size={16} />
+                        Committee Trade Conflicts
+                        {enriched.metrics.conflict_count > 0 && (
+                          <span className="px-2 py-0.5 bg-red-900/30 border border-red-500/30 text-red-400 text-[10px]">
+                            {enriched.metrics.conflict_count} flags
+                          </span>
+                        )}
+                      </h3>
+                      {enriched.metrics.committees.length > 0 ? (
+                        <div className="space-y-3">
+                          <div className="text-xs font-mono text-muted-foreground uppercase mb-3">
+                            Committees: {enriched.metrics.committees.join(" • ")}
+                          </div>
+                          {(() => {
+                            const conflicts = enriched.trades
+                              .filter(t => t.committee_conflicts.length > 0)
+                              .flatMap(t => t.committee_conflicts);
+                            if (conflicts.length === 0) return (
+                              <div className="text-muted-foreground font-mono text-sm italic">
+                                No committee conflicts detected across {enriched.trades.length} disclosed trades.
+                              </div>
+                            );
+                            return conflicts.map((conflict, idx) => (
+                              <div key={idx} className="flex items-start justify-between p-3 bg-muted border border-yellow-500/20 hover:border-yellow-500/40 transition-colors">
+                                <div className="flex-1">
+                                  <span className="font-mono font-bold text-yellow-400">{conflict.ticker}</span>
+                                  <span className="ml-2 text-xs font-mono text-muted-foreground uppercase">
+                                    {conflict.sector} / {conflict.industry}
+                                  </span>
+                                </div>
+                                <div className="text-right">
+                                  <div className={`text-xs font-mono font-bold uppercase ${
+                                    conflict.severity === 'DIRECT OVERLAP' ? 'text-red-400' : 'text-yellow-400'
+                                  }`}>
+                                    {conflict.severity}
+                                  </div>
+                                  <div className="text-[10px] font-mono text-muted-foreground uppercase">
+                                    {conflict.committee}
+                                  </div>
+                                </div>
+                              </div>
+                            ));
+                          })()}
+                        </div>
+                      ) : (
+                        <div className="text-muted-foreground font-mono text-sm italic">
+                          No committee assignment data available.
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="bg-card border-2 border-border p-8">
+                      <h3 className="font-mono text-xs font-bold text-accent uppercase mb-6 flex items-center gap-2">
+                        <PieChart size={16} /> Sector Allocation
+                      </h3>
+                      <div className="grid grid-cols-2 gap-2">
+                        {(() => {
+                          const sectorCounts: Record<string, number> = {};
+                          enriched.trades.forEach(t => {
+                            if (t.sector) {
+                              sectorCounts[t.sector] = (sectorCounts[t.sector] || 0) + 1;
+                            }
+                          });
+                          return Object.entries(sectorCounts)
+                            .sort((a, b) => b[1] - a[1])
+                            .slice(0, 8)
+                            .map(([sector, count]) => {
+                              const pct = ((count / enriched.trades.length) * 100).toFixed(0);
+                              return (
+                                <div key={sector} className="p-3 bg-muted border border-white/5">
+                                  <div className="font-mono text-xs font-bold text-foreground">{sector}</div>
+                                  <div className="flex items-center gap-2 mt-1">
+                                    <div className="flex-1 h-1.5 bg-background">
+                                      <div className="h-full bg-accent/60" style={{ width: `${Math.max(Number(pct), 2)}%` }} />
+                                    </div>
+                                    <span className="text-[10px] font-mono text-muted-foreground">{pct}%</span>
+                                  </div>
+                                </div>
+                              );
+                            });
+                        })()}
+                      </div>
+                    </div>
+
+                    <div className="bg-card border-2 border-border p-8">
+                      <h3 className="font-mono text-xs font-bold text-accent uppercase mb-6 flex items-center gap-2">
+                        <TrendingUp size={16} /> Trade Metrics (Enriched)
+                      </h3>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+                        <div>
+                          <div className="text-2xl font-serif font-bold text-foreground">{enriched.metrics.total_trades}</div>
+                          <div className="text-[10px] font-mono text-muted-foreground uppercase mt-1">Total Trades</div>
+                        </div>
+                        <div>
+                          <div className="text-2xl font-serif font-bold text-foreground">
+                            ${(enriched.metrics.estimated_total_volume / 1_000_000).toFixed(1)}M
+                          </div>
+                          <div className="text-[10px] font-mono text-muted-foreground uppercase mt-1">Est. Volume</div>
+                        </div>
+                        <div>
+                          <div className="text-2xl font-serif font-bold text-foreground">
+                            {enriched.metrics.buy_sell_ratio.toFixed(1)}
+                          </div>
+                          <div className="text-[10px] font-mono text-muted-foreground uppercase mt-1">Buy/Sell Ratio</div>
+                        </div>
+                        <div>
+                          <div className="text-2xl font-serif font-bold text-foreground">
+                            {enriched.metrics.late_filing_count > 0
+                              ? `${enriched.metrics.late_filing_count}`
+                              : '0'}
+                          </div>
+                          <div className="text-[10px] font-mono text-muted-foreground uppercase mt-1">
+                            Late Filings ({'>'}45d)
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             )}
 

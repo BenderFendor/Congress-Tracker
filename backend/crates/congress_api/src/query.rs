@@ -4,7 +4,7 @@ pub trait Query {
     fn add_to_url(&self, url: &mut Url);
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct BillQuery {
     pub congress: Option<u32>,
     pub chamber: Option<String>,
@@ -62,7 +62,7 @@ impl BillQuery {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct MemberQuery {
     pub state: Option<String>,
     pub district: Option<String>,
@@ -108,19 +108,61 @@ impl MemberQuery {
         self
     }
 
+    pub fn with_chamber(mut self, chamber: String) -> Self {
+        self.chamber = Some(chamber);
+        self
+    }
+
+    pub fn with_party(mut self, party: String) -> Self {
+        self.party = Some(party);
+        self
+    }
+
     pub fn with_limit(mut self, limit: u32) -> Self {
         self.limit = Some(limit);
         self
     }
+
+    pub fn with_offset(mut self, offset: u32) -> Self {
+        self.offset = Some(offset);
+        self
+    }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct VoteQuery {
     pub congress: Option<u32>,
     pub chamber: Option<String>,
     pub bill: Option<String>,
     pub limit: Option<u32>,
     pub offset: Option<u32>,
+}
+
+impl VoteQuery {
+    pub fn with_congress(mut self, congress: u32) -> Self {
+        self.congress = Some(congress);
+        self
+    }
+
+    pub fn with_chamber(mut self, chamber: String) -> Self {
+        self.chamber = Some(chamber);
+        self
+    }
+
+    pub fn with_bill(mut self, bill: String) -> Self {
+        self.bill = Some(bill);
+        self
+    }
+
+    pub fn with_limit(mut self, limit: u32) -> Self {
+        self.limit = Some(limit);
+        self
+    }
+
+    pub fn with_offset(mut self, offset: u32) -> Self {
+        self.offset = Some(offset);
+        self
+    }
 }
 
 impl Query for VoteQuery {

@@ -3,7 +3,9 @@ use url::Url;
 
 use crate::{
     query::{BillQuery, MemberQuery, Query, VoteQuery},
-    types::{Bill, BillsResponse, Member, MembersResponse, PaginatedResponse, Vote, VotesResponse, Meta},
+    types::{
+        Bill, BillsResponse, Member, MembersResponse, Meta, PaginatedResponse, Vote, VotesResponse,
+    },
     Error,
 };
 
@@ -37,10 +39,21 @@ impl Client {
     async fn get<T: DeserializeOwned>(&self, url: Url) -> Result<T, Error> {
         let client = reqwest::Client::new();
         let response = client.get(url).send().await?;
-        
+
         if !response.status().is_success() {
             let status = response.status();
-            let text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            if text.contains("API_KEY_INVALID") || status.as_u16() == 403 {
+                return Err(Error::Api(format!(
+                    "Congress.gov API key is invalid or expired. \
+                     Get a free key at https://api.congress.gov/sign-up and set CONGRESS_GOV_API_KEY in .env. \
+                     (HTTP {}: {})",
+                    status, text
+                )));
+            }
             return Err(Error::Api(format!("HTTP {}: {}", status, text)));
         }
 
@@ -61,7 +74,10 @@ impl Client {
     }
 
     /// Get members filtered by query parameters
-    pub async fn get_members(&self, query: &MemberQuery) -> Result<PaginatedResponse<Member>, Error> {
+    pub async fn get_members(
+        &self,
+        query: &MemberQuery,
+    ) -> Result<PaginatedResponse<Member>, Error> {
         let url = self.get_url("/v3/member", Some(query))?;
         let response: MembersResponse = self.get(url).await?;
         Ok(PaginatedResponse {

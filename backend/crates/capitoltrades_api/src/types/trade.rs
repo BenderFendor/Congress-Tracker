@@ -59,9 +59,9 @@ pub struct Trade {
 
     pub size: Option<i64>,
 
-    size_range_high: Option<i64>,
+    pub size_range_high: Option<i64>,
 
-    size_range_low: Option<i64>,
+    pub size_range_low: Option<i64>,
 
     pub value: i64,
 
@@ -75,7 +75,7 @@ pub struct Trade {
     comment: Option<String>,
 
     #[serde(default)]
-    committees: Vec<String>,
+    pub committees: Vec<String>,
 
     pub asset: Option<Asset>,
 

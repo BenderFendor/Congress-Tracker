@@ -108,7 +108,7 @@ export default function BillsPage() {
   useEffect(() => {
     const fetchBills = async () => {
       try {
-        const url = "https://api.congress.gov/v3/bill"
+        const url = "https://api.congress.gov/v3/bill?format=json&limit=100&sort=updateDate+desc"
         const res = await fetch(`/api/congress-proxy?url=${encodeURIComponent(url)}`)
         if (!res.ok) throw new Error("Failed to fetch bills")
         const data = await res.json()
@@ -127,6 +127,21 @@ export default function BillsPage() {
       bill.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       bill.number?.toLowerCase().includes(searchTerm.toLowerCase())
     return matchesSearch
+  }).sort((a, b) => {
+    const dateA = new Date(a.updateDate || a.latestAction?.actionDate || 0).getTime()
+    const dateB = new Date(b.updateDate || b.latestAction?.actionDate || 0).getTime()
+
+    if (sortBy === "recent") {
+      return dateB - dateA
+    }
+
+    if (sortBy === "cosponsors") {
+      const countA = details[a.url]?.sponsors?.length || 0
+      const countB = details[b.url]?.sponsors?.length || 0
+      return countB - countA || dateB - dateA
+    }
+
+    return dateB - dateA
   })
 
   return (

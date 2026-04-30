@@ -1,6 +1,6 @@
 use serde::de::DeserializeOwned;
-use url::Url;
 use std::process::Command;
+use url::Url;
 
 use crate::{
     query::{IssuerQuery, PoliticianQuery, Query, TradeQuery},
@@ -27,7 +27,11 @@ impl Client {
     }
 
     fn get_url(&self, is_api: bool, path: &str, query: Option<&impl Query>) -> Url {
-        let base = if is_api { self.base_api_url } else { self.web_url };
+        let base = if is_api {
+            self.base_api_url
+        } else {
+            self.web_url
+        };
         let mut url = Url::parse(format!("{}{}", base, path).as_str()).unwrap();
         match query {
             Some(query) => query.add_to_url(&mut url),
@@ -39,15 +43,24 @@ impl Client {
         let mut cmd = Command::new("curl");
         cmd.args(&[
             "-s",
-            "-H", &format!("User-Agent: {}", get_user_agent()),
-            "-H", "Accept: */*",
-            "-H", "Accept-Language: en-US,en;q=0.9",
-            "-H", "Referer: https://www.capitoltrades.com/",
-            "-H", "Origin: https://www.capitoltrades.com",
-            "-H", "Connection: keep-alive",
-            "-H", "Sec-Fetch-Dest: empty",
-            "-H", "Sec-Fetch-Mode: cors",
-            "-H", "Sec-Fetch-Site: same-site",
+            "-H",
+            &format!("User-Agent: {}", get_user_agent()),
+            "-H",
+            "Accept: */*",
+            "-H",
+            "Accept-Language: en-US,en;q=0.9",
+            "-H",
+            "Referer: https://www.capitoltrades.com/",
+            "-H",
+            "Origin: https://www.capitoltrades.com",
+            "-H",
+            "Connection: keep-alive",
+            "-H",
+            "Sec-Fetch-Dest: empty",
+            "-H",
+            "Sec-Fetch-Mode: cors",
+            "-H",
+            "Sec-Fetch-Site: same-site",
         ]);
 
         if is_rsc {
@@ -88,7 +101,7 @@ impl Client {
         let mut bracket_count = 0;
         let mut in_string = false;
         let mut escape = false;
-        
+
         for (i, c) in text[start..].char_indices() {
             if escape {
                 escape = false;
@@ -111,17 +124,23 @@ impl Client {
     }
 
     fn extract_rsc_pagination(text: &str) -> crate::types::Paging {
-        let total_pages = text.find("\"totalPages\":").and_then(|i| {
-            let s = &text[i + 13..];
-            let end = s.find(|c: char| !c.is_ascii_digit())?;
-            s[..end].parse::<i64>().ok()
-        }).unwrap_or(1);
+        let total_pages = text
+            .find("\"totalPages\":")
+            .and_then(|i| {
+                let s = &text[i + 13..];
+                let end = s.find(|c: char| !c.is_ascii_digit())?;
+                s[..end].parse::<i64>().ok()
+            })
+            .unwrap_or(1);
 
-        let total_items = text.find("\"totalCount\":").and_then(|i| {
-            let s = &text[i + 13..];
-            let end = s.find(|c: char| !c.is_ascii_digit())?;
-            s[..end].parse::<i64>().ok()
-        }).unwrap_or(1);
+        let total_items = text
+            .find("\"totalCount\":")
+            .and_then(|i| {
+                let s = &text[i + 13..];
+                let end = s.find(|c: char| !c.is_ascii_digit())?;
+                s[..end].parse::<i64>().ok()
+            })
+            .unwrap_or(1);
 
         crate::types::Paging {
             page: 1,
@@ -134,7 +153,7 @@ impl Client {
     pub async fn get_trades(&self, query: &TradeQuery) -> Result<PaginatedResponse<Trade>, Error> {
         let url = self.get_url(false, "/trades", Some(query));
         let text = self.get_curl(url, true).await?;
-        
+
         let marker = r#""_txId":"#;
         let mut search_start = 0;
         while let Some(marker_pos) = text[search_start..].find(marker) {
@@ -172,7 +191,7 @@ impl Client {
         let trades_query = TradeQuery::default().with_page_size(100);
         let url = self.get_url(false, "/trades", Some(&trades_query));
         let text = self.get_curl(url, true).await?;
-        
+
         let mut unique_politicians = std::collections::HashMap::new();
 
         // 1. Try to find the trades array first to get detailed politician info
@@ -195,33 +214,38 @@ impl Client {
                 }
                 inner_search_pos = start;
             }
-            if !trades.is_empty() { break; }
+            if !trades.is_empty() {
+                break;
+            }
         }
 
         for trade in trades {
             if !unique_politicians.contains_key(&trade.politician_id) {
                 let p = trade.politician;
-                unique_politicians.insert(trade.politician_id.clone(), PoliticianDetail {
-                    politician_id: trade.politician_id,
-                    state_id: Some(p.state_id),
-                    party: Some(p.party),
-                    party_other: None,
-                    district: None,
-                    first_name: Some(p.first_name.clone()),
-                    last_name: Some(p.last_name.clone()),
-                    nickname: p.nickname,
-                    middle_name: None,
-                    full_name: format!("{} {}", p.first_name, p.last_name),
-                    dob: p.dob,
-                    gender: p.gender,
-                    social_facebook: None,
-                    social_twitter: None,
-                    social_youtube: None,
-                    website: None,
-                    chamber: Some(p.chamber),
-                    committees: vec![],
-                    stats: crate::types::Stats::default()
-                });
+                unique_politicians.insert(
+                    trade.politician_id.clone(),
+                    PoliticianDetail {
+                        politician_id: trade.politician_id,
+                        state_id: Some(p.state_id),
+                        party: Some(p.party),
+                        party_other: None,
+                        district: None,
+                        first_name: Some(p.first_name.clone()),
+                        last_name: Some(p.last_name.clone()),
+                        nickname: p.nickname,
+                        middle_name: None,
+                        full_name: format!("{} {}", p.first_name, p.last_name),
+                        dob: p.dob,
+                        gender: p.gender,
+                        social_facebook: None,
+                        social_twitter: None,
+                        social_youtube: None,
+                        website: None,
+                        chamber: Some(p.chamber),
+                        committees: vec![],
+                        stats: crate::types::Stats::default(),
+                    },
+                );
             }
         }
 
@@ -246,32 +270,37 @@ impl Client {
                             stats: crate::types::Stats,
                         }
 
-                        if let Ok(summaries) = serde_json::from_str::<Vec<SummaryPolitician>>(&json) {
+                        if let Ok(summaries) = serde_json::from_str::<Vec<SummaryPolitician>>(&json)
+                        {
                             for s in summaries {
-                                if let Some(existing) = unique_politicians.get_mut(&s.politician_id) {
+                                if let Some(existing) = unique_politicians.get_mut(&s.politician_id)
+                                {
                                     existing.stats = s.stats;
                                 } else {
-                                    unique_politicians.insert(s.politician_id.clone(), PoliticianDetail {
-                                        politician_id: s.politician_id,
-                                        state_id: None,
-                                        party: None,
-                                        party_other: None,
-                                        district: None,
-                                        first_name: None,
-                                        last_name: None,
-                                        nickname: None,
-                                        middle_name: None,
-                                        full_name: s.full_name,
-                                        dob: None,
-                                        gender: None,
-                                        social_facebook: None,
-                                        social_twitter: None,
-                                        social_youtube: None,
-                                        website: None,
-                                        chamber: None,
-                                        committees: vec![],
-                                        stats: s.stats,
-                                    });
+                                    unique_politicians.insert(
+                                        s.politician_id.clone(),
+                                        PoliticianDetail {
+                                            politician_id: s.politician_id,
+                                            state_id: None,
+                                            party: None,
+                                            party_other: None,
+                                            district: None,
+                                            first_name: None,
+                                            last_name: None,
+                                            nickname: None,
+                                            middle_name: None,
+                                            full_name: s.full_name,
+                                            dob: None,
+                                            gender: None,
+                                            social_facebook: None,
+                                            social_twitter: None,
+                                            social_youtube: None,
+                                            website: None,
+                                            chamber: None,
+                                            committees: vec![],
+                                            stats: s.stats,
+                                        },
+                                    );
                                 }
                             }
                             break;
@@ -292,7 +321,7 @@ impl Client {
                     size: total,
                     total_pages: 1,
                     total_items: total,
-                }
+                },
             },
         })
     }
@@ -324,13 +353,15 @@ mod tests {
         let output = Command::new("curl")
             .args(&[
                 "-s",
-                "-H", "RSC: 1",
-                "-H", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-                "https://www.capitoltrades.com/trades"
+                "-H",
+                "RSC: 1",
+                "-H",
+                "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                "https://www.capitoltrades.com/trades",
             ])
             .output()
             .expect("failed to execute curl");
-            
+
         let text = String::from_utf8_lossy(&output.stdout);
         assert!(text.contains("_txId"), "Trades not found in the output!");
     }

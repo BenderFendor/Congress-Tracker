@@ -1,0 +1,11 @@
+[package]
+name = "committee_detector"
+version = "0.1.0"
+edition = "2021"
+description = "Congressional committee stock trade conflict detection. Based on poli-ticker by ibotzhub."
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+once_cell = "1.19"
+phf = { version = "0.11", features = ["macros"] }

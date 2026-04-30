@@ -2,6 +2,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts"
+import { formatCurrency } from "@/lib/csvUtils"
 
 interface CampaignFinanceData {
   name: string
@@ -31,12 +32,18 @@ export function CampaignFinanceChart({
     "hsl(var(--chart-5))",
   ]
 
+  const renderPieLabel = ({ name, percent }: { name?: unknown; percent?: number }) => {
+    const safeName = typeof name === "string" ? name : ""
+    const safePercent = typeof percent === "number" ? percent : 0
+    return `${safeName} ${(safePercent * 100).toFixed(0)}%`
+  }
+
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       return (
         <div className="bg-card border border-border rounded-lg p-3 shadow-lg">
           <p className="font-medium">{label}</p>
-          <p className="text-primary font-bold">${(payload[0].value / 1000).toFixed(0)}K</p>
+          <p className="text-primary font-bold">{formatCurrency(payload[0].value)}</p>
           {payload[0].payload.industry && (
             <p className="text-sm text-muted-foreground">{payload[0].payload.industry}</p>
           )}
@@ -52,7 +59,7 @@ export function CampaignFinanceChart({
       return (
         <div className="bg-card border border-border rounded-lg p-3 shadow-lg">
           <p className="font-medium">{data.name}</p>
-          <p className="text-primary font-bold">${(data.value / 1000).toFixed(0)}K</p>
+          <p className="text-primary font-bold">{formatCurrency(data.value)}</p>
           <p className="text-sm text-muted-foreground">{((data.value / data.payload.total) * 100).toFixed(1)}%</p>
         </div>
       )
@@ -79,7 +86,7 @@ export function CampaignFinanceChart({
                   cx="50%"
                   cy="50%"
                   labelLine={false}
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                  label={renderPieLabel}
                   outerRadius={80}
                   fill="#8884d8"
                   dataKey="amount"
@@ -119,7 +126,7 @@ export function CampaignFinanceChart({
               <YAxis
                 className="text-muted-foreground"
                 tick={{ fontSize: 12 }}
-                tickFormatter={(value) => `$${(value / 1000).toFixed(0)}K`}
+                tickFormatter={(value) => formatCurrency(value)}
               />
               <Tooltip content={<CustomTooltip />} />
               <Bar dataKey="amount" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />

@@ -1,4 +1,5 @@
 import React from 'react';
+import Link from 'next/link';
 
 interface LegislatorProps {
     id: string;
@@ -12,6 +13,7 @@ interface LegislatorProps {
 }
 
 export const LegislatorCard: React.FC<LegislatorProps> = ({
+    id,
     name,
     state,
     party,
@@ -19,7 +21,7 @@ export const LegislatorCard: React.FC<LegislatorProps> = ({
     risk,
     delay = "delay-1"
 }) => (
-    <div className={`p-8 bg-card border border-border rounded-sm shadow-sm hover-lift group cursor-pointer relative overflow-hidden animate-stagger-item ${delay}`}>
+    <Link href={`/legislators/${id}`} className={`block p-8 bg-card border border-border rounded-sm shadow-sm hover-lift group cursor-pointer relative overflow-hidden animate-stagger-item ${delay}`}>
         <div className="absolute top-0 right-0 w-32 h-32 bg-primary text-primary-foreground/5 -mr-16 -mt-16 rounded-full blur-3xl group-hover:bg-primary text-primary-foreground/10 transition-all duration-700 ease-in-out"></div>
 
         <div className="flex justify-between items-start mb-8 relative z-10">
@@ -38,5 +40,5 @@ export const LegislatorCard: React.FC<LegislatorProps> = ({
             <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">CASH ON HAND</span>
             <span className="text-lg font-serif text-primary">{cash}</span>
         </div>
-    </div>
+    </Link>
 );

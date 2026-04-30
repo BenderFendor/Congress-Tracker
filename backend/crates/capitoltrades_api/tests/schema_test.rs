@@ -35,7 +35,7 @@ fn test_trade_deserialization() {
       "txTypeExtended": null,
       "value": 8000
     }"#;
-    
+
     let trade: Result<Trade, _> = serde_json::from_str(json_str);
     match trade {
         Ok(_) => println!("Successfully deserialized Trade!"),

@@ -1,0 +1,16 @@
+[package]
+name = "lobbying_client"
+version = "0.1.0"
+edition = "2021"
+description = "U.S. Senate Lobbying Disclosure Act (LDA) API client. Based on lobbyR by Chris Cioffi and lobby by Christopher Kenny."
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+reqwest = { version = "0.12", features = ["json"] }
+thiserror = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt"] }

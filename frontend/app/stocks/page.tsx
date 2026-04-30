@@ -32,9 +32,10 @@ export default function StocksPage() {
       trade.ticker.toLowerCase().includes(searchTerm.toLowerCase()) ||
       trade.asset_description.toLowerCase().includes(searchTerm.toLowerCase())
 
+    const tradeType = trade.type || ""
     const matchesAction = filterAction === "all" ||
-      (filterAction === "buy" && trade.type.toLowerCase().includes("purchase")) ||
-      (filterAction === "sell" && trade.type.toLowerCase().includes("sale"))
+      (filterAction === "buy" && tradeType.toLowerCase().includes("purchase")) ||
+      (filterAction === "sell" && tradeType.toLowerCase().includes("sale"))
 
     return matchesSearch && matchesAction
   })
@@ -129,9 +130,16 @@ export default function StocksPage() {
             </div>
           ) : trades.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-24 text-center border border-border bg-card rounded-sm shadow-sm">
-              <h3 className="font-serif text-3xl font-bold text-primary mb-4">Database Offline</h3>
-              <p className="text-muted-foreground max-w-md mx-auto">
-                The trade database is currently being integrated and is not accessible. Please check back later for live congressional stock trades.
+              <h3 className="font-serif text-3xl font-bold text-primary mb-4">Data Unavailable</h3>
+              <p className="text-muted-foreground max-w-md mx-auto mb-4">
+                The trade database could not be loaded. This is usually caused by an invalid CapitolTrades or Congress.gov API key.
+              </p>
+              <p className="font-mono text-xs text-muted-foreground bg-muted p-3 max-w-md text-left">
+                Check that <code className="bg-background px-1">CONGRESS_GOV_API_KEY</code> is valid.{' '}
+                <a href="https://api.congress.gov/sign-up" target="_blank" rel="noopener noreferrer" className="text-accent underline">
+                  Get a free key here
+                </a>
+                . Then restart the backend.
               </p>
             </div>
           ) : (
@@ -142,11 +150,11 @@ export default function StocksPage() {
                     <div key={`${trade.transaction_date}-${trade.ticker}-${index}`} className="group bg-card border-2 border-border p-6 hover:border-accent/50 transition-all duration-300">
                       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
                         <div className="flex items-start gap-6">
-                          <div className={`w-12 h-12 flex items-center justify-center border-2 ${trade.type.toLowerCase().includes("purchase")
+                          <div className={`w-12 h-12 flex items-center justify-center border-2 ${(trade.type || "").toLowerCase().includes("purchase")
                             ? "bg-green-900/20 border-green-500/30 text-green-400"
                             : "bg-red-900/20 border-red-500/30 text-red-400"
                             }`}>
-                            {trade.type.toLowerCase().includes("purchase") ? <ArrowUpRight size={24} /> : <ArrowDownRight size={24} />}
+                            {(trade.type || "").toLowerCase().includes("purchase") ? <ArrowUpRight size={24} /> : <ArrowDownRight size={24} />}
                           </div>
 
                           <div>
@@ -173,8 +181,8 @@ export default function StocksPage() {
 
                         <div className="flex flex-col md:items-end gap-2 pl-18 md:pl-0">
                           <div className="font-mono text-sm font-bold text-foreground">
-                            <span className={trade.type.toLowerCase().includes("purchase") ? "text-green-400" : "text-red-400"}>
-                              {trade.type.toUpperCase()}
+                            <span className={(trade.type || "").toLowerCase().includes("purchase") ? "text-green-400" : "text-red-400"}>
+                              {(trade.type || "").toUpperCase()}
                             </span>
                             <span className="mx-2 text-muted-foreground">|</span>
                             {trade.amount}
@@ -241,10 +249,10 @@ export default function StocksPage() {
                         <span className="font-mono text-sm text-muted-foreground uppercase">Buy Orders</span>
                         <div className="text-right">
                           <span className="font-serif text-2xl font-bold text-green-400 block">
-                            {trades.filter(t => t.type.toLowerCase().includes("purchase")).length}
+                            {trades.filter(t => (t.type || "").toLowerCase().includes("purchase")).length}
                           </span>
                           <span className="text-[10px] font-mono text-muted-foreground uppercase">
-                            {((trades.filter(t => t.type.toLowerCase().includes("purchase")).length / trades.length) * 100).toFixed(1)}%
+                            {((trades.filter(t => (t.type || "").toLowerCase().includes("purchase")).length / trades.length) * 100).toFixed(1)}%
                           </span>
                         </div>
                       </div>
@@ -253,10 +261,10 @@ export default function StocksPage() {
                         <span className="font-mono text-sm text-muted-foreground uppercase">Sell Orders</span>
                         <div className="text-right">
                           <span className="font-serif text-2xl font-bold text-red-400 block">
-                            {trades.filter(t => t.type.toLowerCase().includes("sale")).length}
+                            {trades.filter(t => (t.type || "").toLowerCase().includes("sale")).length}
                           </span>
                           <span className="text-[10px] font-mono text-muted-foreground uppercase">
-                            {((trades.filter(t => t.type.toLowerCase().includes("sale")).length / trades.length) * 100).toFixed(1)}%
+                            {((trades.filter(t => (t.type || "").toLowerCase().includes("sale")).length / trades.length) * 100).toFixed(1)}%
                           </span>
                         </div>
                       </div>

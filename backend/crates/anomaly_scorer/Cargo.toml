@@ -1,0 +1,9 @@
+[package]
+name = "anomaly_scorer"
+version = "0.1.0"
+edition = "2021"
+description = "Congressional anomaly scoring using 6-signal weighted model. Based on CongressWatch by OpenSourcePatents."
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"

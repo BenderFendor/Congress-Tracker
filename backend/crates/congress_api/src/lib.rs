@@ -10,7 +10,7 @@ pub mod types;
 
 pub use client::Client;
 pub use query::{BillQuery, MemberQuery, VoteQuery};
-pub use types::{Bill, Member, Vote, PaginatedResponse};
+pub use types::{Bill, Member, PaginatedResponse, Vote};
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {

@@ -1,7 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:is(.dark *), &:is(.dark));
 
 :root {
   /* Editorial Design System Tokens */
@@ -29,25 +29,25 @@
 }
 
 /* Light mode is default. We can keep dark empty or just map it to the same for now */
-.dark {
-  --background: #111827;
+.dark, :root[class~="dark"] {
+  --background: #0A0A0A;
   --foreground: #F9F8F6;
-  --card: #1F2937;
+  --card: #121212;
   --card-foreground: #F9F8F6;
-  --popover: #1F2937;
+  --popover: #121212;
   --popover-foreground: #F9F8F6;
   --primary: #F9F8F6;
-  --primary-foreground: #111827;
+  --primary-foreground: #0A0A0A;
   --secondary: #9CA3AF;
   --secondary-foreground: #F9F8F6;
-  --muted: #374151;
+  --muted: #1F1F1F;
   --muted-foreground: #9CA3AF;
   --accent: #FCA5A5;
-  --accent-foreground: #111827;
+  --accent-foreground: #0A0A0A;
   --destructive: #EF4444;
   --destructive-foreground: #FFFFFF;
-  --border: #374151;
-  --input: #1F2937;
+  --border: #2A2A2A;
+  --input: #1F1F1F;
   --ring: #F9F8F6;
 }
 

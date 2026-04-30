@@ -1,0 +1,12 @@
+[package]
+name = "trade_enricher"
+version = "0.1.0"
+edition = "2021"
+description = "Trade data enrichment with sector/industry and committee conflict detection. Based on poli-ticker by ibotzhub and congress-trading-monitor by Adrian Krebs."
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+ticker_resolver = { path = "../ticker_resolver" }
+committee_detector = { path = "../committee_detector" }

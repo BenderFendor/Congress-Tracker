@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Congress Accountability Tracker icon">
+  <rect width="64" height="64" rx="12" fill="#111111"/>
+  <path d="M14 46h36" stroke="#d4a373" stroke-width="4" stroke-linecap="round"/>
+  <path d="M18 46V28" stroke="#f5efe6" stroke-width="4" stroke-linecap="round"/>
+  <path d="M28 46V22" stroke="#f5efe6" stroke-width="4" stroke-linecap="round"/>
+  <path d="M38 46V18" stroke="#f5efe6" stroke-width="4" stroke-linecap="round"/>
+  <path d="M48 46V26" stroke="#f5efe6" stroke-width="4" stroke-linecap="round"/>
+  <path d="M12 18l20-8 20 8" fill="none" stroke="#d4a373" stroke-width="4" stroke-linejoin="round"/>
+</svg>
