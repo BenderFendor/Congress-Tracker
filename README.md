@@ -95,4 +95,6 @@ frontend/
 
 ## License
 
+Just give Credit
+
 MIT

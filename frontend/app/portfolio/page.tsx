@@ -185,6 +185,9 @@ export default function PortfolioPage() {
                   <h2 className="text-2xl font-serif mb-6 relative z-10 text-foreground">
                     {featured.member.name}
                   </h2>
+                  <h2 className="text-2xl font-serif mb-6 relative z-10 text-foreground">
+                    {featured.member.image_url}
+                  </h2>
                   <div className="grid grid-cols-2 gap-4 mb-8">
                     <div className="bg-background rounded-lg p-3 border border-border">
                       <div className="text-xs text-muted-foreground font-medium mb-1">Total Trades</div>
