@@ -59,7 +59,7 @@ pub struct ClientRef {
     #[serde(default)]
     pub general_description: Option<String>,
     #[serde(default)]
-    pub client_government_entity: Option<String>,
+    pub client_government_entity: Option<serde_json::Value>,
     #[serde(default)]
     pub client_self_select: Option<bool>,
     #[serde(default)]
@@ -188,7 +188,7 @@ pub struct Filing {
     #[serde(default)]
     pub registrant_address_2: Option<String>,
     #[serde(default)]
-    pub registrant_different_address: Option<String>,
+    pub registrant_different_address: Option<serde_json::Value>,
     #[serde(default)]
     pub registrant_city: Option<String>,
     #[serde(default)]
@@ -276,7 +276,7 @@ pub struct Client {
     #[serde(default)]
     pub general_description: Option<String>,
     #[serde(default)]
-    pub client_government_entity: Option<String>,
+    pub client_government_entity: Option<serde_json::Value>,
     #[serde(default)]
     pub client_self_select: Option<bool>,
     #[serde(default)]
@@ -400,17 +400,12 @@ pub struct PaginatedResponse<T> {
 
 // ── Issue joiner enum ──
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum IssueJoiner {
     And,
+    #[default]
     Or,
-}
-
-impl Default for IssueJoiner {
-    fn default() -> Self {
-        IssueJoiner::Or
-    }
 }
 
 impl std::fmt::Display for IssueJoiner {
@@ -446,6 +441,8 @@ pub struct FilingQuery {
     pub filing_amount_reported_max: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub page: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filing_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub page_size: Option<u32>,
 }

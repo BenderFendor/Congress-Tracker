@@ -16,7 +16,7 @@ async fn test_backend_e2e() {
 
     // Spawn the server in the background
     let mut server = Command::new("cargo")
-        .args(&["run"])
+        .args(["run"])
         .env("PORT", port.to_string())
         .spawn()
         .expect("Failed to start server process");
@@ -58,6 +58,7 @@ async fn test_backend_e2e() {
         }
         Err(e) => {
             let _ = server.kill();
+            let _ = server.wait();
             panic!("Trades request failed: {:?}", e);
         }
     }
@@ -95,9 +96,11 @@ async fn test_backend_e2e() {
         }
         Err(e) => {
             let _ = server.kill();
+            let _ = server.wait();
             panic!("Politicians request failed: {:?}", e);
         }
     }
 
     let _ = server.kill();
+    let _ = server.wait();
 }

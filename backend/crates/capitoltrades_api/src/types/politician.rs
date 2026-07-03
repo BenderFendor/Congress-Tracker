@@ -68,17 +68,17 @@ pub struct PoliticianDetail {
 
     pub stats: Stats,
 }
-impl Into<Politician> for PoliticianDetail {
-    fn into(self) -> Politician {
+impl From<PoliticianDetail> for Politician {
+    fn from(value: PoliticianDetail) -> Self {
         Politician {
-            state_id: self.state_id.unwrap_or_default(),
-            chamber: self.chamber.unwrap_or(Chamber::House),
-            dob: self.dob,
-            first_name: self.first_name.unwrap_or_default(),
-            gender: self.gender,
-            last_name: self.last_name.unwrap_or_default(),
-            nickname: self.nickname,
-            party: self.party.unwrap_or(Party::Other),
+            state_id: value.state_id.unwrap_or_default(),
+            chamber: value.chamber.unwrap_or(Chamber::House),
+            dob: value.dob,
+            first_name: value.first_name.unwrap_or_default(),
+            gender: value.gender,
+            last_name: value.last_name.unwrap_or_default(),
+            nickname: value.nickname,
+            party: value.party.unwrap_or(Party::Other),
         }
     }
 }

@@ -244,7 +244,7 @@ pub fn compute_filer_metrics(name: &str, trades: &[EnrichedTrade]) -> FilerMetri
         }
     }
     let mut top_tickers: Vec<(&str, usize)> = ticker_counts.into_iter().collect();
-    top_tickers.sort_by(|a, b| b.1.cmp(&a.1));
+    top_tickers.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
     let top_tickers: Vec<(String, usize)> = top_tickers
         .into_iter()
         .take(5)
@@ -260,7 +260,7 @@ pub fn compute_filer_metrics(name: &str, trades: &[EnrichedTrade]) -> FilerMetri
         }
     }
     let mut top_sectors: Vec<(&str, usize)> = sector_counts.into_iter().collect();
-    top_sectors.sort_by(|a, b| b.1.cmp(&a.1));
+    top_sectors.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
     let top_sectors: Vec<(String, usize)> = top_sectors
         .into_iter()
         .take(5)

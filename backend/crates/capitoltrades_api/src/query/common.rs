@@ -48,15 +48,11 @@ pub trait Query {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub enum SortDirection {
     Asc = 0,
+    #[default]
     Desc = 1,
-}
-impl Default for SortDirection {
-    fn default() -> Self {
-        SortDirection::Desc
-    }
 }
 impl FromStr for SortDirection {
     type Err = ();
@@ -84,13 +80,13 @@ pub struct QueryCommon {
 }
 
 impl Default for QueryCommon {
-    fn default() -> QueryCommon {
-        QueryCommon {
+    fn default() -> Self {
+        Self {
             page: 1,
             page_size: None,
             pub_date_relative: None,
             tx_date_relative: None,
-            sort_direction: SortDirection::Desc,
+            sort_direction: SortDirection::default(),
         }
     }
 }

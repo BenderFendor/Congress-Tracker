@@ -9,7 +9,6 @@ use capitoltrades_api::{
     Client as CapitolTradesClient, PoliticianQuery, Query as CapitolTradesQuery, TradeQuery,
 };
 use civiq_client::{Client as CiviqClient, RepresentativeQuery as CiviqQuery};
-use committee_detector;
 use congress_api::{
     types::{Bill, Member, PaginatedResponse as CongressPaginatedResponse},
     BillQuery, Client as CongressClient, MemberQuery, VoteQuery,
@@ -24,7 +23,6 @@ use openfec_api::{
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use ticker_resolver;
 use tower_http::cors::{Any, CorsLayer};
 
 mod lobbying_analytics;
@@ -169,6 +167,40 @@ async fn main() {
     let civiq_client = CiviqClient::new();
     tracing::info!("CIV.IQ API client initialized (free, no key)");
 
+    // Initialize intel_backend (Postgres-backed intelligence layer)
+    let intel_router = match std::env::var("DATABASE_URL") {
+        Ok(db_url) if !db_url.is_empty() => {
+            match intel_backend::Db::connect(&db_url).await {
+                Ok(db) => {
+                    if let Err(e) = db.migrate().await {
+                        tracing::warn!("Intel backend migrations failed: {:?}", e);
+                        None
+                    } else {
+                        let cache = std::sync::Arc::new(intel_backend::CacheLayer::new(
+                            std::env::var("INTEL_CACHE_TTL_SECONDS")
+                                .ok()
+                                .and_then(|s| s.parse().ok())
+                                .unwrap_or(300),
+                        ));
+                        let repo = intel_backend::Repository::new(db, cache.clone());
+                        tracing::info!("Intel backend initialized with Postgres");
+                        Some(intel_backend::routes::build_router(repo, cache))
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Intel backend DB connection failed: {:?}. Falling back to pass-through mode.", e);
+                    None
+                }
+            }
+        }
+        _ => {
+            tracing::warn!(
+                "DATABASE_URL not set. Running without Intel backend (pass-through mode)."
+            );
+            None
+        }
+    };
+
     let app_state = Arc::new(AppState {
         capitoltrades: Arc::new(capitoltrades_client),
         congress: congress_client,
@@ -226,6 +258,9 @@ async fn main() {
         .layer(cors)
         .with_state(app_state);
 
+    let legacy: Router = app;
+    let intel: Router = intel_router.unwrap_or_else(Router::new);
+    let app = legacy.merge(intel);
     let port = std::env::var("PORT")
         .ok()
         .and_then(|p| p.parse().ok())
@@ -596,11 +631,11 @@ async fn get_legislators(
         .unwrap_or(legislators.len() as u32);
     let pagination = congress_api::types::Pagination {
         count: total,
-        next_url: resp.pagination.as_ref().and_then(|_| {
-            Some(format!(
+        next_url: resp.pagination.as_ref().map(|_| {
+            format!(
                 "/api/legislators?offset={}",
                 params.offset.unwrap_or(0) + legislators.len() as u32
-            ))
+            )
         }),
         previous_url: None,
     };
@@ -695,8 +730,7 @@ async fn get_legislator_by_id(
 fn normalize_name(value: &str) -> String {
     value
         .to_lowercase()
-        .replace(',', " ")
-        .replace('.', " ")
+        .replace([',', '.'], " ")
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")

@@ -1,0 +1,31 @@
+[package]
+name = "intel_backend"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+axum = "0.7"
+tokio = { version = "1.0", features = ["full"] }
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "chrono", "json", "uuid"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.10", features = ["v4", "serde"] }
+thiserror = "1.0"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+clap = { version = "4.5", features = ["derive"] }
+moka = { version = "0.12", features = ["future"] }
+sha2 = "0.10"
+capitoltrades_api = { path = "../capitoltrades_api" }
+congress_api = { path = "../congress_api" }
+openfec_api = { path = "../openfec_api" }
+lobbying_client = { path = "../lobbying_client" }
+civiq_client = { path = "../civiq_client" }
+ticker_resolver = { path = "../ticker_resolver" }
+committee_detector = { path = "../committee_detector" }
+trade_enricher = { path = "../trade_enricher" }
+anomaly_scorer = { path = "../anomaly_scorer" }
+reqwest = { version = "0.12", features = ["json"] }
+csv = "1.3"

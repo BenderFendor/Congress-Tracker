@@ -64,7 +64,7 @@ impl PoliticianQuery {
     }
 
     pub fn with_party(mut self, party: &Party) -> Self {
-        self.parties.push(party.clone());
+        self.parties.push(*party);
         self
     }
     pub fn with_parties(mut self, parties: &[Party]) -> Self {
@@ -83,18 +83,14 @@ impl PoliticianQuery {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub enum PoliticianSortBy {
+    #[default]
     TradedVolume = 0,
     LastName = 1,
     TradedIssuersCount = 2,
     TotalTrades = 3,
     DateLastTraded = 4,
-}
-impl Default for PoliticianSortBy {
-    fn default() -> Self {
-        PoliticianSortBy::TradedVolume
-    }
 }
 impl std::fmt::Display for PoliticianSortBy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

@@ -106,7 +106,7 @@ impl EodPrice {
         if v.is_empty() {
             return None;
         }
-        for item in v.get(0).unwrap() {
+        for item in v.first().unwrap() {
             match item {
                 EodPrice::Double(price) => return Some(*price),
                 _ => continue,

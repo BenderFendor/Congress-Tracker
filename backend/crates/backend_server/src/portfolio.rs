@@ -154,7 +154,7 @@ async fn featured(
         name: format!("{} {}", top_politician.first_name, top_politician.last_name)
             .trim()
             .to_string(),
-        party: format_party(Some(top_politician.party.clone())),
+        party: format_party(Some(top_politician.party)),
         chamber: format_chamber(Some(top_politician.chamber)),
         state: top_politician.state_id.clone(),
         total_trades: member_trades.len() as i64,
@@ -167,8 +167,8 @@ async fn featured(
         )),
     };
 
-    let top_holdings = compute_top_holdings(&member_trades, 5);
-    let asset_allocation = compute_sector_allocation_volume(&member_trades);
+    let top_holdings = compute_top_holdings(member_trades, 5);
+    let asset_allocation = compute_sector_allocation_volume(member_trades);
 
     Ok(Json(FeaturedPortfolio {
         member: featured,
@@ -223,7 +223,7 @@ async fn top_members(
                 )
                 .trim()
                 .to_string(),
-                party: format_party(p.party.clone()),
+                party: format_party(p.party),
                 chamber: format_chamber(p.chamber),
                 state: p.state_id.clone().unwrap_or_default(),
                 total_trades: p.stats.count_trades.unwrap_or(0),
@@ -240,7 +240,7 @@ async fn top_members(
         })
         .collect();
 
-    sorted.sort_by(|a, b| b.total_trades.cmp(&a.total_trades));
+    sorted.sort_by_key(|member| std::cmp::Reverse(member.total_trades));
     for (i, m) in sorted.iter_mut().enumerate() {
         m.rank = (i + 1) as i64;
     }
@@ -590,7 +590,7 @@ fn compute_top_holdings(trades: &[&Trade], top_n: usize) -> Vec<HoldingInfo> {
     }
 
     let mut sorted: Vec<_> = ticker_map.into_iter().collect();
-    sorted.sort_by(|a, b| b.1 .1.cmp(&a.1 .1));
+    sorted.sort_by_key(|(_, (_, count))| std::cmp::Reverse(*count));
     let total_trades: i64 = sorted.iter().map(|(_, (_, c))| c).sum();
 
     sorted
@@ -622,7 +622,7 @@ fn compute_sector_allocation_volume(trades: &[&Trade]) -> Vec<SectorWeight> {
     let total_trades: i64 = sector_map.values().map(|(c, _)| c).sum();
 
     let mut sorted: Vec<_> = sector_map.into_iter().collect();
-    sorted.sort_by(|a, b| b.1 .0.cmp(&a.1 .0));
+    sorted.sort_by_key(|(_, (count, _))| std::cmp::Reverse(*count));
 
     sorted
         .into_iter()

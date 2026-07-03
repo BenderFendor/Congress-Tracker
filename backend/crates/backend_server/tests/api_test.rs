@@ -13,10 +13,12 @@ async fn test_congress_api_integration() {
     // 3. Verify responses
 
     // For now, just verify the client compiles and can be created
-    let _client = client;
+    let request = client
+        .get("http://127.0.0.1:4020/api/health")
+        .build()
+        .expect("health request should build");
 
-    // This is a placeholder test to ensure the API structure is correct
-    assert!(true);
+    assert_eq!(request.url().path(), "/api/health");
 }
 
 #[tokio::test]

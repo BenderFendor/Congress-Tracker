@@ -58,7 +58,7 @@ impl Query for IssuerQuery {
                     SortDirection::Asc => "",
                     SortDirection::Desc => "-",
                 },
-                &self.sort_by.to_string().as_str()
+                self.sort_by.to_string().as_str()
             )
             .as_str(),
         );
@@ -124,18 +124,14 @@ impl IssuerQuery {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub enum IssuerSortBy {
+    #[default]
     TradedVolume,
     PoliticiansCount,
     TotalTrades,
     DateLastTraded,
     MarketCap,
-}
-impl Default for IssuerSortBy {
-    fn default() -> Self {
-        IssuerSortBy::TradedVolume
-    }
 }
 impl std::fmt::Display for IssuerSortBy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

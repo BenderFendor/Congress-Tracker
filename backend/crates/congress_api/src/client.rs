@@ -4,7 +4,10 @@ use url::Url;
 use crate::{
     query::{BillQuery, MemberQuery, Query, VoteQuery},
     types::{
-        Bill, BillsResponse, Member, MembersResponse, Meta, PaginatedResponse, Vote, VotesResponse,
+        Bill, BillActionsResponse, BillAmendmentsResponse, BillCosponsorsResponse, BillDetail,
+        BillSubjectsResponse, BillSummariesResponse, BillTextResponse, BillsResponse, Member,
+        MemberCosponsoredResponse, MemberSponsoredResponse, MembersResponse, Meta,
+        PaginatedResponse, Vote, VotePositionsResponse, VotesResponse,
     },
     Error,
 };
@@ -103,6 +106,141 @@ impl Client {
     /// Get a specific member by bioguide ID
     pub async fn get_member_by_id(&self, bioguide_id: &str) -> Result<Member, Error> {
         let url = self.get_url(&format!("/v3/member/{}", bioguide_id), None::<&MemberQuery>)?;
+        self.get(url).await
+    }
+
+    /// Get a specific bill by congress, type, and number
+    pub async fn get_bill_detail(
+        &self,
+        congress: u32,
+        bill_type: &str,
+        bill_number: u32,
+    ) -> Result<BillDetail, Error> {
+        let path = format!("/v3/bill/{}/{}/{}", congress, bill_type, bill_number);
+        let url = self.get_url(&path, None::<&BillQuery>)?;
+        self.get(url).await
+    }
+
+    /// Get bill actions
+    pub async fn get_bill_actions(
+        &self,
+        congress: u32,
+        bill_type: &str,
+        bill_number: u32,
+    ) -> Result<BillActionsResponse, Error> {
+        let path = format!(
+            "/v3/bill/{}/{}/{}/actions",
+            congress, bill_type, bill_number
+        );
+        let url = self.get_url(&path, None::<&BillQuery>)?;
+        self.get(url).await
+    }
+
+    /// Get bill cosponsors
+    pub async fn get_bill_cosponsors(
+        &self,
+        congress: u32,
+        bill_type: &str,
+        bill_number: u32,
+    ) -> Result<BillCosponsorsResponse, Error> {
+        let path = format!(
+            "/v3/bill/{}/{}/{}/cosponsors",
+            congress, bill_type, bill_number
+        );
+        let url = self.get_url(&path, None::<&BillQuery>)?;
+        self.get(url).await
+    }
+
+    /// Get bill subjects
+    pub async fn get_bill_subjects(
+        &self,
+        congress: u32,
+        bill_type: &str,
+        bill_number: u32,
+    ) -> Result<BillSubjectsResponse, Error> {
+        let path = format!(
+            "/v3/bill/{}/{}/{}/subjects",
+            congress, bill_type, bill_number
+        );
+        let url = self.get_url(&path, None::<&BillQuery>)?;
+        self.get(url).await
+    }
+
+    /// Get bill summaries
+    pub async fn get_bill_summaries(
+        &self,
+        congress: u32,
+        bill_type: &str,
+        bill_number: u32,
+    ) -> Result<BillSummariesResponse, Error> {
+        let path = format!(
+            "/v3/bill/{}/{}/{}/summaries",
+            congress, bill_type, bill_number
+        );
+        let url = self.get_url(&path, None::<&BillQuery>)?;
+        self.get(url).await
+    }
+
+    /// Get bill text versions
+    pub async fn get_bill_text(
+        &self,
+        congress: u32,
+        bill_type: &str,
+        bill_number: u32,
+    ) -> Result<BillTextResponse, Error> {
+        let path = format!("/v3/bill/{}/{}/{}/text", congress, bill_type, bill_number);
+        let url = self.get_url(&path, None::<&BillQuery>)?;
+        self.get(url).await
+    }
+
+    /// Get bill amendments
+    pub async fn get_bill_amendments(
+        &self,
+        congress: u32,
+        bill_type: &str,
+        bill_number: u32,
+    ) -> Result<BillAmendmentsResponse, Error> {
+        let path = format!(
+            "/v3/bill/{}/{}/{}/amendments",
+            congress, bill_type, bill_number
+        );
+        let url = self.get_url(&path, None::<&BillQuery>)?;
+        self.get(url).await
+    }
+
+    /// Get member's sponsored legislation
+    pub async fn get_member_sponsored_legislation(
+        &self,
+        bioguide_id: &str,
+    ) -> Result<MemberSponsoredResponse, Error> {
+        let path = format!("/v3/member/{}/sponsored-legislation", bioguide_id);
+        let url = self.get_url(&path, None::<&BillQuery>)?;
+        self.get(url).await
+    }
+
+    /// Get member's cosponsored legislation
+    pub async fn get_member_cosponsored_legislation(
+        &self,
+        bioguide_id: &str,
+    ) -> Result<MemberCosponsoredResponse, Error> {
+        let path = format!("/v3/member/{}/cosponsored-legislation", bioguide_id);
+        let url = self.get_url(&path, None::<&BillQuery>)?;
+        self.get(url).await
+    }
+
+    /// Get vote positions (member-level votes on a roll call)
+    pub async fn get_vote_positions(
+        &self,
+        congress: u32,
+        chamber: &str,
+        session: u32,
+        roll_number: u32,
+    ) -> Result<VotePositionsResponse, Error> {
+        let path = format!(
+            "/v3/vote/{}/{}/{}/{}",
+            congress, chamber, session, roll_number
+        );
+        let url = self.get_url(&path, None::<&BillQuery>)?;
         self.get(url).await
     }
 }

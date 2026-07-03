@@ -42,7 +42,7 @@ impl Query for TradeQuery {
                     SortDirection::Asc => "",
                     SortDirection::Desc => "-",
                 },
-                &self.sort_by.to_string().as_str()
+                self.sort_by.to_string().as_str()
             )
             .as_str(),
         );
@@ -82,16 +82,12 @@ impl TradeQuery {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub enum TradeSortBy {
+    #[default]
     PublicationDate = 0,
     TradeDate = 1,
     ReportingGap = 2,
-}
-impl Default for TradeSortBy {
-    fn default() -> Self {
-        TradeSortBy::PublicationDate
-    }
 }
 impl std::fmt::Display for TradeSortBy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

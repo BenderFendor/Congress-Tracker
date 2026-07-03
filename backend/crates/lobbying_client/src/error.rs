@@ -11,4 +11,7 @@ pub enum LobbyingError {
 
     #[error("Serialization error: {0}")]
     Serde(#[from] serde_json::Error),
+
+    #[error("JSON decode error at {path}: {message}")]
+    Decode { path: String, message: String },
 }

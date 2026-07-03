@@ -9,6 +9,7 @@ mod error;
 pub mod types;
 
 pub use error::LobbyingError;
+use serde::de::DeserializeOwned;
 pub use types::{
     Client, ClientQuery, Contribution, ContributionQuery, Filing, FilingQuery, IssueJoiner,
     LobbyingActivity, Lobbyist, LobbyistQuery, PaginatedResponse, Registrant, RegistrantQuery,
@@ -82,8 +83,7 @@ impl LobbyingClient {
                 body,
             });
         }
-        let response: PaginatedResponse<Filing> = resp.json().await?;
-        Ok(response)
+        Self::decode_json(resp).await
     }
 
     /// Retrieve a single filing by UUID.
@@ -102,7 +102,7 @@ impl LobbyingClient {
                 body,
             });
         }
-        Ok(resp.json().await?)
+        Self::decode_json(resp).await
     }
 
     /// List registrants (lobbying firms or self-filers).
@@ -125,7 +125,7 @@ impl LobbyingClient {
                 body,
             });
         }
-        Ok(resp.json().await?)
+        Self::decode_json(resp).await
     }
 
     /// List clients (organizations that hire lobbyists).
@@ -148,7 +148,7 @@ impl LobbyingClient {
                 body,
             });
         }
-        Ok(resp.json().await?)
+        Self::decode_json(resp).await
     }
 
     /// List lobbyists.
@@ -171,7 +171,7 @@ impl LobbyingClient {
                 body,
             });
         }
-        Ok(resp.json().await?)
+        Self::decode_json(resp).await
     }
 
     /// List contributions (LD-203 reports).
@@ -194,7 +194,16 @@ impl LobbyingClient {
                 body,
             });
         }
-        Ok(resp.json().await?)
+        Self::decode_json(resp).await
+    }
+
+    async fn decode_json<T: DeserializeOwned>(resp: reqwest::Response) -> Result<T, LobbyingError> {
+        let body = resp.text().await?;
+        let mut deserializer = serde_json::Deserializer::from_str(&body);
+        serde_path_to_error::deserialize(&mut deserializer).map_err(|err| LobbyingError::Decode {
+            path: err.path().to_string(),
+            message: err.inner().to_string(),
+        })
     }
 }
 

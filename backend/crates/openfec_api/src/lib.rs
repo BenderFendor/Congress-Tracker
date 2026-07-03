@@ -9,8 +9,13 @@ pub mod query;
 pub mod types;
 
 pub use client::Client;
-pub use query::{CandidateQuery, CommitteeQuery, ReceiptQuery};
-pub use types::{Candidate, Committee, PaginatedResponse, Receipt};
+pub use query::{
+    CandidateQuery, CandidateTotalQuery, CommitteeQuery, IndependentExpenditureQuery, ReceiptQuery,
+};
+pub use types::{
+    Candidate, CandidateTotal, Committee, ElectionResult, IndependentExpenditure,
+    PaginatedResponse, Receipt,
+};
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {

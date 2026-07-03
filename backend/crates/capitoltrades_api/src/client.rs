@@ -32,16 +32,16 @@ impl Client {
         } else {
             self.web_url
         };
-        let mut url = Url::parse(format!("{}{}", base, path).as_str()).unwrap();
+        let url = Url::parse(format!("{}{}", base, path).as_str()).unwrap();
         match query {
-            Some(query) => query.add_to_url(&mut url),
+            Some(query) => query.add_to_url(&url),
             None => url,
         }
     }
 
     async fn get_curl(&self, url: Url, is_rsc: bool) -> Result<String, Error> {
         let mut cmd = Command::new("curl");
-        cmd.args(&[
+        cmd.args([
             "-s",
             "-H",
             &format!("User-Agent: {}", get_user_agent()),
@@ -343,26 +343,27 @@ impl Client {
     }
 }
 
+impl Default for Client {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
-
-    use std::process::Command;
+    use super::Client;
 
     #[test]
-    fn test_curl_extract_trades() {
-        let output = Command::new("curl")
-            .args(&[
-                "-s",
-                "-H",
-                "RSC: 1",
-                "-H",
-                "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-                "https://www.capitoltrades.com/trades",
-            ])
-            .output()
-            .expect("failed to execute curl");
+    fn test_extract_json_from_rsc_fragment() {
+        let text = r#"prefix [["literal ] bracket"],{"_txId":"abc","issuer":{"issuerName":"Acme [Test]"}}] suffix"#;
+        let start = text.find("[[").expect("fixture should contain JSON array");
 
-        let text = String::from_utf8_lossy(&output.stdout);
-        assert!(text.contains("_txId"), "Trades not found in the output!");
+        let extracted = Client::extract_json_from_start(text, start)
+            .expect("RSC JSON array should be extracted");
+
+        assert_eq!(
+            extracted,
+            r#"[["literal ] bracket"],{"_txId":"abc","issuer":{"issuerName":"Acme [Test]"}}]"#
+        );
     }
 }

@@ -1,0 +1,440 @@
+use crate::models::{
+    CommitteeFunding, DonorSummary, InfluenceNetworkFunding, MemberFunding, PacInfo,
+    ProvenanceSource, ProvenanceSummary,
+};
+use crate::repository::Repository;
+use chrono::NaiveDate;
+
+pub struct FecCandidateUpsert<'a> {
+    pub candidate_id: &'a str,
+    pub bioguide_id: Option<&'a str>,
+    pub name: &'a str,
+    pub party: Option<&'a str>,
+    pub state: Option<&'a str>,
+    pub district: Option<&'a str>,
+    pub office: Option<&'a str>,
+    pub incumbent_challenge: Option<&'a str>,
+    pub active_through: Option<i32>,
+    pub first_file_date: Option<NaiveDate>,
+    pub last_file_date: Option<NaiveDate>,
+    pub source_run_id: Option<uuid::Uuid>,
+}
+
+pub struct FecCommitteeUpsert<'a> {
+    pub committee_id: &'a str,
+    pub name: &'a str,
+    pub committee_type: Option<&'a str>,
+    pub committee_type_full: Option<&'a str>,
+    pub designation: Option<&'a str>,
+    pub designation_full: Option<&'a str>,
+    pub party: Option<&'a str>,
+    pub state: Option<&'a str>,
+    pub treasurer_name: Option<&'a str>,
+    pub affiliated_committee_name: Option<&'a str>,
+    pub sponsor_candidate_ids: serde_json::Value,
+    pub source_run_id: Option<uuid::Uuid>,
+}
+
+pub struct FecTransactionUpsert<'a> {
+    pub transaction_id: &'a str,
+    pub transaction_type: &'a str,
+    pub committee_id: Option<&'a str>,
+    pub candidate_id: Option<&'a str>,
+    pub bioguide_id: Option<&'a str>,
+    pub contributor_name: Option<&'a str>,
+    pub contributor_committee_id: Option<&'a str>,
+    pub recipient_name: Option<&'a str>,
+    pub amount: f64,
+    pub transaction_date: Option<NaiveDate>,
+    pub cycle: Option<i32>,
+    pub support_oppose_indicator: Option<&'a str>,
+    pub employer: Option<&'a str>,
+    pub occupation: Option<&'a str>,
+    pub purpose: Option<&'a str>,
+    pub memo_text: Option<&'a str>,
+    pub source_url: Option<&'a str>,
+    pub raw_json: serde_json::Value,
+    pub source_run_id: Option<uuid::Uuid>,
+}
+
+impl Repository {
+    /// Insert or update an FEC candidate row.
+    pub async fn upsert_fec_candidate(
+        &self,
+        input: FecCandidateUpsert<'_>,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"INSERT INTO fec_candidates
+               (candidate_id, bioguide_id, name, party, state, district, office,
+                incumbent_challenge, active_through, first_file_date, last_file_date, source_run_id)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+               ON CONFLICT (candidate_id) DO UPDATE SET
+                 bioguide_id        = COALESCE(EXCLUDED.bioguide_id, fec_candidates.bioguide_id),
+                 name               = EXCLUDED.name,
+                 party              = COALESCE(EXCLUDED.party, fec_candidates.party),
+                 state              = COALESCE(EXCLUDED.state, fec_candidates.state),
+                 district           = COALESCE(EXCLUDED.district, fec_candidates.district),
+                 office             = COALESCE(EXCLUDED.office, fec_candidates.office),
+                 incumbent_challenge = COALESCE(EXCLUDED.incumbent_challenge, fec_candidates.incumbent_challenge),
+                 active_through     = COALESCE(EXCLUDED.active_through, fec_candidates.active_through),
+                 first_file_date    = COALESCE(EXCLUDED.first_file_date, fec_candidates.first_file_date),
+                 last_file_date     = COALESCE(EXCLUDED.last_file_date, fec_candidates.last_file_date)"#,
+        )
+        .bind(input.candidate_id)
+        .bind(input.bioguide_id)
+        .bind(input.name)
+        .bind(input.party)
+        .bind(input.state)
+        .bind(input.district)
+        .bind(input.office)
+        .bind(input.incumbent_challenge)
+        .bind(input.active_through)
+        .bind(input.first_file_date)
+        .bind(input.last_file_date)
+        .bind(input.source_run_id)
+        .execute(self.pool())
+        .await?;
+
+        Ok(())
+    }
+
+    /// Insert or update an FEC committee row.
+    pub async fn upsert_fec_committee(
+        &self,
+        input: FecCommitteeUpsert<'_>,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"INSERT INTO fec_committees
+               (committee_id, name, committee_type, committee_type_full,
+                designation, designation_full, party, state,
+                treasurer_name, affiliated_committee_name, sponsor_candidate_ids, source_run_id)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+               ON CONFLICT (committee_id) DO UPDATE SET
+                 name                    = EXCLUDED.name,
+                 committee_type          = COALESCE(EXCLUDED.committee_type, fec_committees.committee_type),
+                 committee_type_full     = COALESCE(EXCLUDED.committee_type_full, fec_committees.committee_type_full),
+                 designation             = COALESCE(EXCLUDED.designation, fec_committees.designation),
+                 designation_full        = COALESCE(EXCLUDED.designation_full, fec_committees.designation_full),
+                 party                   = COALESCE(EXCLUDED.party, fec_committees.party),
+                 state                   = COALESCE(EXCLUDED.state, fec_committees.state),
+                 treasurer_name          = COALESCE(EXCLUDED.treasurer_name, fec_committees.treasurer_name),
+                 affiliated_committee_name = COALESCE(EXCLUDED.affiliated_committee_name, fec_committees.affiliated_committee_name),
+                 sponsor_candidate_ids   = EXCLUDED.sponsor_candidate_ids"#,
+        )
+        .bind(input.committee_id)
+        .bind(input.name)
+        .bind(input.committee_type)
+        .bind(input.committee_type_full)
+        .bind(input.designation)
+        .bind(input.designation_full)
+        .bind(input.party)
+        .bind(input.state)
+        .bind(input.treasurer_name)
+        .bind(input.affiliated_committee_name)
+        .bind(input.sponsor_candidate_ids)
+        .bind(input.source_run_id)
+        .execute(self.pool())
+        .await?;
+
+        Ok(())
+    }
+
+    /// Insert or update an FEC transaction row.
+    pub async fn upsert_fec_transaction(
+        &self,
+        input: FecTransactionUpsert<'_>,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"INSERT INTO fec_transactions
+               (transaction_id, transaction_type, committee_id, candidate_id, bioguide_id,
+                contributor_name, contributor_committee_id, recipient_name,
+                amount, transaction_date, cycle,
+                support_oppose_indicator, employer, occupation, purpose, memo_text,
+                source_url, raw_json, source_run_id)
+               VALUES ($1, $2::fec_transaction_type, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+               ON CONFLICT (transaction_id) DO UPDATE SET
+                 amount                    = EXCLUDED.amount,
+                 transaction_date          = COALESCE(EXCLUDED.transaction_date, fec_transactions.transaction_date),
+                 cycle                     = COALESCE(EXCLUDED.cycle, fec_transactions.cycle),
+                 support_oppose_indicator  = COALESCE(EXCLUDED.support_oppose_indicator, fec_transactions.support_oppose_indicator),
+                 employer                  = COALESCE(EXCLUDED.employer, fec_transactions.employer),
+                 occupation                = COALESCE(EXCLUDED.occupation, fec_transactions.occupation),
+                 purpose                   = COALESCE(EXCLUDED.purpose, fec_transactions.purpose),
+                 memo_text                 = COALESCE(EXCLUDED.memo_text, fec_transactions.memo_text)"#,
+        )
+        .bind(input.transaction_id)
+        .bind(input.transaction_type)
+        .bind(input.committee_id)
+        .bind(input.candidate_id)
+        .bind(input.bioguide_id)
+        .bind(input.contributor_name)
+        .bind(input.contributor_committee_id)
+        .bind(input.recipient_name)
+        .bind(input.amount)
+        .bind(input.transaction_date)
+        .bind(input.cycle)
+        .bind(input.support_oppose_indicator)
+        .bind(input.employer)
+        .bind(input.occupation)
+        .bind(input.purpose)
+        .bind(input.memo_text)
+        .bind(input.source_url)
+        .bind(input.raw_json)
+        .bind(input.source_run_id)
+        .execute(self.pool())
+        .await?;
+
+        Ok(())
+    }
+
+    /// Get member funding for a given cycle, assembling data from materialized views
+    /// and top-level transaction summaries.
+    pub async fn get_member_funding(
+        &self,
+        bioguide_id: &str,
+        cycle: i32,
+    ) -> Result<Option<MemberFunding>, sqlx::Error> {
+        // Read from member_funding_cycle_mv
+        let mv_row: Option<FundingMvRow> = sqlx::query_as::<_, FundingMvRow>(
+            r#"SELECT COALESCE(direct_receipts, 0) AS direct_receipts,
+                      COALESCE(pac_receipts, 0) AS pac_receipts,
+                      COALESCE(individual_receipts, 0) AS individual_receipts,
+                      COALESCE(independent_expenditures_supporting, 0) AS independent_expenditures_supporting,
+                      COALESCE(independent_expenditures_opposing, 0) AS independent_expenditures_opposing
+               FROM member_funding_cycle_mv
+               WHERE bioguide_id = $1 AND cycle = $2"#,
+        )
+        .bind(bioguide_id)
+        .bind(cycle)
+        .fetch_optional(self.pool())
+        .await?;
+
+        let mv = match mv_row {
+            Some(r) => r,
+            None => {
+                // Check if member exists at all
+                let exists: Option<(String,)> =
+                    sqlx::query_as("SELECT bioguide_id FROM members WHERE bioguide_id = $1")
+                        .bind(bioguide_id)
+                        .fetch_optional(self.pool())
+                        .await?;
+                if exists.is_none() {
+                    return Ok(None);
+                }
+                // Return zero-data funding object
+                FundingMvRow {
+                    direct_receipts: 0.0,
+                    pac_receipts: 0.0,
+                    individual_receipts: 0.0,
+                    independent_expenditures_supporting: 0.0,
+                    independent_expenditures_opposing: 0.0,
+                }
+            }
+        };
+
+        // Top donors by contributor name
+        let top_donors: Vec<DonorSummary> = sqlx::query_as::<_, DonorRow>(
+            r#"SELECT COALESCE(contributor_name, 'Unknown') AS contributor_name,
+                      SUM(amount) AS amount, COUNT(*)::bigint AS cnt
+               FROM fec_transactions
+               WHERE bioguide_id = $1
+                 AND (cycle = $2 OR $2 = 0)
+                 AND transaction_type = 'receipt'
+               GROUP BY contributor_name
+               ORDER BY SUM(amount) DESC
+               LIMIT 10"#,
+        )
+        .bind(bioguide_id)
+        .bind(cycle)
+        .fetch_all(self.pool())
+        .await?
+        .into_iter()
+        .map(|d| DonorSummary {
+            contributor_name: d.contributor_name,
+            amount: d.amount,
+            count: d.cnt,
+        })
+        .collect();
+
+        // Top committees by committee_id -> fec_committees name
+        let top_committees: Vec<CommitteeFunding> = sqlx::query_as::<_, CommFundingRow>(
+            r#"SELECT ft.committee_id, COALESCE(fc.name, ft.committee_id) AS committee_name,
+                      SUM(ft.amount) AS amount
+               FROM fec_transactions ft
+               LEFT JOIN fec_committees fc ON fc.committee_id = ft.committee_id
+               WHERE ft.bioguide_id = $1
+                 AND (ft.cycle = $2 OR $2 = 0)
+                 AND ft.transaction_type = 'receipt'
+               GROUP BY ft.committee_id, fc.name
+               ORDER BY SUM(ft.amount) DESC
+               LIMIT 10"#,
+        )
+        .bind(bioguide_id)
+        .bind(cycle)
+        .fetch_all(self.pool())
+        .await?
+        .into_iter()
+        .map(|c| CommitteeFunding {
+            committee_id: c.committee_id,
+            committee_name: c.committee_name,
+            amount: c.amount,
+        })
+        .collect();
+
+        // Influence network funding from influence_network_member_mv
+        let network_funding: Vec<InfluenceNetworkFunding> = sqlx::query_as::<_, NetworkFundingRow>(
+            r#"SELECT inn.network_slug, inn.display_name,
+                          COALESCE(SUM(inm.direct_amount), 0) AS direct_pac,
+                          COALESCE(SUM(inm.support_ie_amount), 0) AS independent_supporting,
+                          COALESCE(SUM(inm.oppose_ie_amount), 0) AS independent_opposing,
+                          'verified' AS confidence
+                   FROM influence_network_member_mv inm
+                   JOIN influence_networks inn ON inn.network_slug = inm.network_slug
+                   WHERE inm.bioguide_id = $1 AND inm.cycle = $2
+                   GROUP BY inn.network_slug, inn.display_name
+                   ORDER BY 3 DESC"#,
+        )
+        .bind(bioguide_id)
+        .bind(cycle)
+        .fetch_all(self.pool())
+        .await?
+        .into_iter()
+        .map(|n| InfluenceNetworkFunding {
+            network_slug: n.network_slug,
+            display_name: n.display_name,
+            direct_pac: n.direct_pac,
+            independent_supporting: n.independent_supporting,
+            independent_opposing: n.independent_opposing,
+            confidence: n.confidence,
+        })
+        .collect();
+
+        let has_run = self.has_successful_fec_run().await?;
+
+        let provenance = ProvenanceSummary {
+            sources: vec![ProvenanceSource {
+                source: "openfec".to_string(),
+                status: if has_run { "loaded" } else { "not_seeded" }.to_string(),
+                fetched_at: None,
+                confidence: Some("verified".to_string()),
+            }],
+            warnings: if !has_run {
+                vec!["No FEC transactions loaded. Run the FEC ingest for this cycle.".to_string()]
+            } else {
+                Vec::new()
+            },
+        };
+
+        Ok(Some(MemberFunding {
+            bioguide_id: bioguide_id.to_string(),
+            cycle,
+            direct_receipts: mv.direct_receipts,
+            pac_receipts: mv.pac_receipts,
+            individual_receipts: mv.individual_receipts,
+            independent_expenditures_supporting: mv.independent_expenditures_supporting,
+            independent_expenditures_opposing: mv.independent_expenditures_opposing,
+            top_donors,
+            top_committees,
+            influence_networks: network_funding,
+            has_successful_fec_run: has_run,
+            provenance,
+        }))
+    }
+
+    /// Get the bioguide_id associated with an FEC candidate_id via fec_candidates.
+    pub async fn get_candidate_by_fec_id(
+        &self,
+        candidate_id: &str,
+    ) -> Result<Option<String>, sqlx::Error> {
+        let row: Option<(Option<String>,)> =
+            sqlx::query_as("SELECT bioguide_id FROM fec_candidates WHERE candidate_id = $1")
+                .bind(candidate_id)
+                .fetch_optional(self.pool())
+                .await?;
+
+        Ok(row.and_then(|(b,)| b))
+    }
+
+    /// Check whether a successful openfec source run exists.
+    pub async fn has_successful_fec_run(&self) -> Result<bool, sqlx::Error> {
+        let row: Option<(i64,)> = sqlx::query_as(
+            "SELECT COUNT(*)::bigint FROM source_runs
+             WHERE source LIKE '%openfec%' AND status = 'success' AND rows_written > 0",
+        )
+        .fetch_optional(self.pool())
+        .await?;
+
+        Ok(row.map(|(c,)| c > 0).unwrap_or(false))
+    }
+
+    /// Search FEC committees (PACs) by name query.
+    pub async fn search_pacs(&self, query: &str, limit: i64) -> Result<Vec<PacInfo>, sqlx::Error> {
+        let pattern = format!("%{}%", query);
+        let rows: Vec<PacRow> = sqlx::query_as::<_, PacRow>(
+            r#"SELECT committee_id, name, committee_type, party, state
+               FROM fec_committees
+               WHERE name ILIKE $1
+               ORDER BY name ASC
+               LIMIT $2"#,
+        )
+        .bind(&pattern)
+        .bind(limit)
+        .fetch_all(self.pool())
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|r| PacInfo {
+                committee_id: r.committee_id,
+                name: r.name,
+                committee_type: r.committee_type,
+                party: r.party,
+                state: r.state,
+            })
+            .collect())
+    }
+}
+
+// ── Private row types ───────────────────────────────────────────────────
+
+#[derive(sqlx::FromRow)]
+struct FundingMvRow {
+    direct_receipts: f64,
+    pac_receipts: f64,
+    individual_receipts: f64,
+    independent_expenditures_supporting: f64,
+    independent_expenditures_opposing: f64,
+}
+
+#[derive(sqlx::FromRow)]
+struct DonorRow {
+    contributor_name: String,
+    amount: f64,
+    cnt: i64,
+}
+
+#[derive(sqlx::FromRow)]
+struct CommFundingRow {
+    committee_id: String,
+    committee_name: String,
+    amount: f64,
+}
+
+#[derive(sqlx::FromRow)]
+struct NetworkFundingRow {
+    network_slug: String,
+    display_name: String,
+    direct_pac: f64,
+    independent_supporting: f64,
+    independent_opposing: f64,
+    confidence: String,
+}
+
+#[derive(sqlx::FromRow)]
+struct PacRow {
+    committee_id: String,
+    name: String,
+    committee_type: Option<String>,
+    party: Option<String>,
+    state: Option<String>,
+}

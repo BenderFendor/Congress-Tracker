@@ -1,7 +1,7 @@
 use rand::distributions::WeightedIndex;
 use rand::prelude::*;
 
-const USER_AGENTS: [&'static str;24] = [
+const USER_AGENTS: [&str; 24] = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.3",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.3",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.",
@@ -34,7 +34,7 @@ const WEIGHTS: [f64; 24] = [
 ];
 
 pub fn get_user_agent() -> &'static str {
-    let dist = WeightedIndex::new(&WEIGHTS).unwrap();
+    let dist = WeightedIndex::new(WEIGHTS).unwrap();
     let mut rng = thread_rng();
     USER_AGENTS[dist.sample(&mut rng)]
 }

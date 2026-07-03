@@ -309,7 +309,7 @@ async fn filings_list(
                 }
             }
             let mut top_issues: Vec<_> = issue_counts.into_iter().collect();
-            top_issues.sort_by(|a, b| b.1.cmp(&a.1));
+            top_issues.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
             let top_issue_areas: Vec<String> =
                 top_issues.into_iter().take(5).map(|(k, _)| k).collect();
 
