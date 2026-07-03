@@ -18,10 +18,15 @@ cd ..
 | fmt | `cargo fmt --check` | `backend/` |
 | lint | `cargo clippy --all-targets --all-features` | `backend/` |
 | test | `cargo test` | `backend/` |
-| run | `cargo run -p backend_server` | `backend/` |
+| run canonical backend | `cargo run -p intel_backend --bin intel_backend` | `backend/` |
+| run legacy backend | `cargo run -p backend_server` | `backend/` |
 | typecheck | `npx tsc --noEmit` | `frontend/` |
 | lint (ts) | `pnpm lint` | `frontend/` |
 | dev | `pnpm dev` | `frontend/` |
+| test (intel) | `cargo test -p intel_backend` | `backend/` |
+| smoke ingest | `cargo run -p intel_backend --bin ingest -- all-smoke` | `backend/` |
+| refresh MVs | `cargo run -p intel_backend --bin ingest -- refresh-materialized-views` | `backend/` |
+| seed influence | `cargo run -p intel_backend --bin ingest -- influence-seeds` | `backend/` |
 | e2e | `./e2e_test.sh` | repo root |
 
 ## Full verify
@@ -33,7 +38,7 @@ scripts/self-test
 ## Known missing checks
 
 - No frontend test suite (e.g. vitest, jest)
-- No backend e2e/integration tests without running servers
+- Runtime endpoint proof still requires a running Postgres-backed `intel_backend`
 - No pre-commit hook configured
 - No CI pipeline defined
 
@@ -42,5 +47,5 @@ scripts/self-test
 - Rust toolchain (cargo, rustc)
 - Node.js 18+
 - pnpm
-- `.env` with `CONGRESS_GOV_API_KEY` and `OPENFEC_API_KEY`
+- Local environment with `DATABASE_URL`, `CONGRESS_GOV_API_KEY`, `OPENFEC_API_KEY`, and `SENATE_LDA_API_KEY`
 - `frontend/.env.local` with `NEXT_PUBLIC_BACKEND_URL`

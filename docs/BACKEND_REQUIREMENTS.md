@@ -1,29 +1,33 @@
-# Backend Requirements for Portfolio Dashboard
+# Backend Requirements And Current Contracts
 
-The new Portfolio dashboard introduced several advanced metrics and insights that are currently mocked on the frontend because the necessary data isn't provided by the backend APIs yet.
+CongressTracker uses `backend/crates/intel_backend` as the canonical API. Pages should not call Congress.gov, OpenFEC, LDA, CapitolTrades, or static CSV fixtures directly from the UI. Ingestion writes normalized rows to Postgres; frontend routes read those rows through stable backend endpoints.
 
-To make the dashboard fully functional, the backend needs to support the following features/endpoints:
+## Canonical Page Endpoints
 
-1.  **Estimated Returns (Performance)**
-    *   **Requirement**: Calculate or estimate the financial return (e.g., `+18.7%`) of a politician's stock portfolio over a specific timeframe (e.g., YTD, 1-year).
-    *   **Usage**: Displayed on the "Top Active Members" table and the "Featured Portfolio" card.
+| Page | Endpoint |
+|------|----------|
+| Home | `GET /api/home/summary`, `GET /api/sources/status` |
+| Legislators | `GET /api/legislators`, `GET /api/legislators/:bioguide_id` |
+| Bills | `GET /api/bills`, `GET /api/bills/:bill_id`, `GET /api/bills/:congress/:bill_type/:bill_number/intel` |
+| Influence | `GET /api/influence/networks`, `GET /api/influence/networks/:slug`, `GET /api/influence/networks/:slug/financials` |
+| Committees | `GET /api/committees`, `GET /api/committees/:committee_id` |
+| Stocks | `GET /api/stocks/transactions`, `GET /api/intel/trades/:ticker` |
+| Portfolios | `GET /api/intel/portfolio/summary`, `GET /api/intel/portfolio/members`, `GET /api/intel/portfolio/sectors`, `GET /api/intel/portfolio/pulse` |
+| Lobbying | `GET /api/lobbying/filings`, `GET /api/lobbying/filings/:id` |
+| Elections | `GET /api/elections/candidates` |
+| Search | `GET /api/search` |
 
-2.  **Market Pulse / Congress Trading Activity Trend**
-    *   **Requirement**: Aggregate total trading volume or count across Congress and compare it to previous periods (e.g., "Congress trading activity is up 14.3% this month").
-    *   **Usage**: Displayed in the "Market Pulse" footer card.
+## Required Behavior
 
-3.  **Trending Sector Performance**
-    *   **Requirement**: Track the performance or trading volume of specific sectors over time to identify which sector is "trending" (e.g., "Technology +22.4%").
-    *   **Usage**: Displayed in the "Trending Sector" footer card.
+- Do not silently fall back to mock or static records.
+- If an API key or ingestion source is missing, show an empty, error, or setup state.
+- Every row returned by page APIs must come from normalized database tables or a clearly labeled source status endpoint.
+- `source_runs` is the freshness ledger. New ingest jobs must create and finish source runs.
+- Portfolio values must remain range-aware. Do not invent exact balances or returns from congressional disclosures.
 
-4.  **Disclosure Compliance Rate**
-    *   **Requirement**: Calculate the percentage of trades reported within the required 45-day window under the STOCK Act.
-    *   **Usage**: Displayed in the "Compliance" footer card (e.g., "98.6% Timely Rate").
+## Known Remaining Backend Gaps
 
-5.  **Detailed Portfolio Holdings (Asset Allocation)**
-    *   **Requirement**: Provide a breakdown of a member's current estimated holdings (by ticker and allocation percentage) based on their historical trades.
-    *   **Usage**: Displayed in the "Top Holdings" list and the "Asset Allocation" donut chart on the "Featured Portfolio" card.
-
-6.  **Sector Exposure vs. Benchmark (S&P 500)**
-    *   **Requirement**: Provide aggregated sector exposure for Congress as a whole and compare its performance against a benchmark like the S&P 500.
-    *   **Usage**: Displayed in the "Sector Exposure" card's performance metric.
+- Official House/Senate financial disclosure ingestion is still needed for full portfolio holdings.
+- Lobbying clients, registrants, and lobbyist search have canonical storage but only filings are exposed as page routes.
+- FEC receipts/disbursements need canonical list endpoints before the receipts page can be promoted to a required tab.
+- The visualizations page still has legacy CSV fallback text and is not part of the required tab set.

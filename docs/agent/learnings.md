@@ -60,3 +60,24 @@ What failed:
 Future agents should:
 - Always test API keys directly with curl before debugging frontend issues
 - Verify env var naming matches what `.env.example` documents
+
+---
+
+## 2026-07-03 — Canonical source-run and LDA provider typing checks
+
+Context:
+- LDA ingestion failed after the live API returned fields with mixed JSON types.
+- Successful source ingests appeared stuck as `running` because source-run completion errors were swallowed.
+- A browser verification script changed URLs with `history.pushState` but left the Home route rendered.
+
+What worked:
+- Testing provider keys with direct `curl` requests before debugging application code.
+- Using `serde_path_to_error` to identify the exact provider field causing decode failure.
+- Keeping mixed LDA fields as JSON values at the provider boundary.
+- Casting source-run status updates with `$1::source_run_status`.
+- Running real browser URL navigations for route verification.
+
+Future agents should:
+- Treat source-run completion as part of ingest correctness; do not ignore finish errors.
+- Expect Senate LDA fields such as `client_government_entity` and `registrant_different_address` to vary by row.
+- Do not use `history.pushState` alone as proof that a Next route rendered.

@@ -90,3 +90,98 @@ Not:
 use capitoltrades_api::client::CapitolTradesClient;
 use capitoltrades_api::query::TradeQuery;
 ```
+
+---
+
+## Postgres unavailable
+
+Symptom:
+```
+DATABASE_URL is required for intel_backend
+```
+
+Cause:
+- `DATABASE_URL` environment variable not set
+- PostgreSQL service not running
+- Database or user does not exist
+
+Fix:
+1. Ensure PostgreSQL is running: `pg_isready`
+2. Create user and database (see `docs/agent/workflows.md` Postgres Setup)
+3. Set `export DATABASE_URL=postgres://congress_tracker:congress_tracker@localhost:5432/congress_tracker`
+
+---
+
+## Missing DB seed
+
+Symptom:
+- Endpoints return `database_not_seeded` or empty results
+
+Cause:
+- No data has been ingested yet
+
+Fix:
+```bash
+cd backend && DATABASE_URL=postgres://congress_tracker:congress_tracker@localhost:5432/congress_tracker cargo run -p intel_backend --bin ingest -- all-smoke
+```
+
+---
+
+## LDA URL migration to lda.gov
+
+Symptom:
+- Lobbying ingest fails with connection errors to `lda.senate.gov`
+
+Cause:
+- The old Senate LDA API at `lda.senate.gov` will no longer be available after `07/31/2026`
+
+Fix:
+- `LDA_API_BASE_URL` now defaults to `https://lda.gov/api`
+- Set `LDA_API_BASE_URL=https://lda.gov/api` in `.env` if not already set
+- If existing code still references `lda.senate.gov`, update it to use the new URL
+
+---
+
+## Missing OpenFEC key
+
+Symptom:
+- FEC ingest subcommands exit with source run status `auth_missing` or `rate_limited`
+
+Cause:
+- `OPENFEC_API_KEY` not set or set to `DEMO_KEY` (which has strict rate limits)
+
+Fix:
+1. Set `OPENFEC_API_KEY=your_real_key` in `.env`
+2. Rerun the ingest command
+
+---
+
+## Congress.gov API shape drift
+
+Symptom:
+- Congress.gov bill/member/vote endpoints return unexpected JSON, causing deserialization errors
+
+Cause:
+- Congress.gov API may change response shapes between releases
+
+Fix:
+1. Use the `raw_json` field in database tables to inspect the actual API response
+2. Update the corresponding types in `backend/crates/congress_api/src/types.rs`
+3. Update the ingest parser in `backend/crates/intel_backend/src/ingest/`
+
+---
+
+## FEC candidate-to-bioguide unresolved
+
+Symptom:
+- FEC candidates appear without associated member data
+- `GET /api/admin/entity-resolution-queue` shows pending rows with `source_scheme='fec'`
+
+Cause:
+- The `member_identifiers` table lacks an FEC-to-bioguide crosswalk for that candidate
+- Name/state/chamber fallback matching produced confidence below the `0.85` auto-attachment threshold
+
+Fix:
+1. Review `GET /api/admin/entity-resolution-queue` for pending entries
+2. Accept matches manually or run a more complete `members` ingest to bring in missing crosswalks
+3. Update crosswalk data from the `unitedstates/congress-legislators` dataset

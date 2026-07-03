@@ -1,0 +1,220 @@
+# Developer Workflows
+
+## Postgres Setup
+
+Create the database user and database:
+
+```bash
+# Run as postgres user:
+createuser congress_tracker -P  # password: congress_tracker
+createdb congress_tracker -O congress_tracker
+
+# Set the environment variable:
+export DATABASE_URL=postgres://congress_tracker:congress_tracker@localhost:5432/congress_tracker
+```
+
+To make `DATABASE_URL` persistent, add it to `.env`:
+
+```
+DATABASE_URL=postgres://congress_tracker:congress_tracker@localhost:5432/congress_tracker
+```
+
+## Smoke Ingestion
+
+Run the full smoke ingestion to verify the database setup:
+
+```bash
+cd backend
+cargo run -p intel_backend --bin ingest -- all-smoke
+```
+
+This runs, in order: `members --current-only --limit 25`, `influence-seeds`, `fec-committees --q "AMERICAN ISRAEL" --limit 10`, `congress-bills --congress 119 --limit 10`, and `refresh-materialized-views`.
+
+## Start Backend
+
+Start the new intelligence backend:
+
+```bash
+cd backend
+DATABASE_URL=postgres://congress_tracker:congress_tracker@localhost:5432/congress_tracker cargo run -p intel_backend
+```
+
+The server listens on port `4020` by default (configurable via `PORT` in `.env`). Additional env vars:
+
+| Variable | Default | Required | Purpose |
+|----------|---------|----------|---------|
+| `DATABASE_URL` | — | Yes | Postgres connection string |
+| `CONGRESS_GOV_API_KEY` | — | No (for API calls) | Congress.gov API key |
+| `OPENFEC_API_KEY` | — | No (for API calls) | OpenFEC API key |
+| `INTEL_CACHE_TTL_SECONDS` | `300` | No | Moka cache TTL for GET responses |
+| `SENATE_LDA_API_KEY` | — | No | Senate LDA API key; raises rate limits |
+| `PORT` | `4020` | No | Server listen port |
+| `RUST_LOG` | — | No | Tracing/log level (e.g. `info`, `debug`) |
+
+## Start Frontend
+
+```bash
+cd frontend
+NEXT_PUBLIC_BACKEND_URL=http://localhost:4020 pnpm dev
+```
+
+The frontend connects to the `intel_backend` server on port 4020 for all data.
+
+## Verify Funding Attribution
+
+Check that funding attribution separates direct receipts from independent expenditures:
+
+```bash
+curl http://127.0.0.1:4020/api/members/{id}/funding?cycle=2026
+```
+
+Expected response shape:
+
+```json
+{
+  "member": { "bioguide_id": "...", "name": "..." },
+  "cycle": 2026,
+  "direct_receipts": { "total": 0, "pac": 0, "individual": 0 },
+  "independent_expenditures_supporting": { "total": 0, "committees": [] },
+  "independent_expenditures_opposing": { "total": 0, "committees": [] },
+  "provenance": { "sources": [], "warnings": [] }
+}
+```
+
+**Critical rule:** Independent expenditures must NOT be summed into direct receipts. They are separate categories.
+
+## Ingest Individual Sources
+
+### Seed Members (unitedstates/congress-legislators)
+
+Downloads current legislators from the unitedstates community dataset (CC0), writes member biographical data, terms, identifiers (bioguide, FEC, ICPSR, etc.), social media accounts, committees, and committee memberships:
+
+```bash
+cd backend
+cargo run -p intel_backend --bin ingest -- members --current-only --limit 100
+```
+
+### Seed Influence Networks
+
+Seeds known influence networks (AIPAC/pro-Israel PACs) from verified FEC committee IDs:
+
+```bash
+cd backend
+cargo run -p intel_backend --bin ingest -- influence-seeds
+```
+
+### Ingest Bills (Congress.gov)
+
+Requires `CONGRESS_GOV_API_KEY` set in environment or `.env`:
+
+```bash
+cd backend
+CONGRESS_GOV_API_KEY=your_key cargo run -p intel_backend --bin ingest -- congress-bills --congress 119 --limit 50
+```
+
+### Ingest FEC Data
+
+Requires `OPENFEC_API_KEY` set in environment or `.env`:
+
+```bash
+cd backend
+OPENFEC_API_KEY=your_key cargo run -p intel_backend --bin ingest -- fec-committees --q "AMERICAN ISRAEL" --limit 10
+```
+
+### Ingest FEC Candidates
+
+```bash
+cd backend
+OPENFEC_API_KEY=your_key cargo run -p intel_backend --bin ingest -- fec-candidates --cycle 2024 --limit 100
+```
+
+### Ingest FEC Transactions (Direct Contributions)
+
+```bash
+cd backend
+OPENFEC_API_KEY=your_key cargo run -p intel_backend --bin ingest -- fec-transactions --cycle 2024 --committee-id C00797670 --limit 500
+```
+
+### Ingest FEC Independent Expenditures
+
+```bash
+cd backend
+OPENFEC_API_KEY=your_key cargo run -p intel_backend --bin ingest -- fec-independent-expenditures --cycle 2024 --committee-id C00799031 --limit 500
+```
+
+### Ingest Lobbying Filings
+
+```bash
+cd backend
+SENATE_LDA_API_KEY=your_key cargo run -p intel_backend --bin ingest -- lobbying-filings --year 2025 --page-size 50 --limit-pages 5
+```
+
+### Ingest Stock Trades
+
+```bash
+cd backend
+cargo run -p intel_backend --bin ingest -- capitol-trades --limit 100
+```
+
+### Refresh Materialized Views
+
+Refreshes `member_funding_cycle_mv`, `member_vote_summary_mv`, and `influence_network_member_mv`:
+
+```bash
+cd backend
+cargo run -p intel_backend --bin ingest -- refresh-materialized-views
+```
+
+### Run Full Smoke
+
+```bash
+cd backend
+cargo run -p intel_backend --bin ingest -- all-smoke
+```
+
+## Testing Endpoints
+
+After starting the backend, verify the API is responsive:
+
+```bash
+# Health check
+curl http://127.0.0.1:4020/api/health
+
+# Page dashboard and source freshness
+curl http://127.0.0.1:4020/api/home/summary
+curl http://127.0.0.1:4020/api/sources/status
+
+# Influence networks (seeded)
+curl http://127.0.0.1:4020/api/influence/networks/aipac
+
+# Member profile (after member ingest)
+curl http://127.0.0.1:4020/api/members/A000360/profile
+
+# Canonical page endpoints
+curl 'http://127.0.0.1:4020/api/bills?limit=10'
+curl 'http://127.0.0.1:4020/api/lobbying/filings?limit=10'
+curl 'http://127.0.0.1:4020/api/elections/candidates?limit=10'
+curl 'http://127.0.0.1:4020/api/stocks/transactions?limit=10'
+
+# Search
+curl 'http://127.0.0.1:4020/api/search?q=schumer&type=all'
+```
+
+## Entity Resolution
+
+When FEC candidates or Voteview records lack a known Bioguide ID crosswalk, they appear in the entity resolution queue:
+
+```bash
+curl http://127.0.0.1:4020/api/admin/entity-resolution-queue
+```
+
+Review pending entries and accept/reject matches. Auto-attachment requires confidence >= 0.85.
+
+## Full Verification
+
+```bash
+cd backend && cargo test -p intel_backend && \
+  cargo fmt --check && \
+  cargo clippy --all-targets --all-features
+cd frontend && npx tsc --noEmit && pnpm lint
+```
