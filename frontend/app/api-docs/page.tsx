@@ -1,4 +1,4 @@
-import { ArrowLeft, Code, Database, Key, Link as LinkIcon } from "lucide-react"
+import { Database, Key, Link as LinkIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -169,7 +169,7 @@ export default function ApiDocsPage() {
                 <h3 className="font-semibold mb-3">Get Current House Members</h3>
                 <div className="bg-muted p-4 rounded-lg">
                   <code className="text-sm">
-                    curl -X GET "https://api.congress.gov/v3/member/house/current?api_key=YOUR_KEY&format=json"
+                    curl -X GET &quot;https://api.congress.gov/v3/member/house/current?api_key=YOUR_KEY&amp;format=json&quot;
                   </code>
                 </div>
               </div>
@@ -178,7 +178,7 @@ export default function ApiDocsPage() {
                 <h3 className="font-semibold mb-3">Search Bills by Keyword</h3>
                 <div className="bg-muted p-4 rounded-lg">
                   <code className="text-sm">
-                    curl -X GET "https://api.congress.gov/v3/bill?q=healthcare&api_key=YOUR_KEY&format=json"
+                    curl -X GET &quot;https://api.congress.gov/v3/bill?q=healthcare&amp;api_key=YOUR_KEY&amp;format=json&quot;
                   </code>
                 </div>
               </div>
@@ -187,7 +187,7 @@ export default function ApiDocsPage() {
                 <h3 className="font-semibold mb-3">Get Recent Lobbying Filings</h3>
                 <div className="bg-muted p-4 rounded-lg">
                   <code className="text-sm">
-                    curl -X GET "https://lda.senate.gov/api/v1/filings/?filing_year=2024&page_size=25"
+                    curl -X GET &quot;https://lda.senate.gov/api/v1/filings/?filing_year=2024&amp;page_size=25&quot;
                   </code>
                 </div>
               </div>

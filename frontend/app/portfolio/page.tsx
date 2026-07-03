@@ -3,20 +3,18 @@
 import React, { useEffect, useState, useMemo } from "react"
 import {
   Search, Filter, Activity, TrendingUp, Users,
-  ArrowUpRight, ArrowDownRight, BarChart3,
-  Building, CheckCircle2, ChevronRight, LineChart, PieChart, X
+  Building, CheckCircle2, LineChart, PieChart, X
 } from "lucide-react"
 import {
-  fetchPortfolioSummary, fetchFeaturedPortfolio, fetchTopMembers,
+  fetchPortfolioSummary, fetchTopMembers,
   fetchSectorExposure, fetchMarketPulse,
-  type PortfolioSummary, type FeaturedPortfolio, type MemberRank,
+  type PortfolioSummary, type MemberRank,
   type SectorWeight, type MarketPulseResponse
 } from "@/lib/services/portfolio"
 
 export default function PortfolioPage() {
   const [activeTab, setActiveTab] = useState("overview")
   const [summary, setSummary] = useState<PortfolioSummary | null>(null)
-  const [featured, setFeatured] = useState<FeaturedPortfolio | null>(null)
   const [members, setMembers] = useState<MemberRank[]>([])
   const [sectors, setSectors] = useState<SectorWeight[]>([])
   const [pulse, setPulse] = useState<MarketPulseResponse | null>(null)
@@ -27,15 +25,13 @@ export default function PortfolioPage() {
   useEffect(() => {
     async function load() {
       try {
-        const [s, f, m, sec, p] = await Promise.all([
+        const [s, m, sec, p] = await Promise.all([
           fetchPortfolioSummary(),
-          fetchFeaturedPortfolio(),
           fetchTopMembers(),
           fetchSectorExposure(),
           fetchMarketPulse(),
         ])
         setSummary(s)
-        setFeatured(f)
         setMembers(m.members)
         setSectors(sec.sectors)
         setPulse(p)
@@ -58,9 +54,6 @@ export default function PortfolioPage() {
     ).slice(0, 10)
   }, [members, search])
 
-  const buyPct = summary ? ((summary.buy_orders / (summary.buy_orders + summary.sell_orders || 1)) * 100).toFixed(1) : "0.0"
-  const sellPct = summary ? ((summary.sell_orders / (summary.buy_orders + summary.sell_orders || 1)) * 100).toFixed(1) : "0.0"
-
   const sectorColors = ["#3b82f6", "#10b981", "#8b5cf6", "#f59e0b", "#ef4444", "#06b6d4", "#ec4899", "#84cc16", "#f97316", "#6366f1", "#14b8a6"]
 
   let conicPct = 0
@@ -81,7 +74,7 @@ export default function PortfolioPage() {
             <span className="text-accent font-serif italic font-normal tracking-normal">PORTFOLIOS</span>
           </h1>
           <p className="text-lg text-muted-foreground max-w-xl">
-            Analyze stock trading portfolios and patterns of congressional members.
+            View member-level coverage and committee exposure from normalized congressional records.
           </p>
         </div>
         <div className="relative w-full h-[250px] md:h-[300px] flex items-center justify-center bg-card rounded-2xl overflow-hidden border border-border shadow-sm">
@@ -153,11 +146,11 @@ export default function PortfolioPage() {
       {/* KPI Strip */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         {[
-          { title: "Total Politicians", value: loading ? "..." : (summary?.total_politicians?.toLocaleString() ?? "0"), sub: "IN DATABASE", icon: <Users className="text-muted-foreground w-5 h-5" /> },
-          { title: "Total Trades", value: loading ? "..." : (summary?.total_trades?.toLocaleString() ?? "0"), sub: "ACROSS ALL MEMBERS", icon: <Activity className="text-blue-500 w-5 h-5" /> },
-          { title: "Buy Orders", value: loading ? "..." : (summary?.buy_orders?.toLocaleString() ?? "0"), sub: `${buyPct}% OF TOTAL`, icon: <ArrowUpRight className="text-emerald-500 w-5 h-5" /> },
-          { title: "Sell Orders", value: loading ? "..." : (summary?.sell_orders?.toLocaleString() ?? "0"), sub: `${sellPct}% OF TOTAL`, icon: <ArrowDownRight className="text-red-500 w-5 h-5" /> },
-          { title: "Net Activity", value: summary ? `${summary.net_activity >= 0 ? '+' : ''}${summary.net_activity}` : "...", sub: "NET BUY ORDERS", icon: <TrendingUp className="text-purple-500 w-5 h-5" /> },
+          { title: "Tracked Members", value: loading ? "..." : (summary?.total_members?.toLocaleString() ?? "0"), sub: "NORMALIZED ROWS", icon: <Users className="text-muted-foreground w-5 h-5" /> },
+          { title: "In Office", value: loading ? "..." : (summary?.in_office_count?.toLocaleString() ?? "0"), sub: "CURRENT MEMBERS", icon: <Activity className="text-blue-500 w-5 h-5" /> },
+          { title: "House", value: loading ? "..." : (summary?.house_count?.toLocaleString() ?? "0"), sub: "CURRENT CHAMBER", icon: <Building className="text-emerald-500 w-5 h-5" /> },
+          { title: "Senate", value: loading ? "..." : (summary?.senate_count?.toLocaleString() ?? "0"), sub: "CURRENT CHAMBER", icon: <Building className="text-red-500 w-5 h-5" /> },
+          { title: "Committees", value: loading ? "..." : (summary?.total_committees?.toLocaleString() ?? "0"), sub: "TRACKED ENTITIES", icon: <TrendingUp className="text-purple-500 w-5 h-5" /> },
         ].map((m, i) => (
           <div key={i} className="bg-card border border-border rounded-xl p-4 flex flex-col gap-3 shadow-sm">
             <div className="flex justify-between items-start">
@@ -176,53 +169,39 @@ export default function PortfolioPage() {
         <>
           {/* Main Cards Row */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Featured Portfolio */}
+            {/* Coverage Snapshot */}
             <div className="col-span-1 border border-border bg-card rounded-xl p-6 flex flex-col shadow-sm relative overflow-hidden">
               <div className="absolute top-0 right-0 w-32 h-32 bg-accent/5 rounded-bl-full" />
-              <div className="text-[10px] font-bold text-accent tracking-widest uppercase mb-3 relative z-10">Featured Portfolio</div>
-              {featured ? (
+              <div className="text-[10px] font-bold text-accent tracking-widest uppercase mb-3 relative z-10">Coverage Snapshot</div>
+              {summary ? (
                 <>
                   <h2 className="text-2xl font-serif mb-6 relative z-10 text-foreground">
-                    {featured.member.name}
-                  </h2>
-                  <h2 className="text-2xl font-serif mb-6 relative z-10 text-foreground">
-                    {featured.member.image_url}
+                    Official Records
                   </h2>
                   <div className="grid grid-cols-2 gap-4 mb-8">
                     <div className="bg-background rounded-lg p-3 border border-border">
-                      <div className="text-xs text-muted-foreground font-medium mb-1">Total Trades</div>
-                      <div className="text-lg font-bold text-foreground">{featured.trade_count.toLocaleString()}</div>
+                      <div className="text-xs text-muted-foreground font-medium mb-1">Members</div>
+                      <div className="text-lg font-bold text-foreground">{summary.total_members.toLocaleString()}</div>
                     </div>
                     <div className="bg-background rounded-lg p-3 border border-border">
-                      <div className="text-xs text-muted-foreground font-medium mb-1">Est. Volume</div>
-                      <div className="text-lg font-bold text-emerald-500">${featured.member.volume ? (featured.member.volume / 1000000).toFixed(1) + "M" : "N/A"}</div>
+                      <div className="text-xs text-muted-foreground font-medium mb-1">Committees</div>
+                      <div className="text-lg font-bold text-emerald-500">{summary.total_committees.toLocaleString()}</div>
                     </div>
                   </div>
-                  <div className="text-sm font-semibold mb-3 text-foreground">Top Holdings</div>
-                  <div className="flex-1 space-y-1">
-                    {featured.top_holdings.length > 0 ? featured.top_holdings.map((h, i) => (
-                      <div key={i} className="flex justify-between items-center py-2.5 border-b border-border last:border-0">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center text-xs font-bold text-accent">
-                            {h.ticker.substring(0, 1)}
-                          </div>
-                          <div>
-                            <div className="font-bold text-sm text-foreground">{h.ticker}</div>
-                            <div className="text-xs text-muted-foreground">{h.name}</div>
-                          </div>
-                        </div>
-                        <div className="font-mono text-sm font-medium text-foreground">{h.percentage}%</div>
-                      </div>
-                    )) : (
-                      <div className="text-muted-foreground text-sm py-4 text-center">No holdings data</div>
-                    )}
+                  <div className="text-sm font-semibold mb-3 text-foreground">Chamber And Party Mix</div>
+                  <div className="flex-1 space-y-3">
+                    <div className="flex justify-between text-sm"><span className="text-muted-foreground">House</span><span className="font-mono">{summary.house_count}</span></div>
+                    <div className="flex justify-between text-sm"><span className="text-muted-foreground">Senate</span><span className="font-mono">{summary.senate_count}</span></div>
+                    <div className="flex justify-between text-sm"><span className="text-muted-foreground">Democratic</span><span className="font-mono">{summary.democratic_count}</span></div>
+                    <div className="flex justify-between text-sm"><span className="text-muted-foreground">Republican</span><span className="font-mono">{summary.republican_count}</span></div>
+                    <div className="flex justify-between text-sm"><span className="text-muted-foreground">Independent/Other</span><span className="font-mono">{summary.independent_count}</span></div>
                   </div>
                   <div className="mt-8 flex flex-col items-center justify-center relative">
-                    <div className="text-xs text-muted-foreground font-medium mb-4 text-center">Asset Allocation</div>
-                    <div className="w-36 h-36 rounded-full relative" style={{ background: `conic-gradient(${featured.asset_allocation.map((s, i) => `${sectorColors[i % sectorColors.length]} ${featured.asset_allocation.slice(0, i).reduce((sum, p) => sum + p.weight, 0).toFixed(1)}% ${(featured.asset_allocation.slice(0, i).reduce((sum, p) => sum + p.weight, 0) + s.weight).toFixed(1)}%`).join(", ") || "#e5e7eb 0% 100%"})` }}>
+                    <div className="text-xs text-muted-foreground font-medium mb-4 text-center">Average Service</div>
+                    <div className="w-36 h-36 rounded-full relative bg-muted">
                       <div className="absolute inset-[14px] bg-card rounded-full flex flex-col items-center justify-center shadow-inner">
-                        <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold mt-1">Assets</span>
-                        <span className="font-bold text-2xl text-foreground">{featured.top_holdings.length}</span>
+                        <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold mt-1">Years</span>
+                        <span className="font-bold text-2xl text-foreground">{summary.avg_years_in_office.toFixed(1)}</span>
                       </div>
                     </div>
                   </div>
@@ -264,7 +243,7 @@ export default function PortfolioPage() {
               )}
               <div className="mt-8 pt-6 border-t border-border">
                 <div className="flex items-center justify-between mb-4">
-                  <span className="text-sm font-semibold text-foreground">Based on transaction volume sample</span>
+                  <span className="text-sm font-semibold text-foreground">Based on committee jurisdiction records</span>
                 </div>
               </div>
             </div>
@@ -280,8 +259,8 @@ export default function PortfolioPage() {
                     <tr className="text-muted-foreground border-b border-border">
                       <th className="pb-3 font-semibold text-[10px] tracking-wider uppercase">Rank</th>
                       <th className="pb-3 font-semibold text-[10px] tracking-wider uppercase">Member</th>
-                      <th className="pb-3 font-semibold text-[10px] tracking-wider uppercase text-right">Trades</th>
-                      <th className="pb-3 font-semibold text-[10px] tracking-wider uppercase text-right">Volume</th>
+                      <th className="pb-3 font-semibold text-[10px] tracking-wider uppercase text-right">Committees</th>
+                      <th className="pb-3 font-semibold text-[10px] tracking-wider uppercase text-right">Years</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -297,8 +276,8 @@ export default function PortfolioPage() {
                             {m.name}
                             <div className="text-[10px] text-muted-foreground">{m.party} - {m.state}</div>
                           </td>
-                          <td className="py-4 text-right font-mono font-medium text-foreground">{m.total_trades.toLocaleString()}</td>
-                          <td className="py-4 text-right font-mono text-muted-foreground">{m.volume ? `$${(m.volume / 1000).toFixed(0)}K` : "N/A"}</td>
+                          <td className="py-4 text-right font-mono font-medium text-foreground">{m.committee_count.toLocaleString()}</td>
+                          <td className="py-4 text-right font-mono text-muted-foreground">{m.years_in_office.toFixed(1)}</td>
                         </tr>
                       ))
                     )}
@@ -313,24 +292,24 @@ export default function PortfolioPage() {
             <div className="col-span-1 border border-border bg-card rounded-xl p-4 shadow-sm">
               <div className="text-[10px] text-muted-foreground font-bold tracking-widest uppercase mb-2">Market Pulse</div>
               <div className="text-sm font-medium text-foreground leading-snug">
-                {pulse ? `${pulse.total_trades_sampled.toLocaleString()} trades analyzed` : "..."}
+                {pulse ? `${pulse.total_members_tracked.toLocaleString()} members tracked` : "..."}
               </div>
             </div>
             <div className="col-span-1 border border-border bg-card rounded-xl p-4 shadow-sm">
-              <div className="text-[10px] text-muted-foreground font-bold tracking-widest uppercase mb-2">Most Traded</div>
+              <div className="text-[10px] text-muted-foreground font-bold tracking-widest uppercase mb-2">Source Status</div>
               <div className="text-xl font-bold flex flex-col items-start text-foreground">
-                {pulse?.most_traded_ticker || "..."}
+                {pulse?.status || "..."}
                 <span className="font-mono text-muted-foreground text-xs mt-1 bg-secondary px-2 py-0.5 rounded-sm">
-                  {pulse ? `${pulse.most_traded_count.toLocaleString()} trades` : "..."}
+                  {pulse?.message || "..."}
                 </span>
               </div>
             </div>
             <div className="col-span-1 border border-border bg-card rounded-xl p-4 shadow-sm">
               <div className="text-[10px] text-muted-foreground font-bold tracking-widest uppercase mb-2">Trending Sector</div>
               <div className="text-lg font-bold flex flex-col items-start text-foreground">
-                {pulse?.trending_sector || "..."}
+                {sectors[0]?.sector || "..."}
                 <span className="text-emerald-500 text-sm mt-1 flex items-center gap-1 font-semibold">
-                  <TrendingUp className="w-3.5 h-3.5" /> {pulse ? `${pulse.trending_sector_weight.toFixed(1)}%` : "..."}
+                  <TrendingUp className="w-3.5 h-3.5" /> {sectors[0] ? `${sectors[0].weight.toFixed(1)}%` : "..."}
                 </span>
               </div>
             </div>
@@ -339,9 +318,9 @@ export default function PortfolioPage() {
               <div className="text-xl font-bold flex flex-col items-start text-foreground">
                 <div className="flex items-center gap-1.5">
                   <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-                  {pulse ? `${pulse.timely_disclosure_rate}%` : "..."}
+                  {pulse ? pulse.total_committees.toLocaleString() : "..."}
                 </div>
-                <span className="font-medium text-muted-foreground text-xs mt-1 uppercase tracking-wide">Timely Rate</span>
+                <span className="font-medium text-muted-foreground text-xs mt-1 uppercase tracking-wide">Committees</span>
               </div>
             </div>
           </div>
@@ -360,8 +339,8 @@ export default function PortfolioPage() {
                   <th className="pb-3 font-semibold text-[10px] tracking-wider uppercase">Party</th>
                   <th className="pb-3 font-semibold text-[10px] tracking-wider uppercase">State</th>
                   <th className="pb-3 font-semibold text-[10px] tracking-wider uppercase">Chamber</th>
-                  <th className="pb-3 font-semibold text-[10px] tracking-wider uppercase text-right">Trades</th>
-                  <th className="pb-3 font-semibold text-[10px] tracking-wider uppercase text-right">Volume</th>
+                  <th className="pb-3 font-semibold text-[10px] tracking-wider uppercase text-right">Committees</th>
+                  <th className="pb-3 font-semibold text-[10px] tracking-wider uppercase text-right">Years</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -372,8 +351,8 @@ export default function PortfolioPage() {
                     <td className="py-3 text-muted-foreground">{m.party}</td>
                     <td className="py-3 text-muted-foreground">{m.state}</td>
                     <td className="py-3 text-muted-foreground">{m.chamber}</td>
-                    <td className="py-3 text-right font-mono font-medium text-foreground">{m.total_trades.toLocaleString()}</td>
-                    <td className="py-3 text-right font-mono text-muted-foreground">{m.volume ? `$${(m.volume / 1000).toFixed(0)}K` : "N/A"}</td>
+                    <td className="py-3 text-right font-mono font-medium text-foreground">{m.committee_count.toLocaleString()}</td>
+                    <td className="py-3 text-right font-mono text-muted-foreground">{m.years_in_office.toFixed(1)}</td>
                   </tr>
                 ))}
               </tbody>

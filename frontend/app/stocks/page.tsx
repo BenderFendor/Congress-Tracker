@@ -3,14 +3,14 @@
 import { useEffect, useMemo, useState } from "react"
 import { ArrowDownRight, ArrowUpRight, Building, Calendar, FileText, TrendingUp, Users } from "lucide-react"
 import { ArchiveHero, ArchiveMetrics, ArchivePage, ArchivePanel, ArchiveSearch } from "@/components/ui/archive-ui"
-import { getRecentTrades, type StockTrade } from "@/lib/services/stocks"
+import { formatAmountRange, getRecentTrades, type StockTrade } from "@/lib/services/stocks"
 
 function isBuy(trade: StockTrade) {
-  return (trade.type || "").toLowerCase().includes("purchase") || (trade.type || "").toLowerCase().includes("buy")
+  return (trade.tx_type || "").toLowerCase() === "buy" || (trade.tx_type || "").toLowerCase().includes("purchase")
 }
 
 function isSell(trade: StockTrade) {
-  return (trade.type || "").toLowerCase().includes("sale") || (trade.type || "").toLowerCase().includes("sell")
+  return (trade.tx_type || "").toLowerCase() === "sell" || (trade.tx_type || "").toLowerCase().includes("sale")
 }
 
 export default function StocksPage() {
@@ -35,9 +35,9 @@ export default function StocksPage() {
     return trades.filter((trade) => {
       const search = searchTerm.toLowerCase()
       const matchesSearch =
-        trade.representative.toLowerCase().includes(search) ||
-        trade.ticker.toLowerCase().includes(search) ||
-        trade.asset_description.toLowerCase().includes(search)
+        trade.member_name.toLowerCase().includes(search) ||
+        (trade.ticker || "").toLowerCase().includes(search) ||
+        (trade.asset_name || "").toLowerCase().includes(search)
 
       const matchesAction =
         filterAction === "all" ||
@@ -50,7 +50,7 @@ export default function StocksPage() {
 
   const buyTrades = trades.filter(isBuy).length
   const sellTrades = trades.filter(isSell).length
-  const activeMembers = new Set(trades.map((trade) => trade.representative).filter(Boolean)).size
+  const activeMembers = new Set(trades.map((trade) => trade.member_name).filter(Boolean)).size
   const topTickers = Object.entries(
     trades.reduce((acc, trade) => {
       if (trade.ticker) acc[trade.ticker] = (acc[trade.ticker] || 0) + 1
@@ -117,18 +117,18 @@ export default function StocksPage() {
                   </div>
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <h2 className="font-serif text-xl text-foreground">{trade.representative || "Unknown member"}</h2>
-                      <span className="archive-chip">{trade.district || "Congress"}</span>
+                      <h2 className="font-serif text-xl text-foreground">{trade.member_name || "Unknown member"}</h2>
+                      <span className="archive-chip">{trade.state || "Congress"}</span>
                     </div>
                     <div className="mt-1 flex flex-wrap gap-3 text-sm text-muted-foreground">
-                      <span className="inline-flex items-center gap-1"><Building size={13} /> <strong className="text-foreground">{trade.ticker || "N/A"}</strong> {trade.asset_description}</span>
+                      <span className="inline-flex items-center gap-1"><Building size={13} /> <strong className="text-foreground">{trade.ticker || "N/A"}</strong> {trade.asset_name}</span>
                       <span className="inline-flex items-center gap-1"><Calendar size={13} /> {trade.transaction_date || "No date"}</span>
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className={isBuy(trade) ? "font-mono text-sm text-emerald-400" : "font-mono text-sm text-red-400"}>{trade.type || "Filed"}</div>
-                    <div className="mt-1 text-xs text-muted-foreground">{trade.amount || "Range not listed"}</div>
-                    {trade.ptr_link ? <a className="archive-link mt-2" href={trade.ptr_link} target="_blank" rel="noreferrer">Filing</a> : null}
+                    <div className={isBuy(trade) ? "font-mono text-sm text-emerald-400" : "font-mono text-sm text-red-400"}>{trade.tx_type ? trade.tx_type.charAt(0).toUpperCase() + trade.tx_type.slice(1) : "Filed"}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{formatAmountRange(trade.amount_min, trade.amount_max)}</div>
+                    {trade.filing_url ? <a className="archive-link mt-2" href={trade.filing_url} target="_blank" rel="noreferrer">Filing</a> : null}
                   </div>
                 </div>
               ))}

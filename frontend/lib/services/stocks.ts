@@ -1,103 +1,95 @@
-export interface StockTrade {
-    disclosure_year: number;
-    disclosure_date: string;
-    transaction_date: string;
-    owner: string;
-    ticker: string;
-    asset_description: string;
-    type: string;
-    amount: string;
-    representative: string;
-    district: string;
-    ptr_link: string;
-    cap_gains_over_200_usd: boolean;
-}
-
-interface BackendTradeRaw {
-    filingDate: string | null;
-    pubDate: string;
-    txDate: string;
-    owner: string;
-    asset?: { assetTicker: string | null; instrument: string | null };
-    issuer?: { issuerTicker: string | null; issuerName: string };
-    txType: string;
-    value: number;
-    politician?: { firstName: string; lastName: string; _stateId: string; state: string };
-    filingURL: string | null;
-    hasCapitalGains: boolean;
-}
-
 import { BACKEND_URL } from "@/lib/constants";
 
-export async function getAllTrades(): Promise<StockTrade[]> {
-    try {
-        const response = await fetch(`${BACKEND_URL}/api/trades`, { next: { revalidate: 3600 } });
-        if (!response.ok) throw new Error(`Backend API error: ${response.statusText}`);
-        
-        const data = await response.json();
-        const trades = data.data || [];
-
-        return trades.map((trade: BackendTradeRaw) => ({
-            disclosure_year: trade.filingDate ? new Date(trade.filingDate).getFullYear() : (trade.pubDate ? new Date(trade.pubDate).getFullYear() : 0),
-            disclosure_date: trade.filingDate || trade.pubDate || "",
-            transaction_date: trade.txDate || "",
-            owner: trade.owner || "unknown", 
-            ticker: trade.asset?.assetTicker || trade.issuer?.issuerTicker || "",
-            asset_description: trade.issuer?.issuerName || trade.asset?.instrument || "",
-            type: trade.txType || "", 
-            amount: trade.value ? `Size Range: ${trade.value}` : "",
-            representative: trade.politician ? `${trade.politician.firstName || ''} ${trade.politician.lastName || ''}`.trim() : "",
-            district: trade.politician?._stateId || trade.politician?.state || "",
-            ptr_link: trade.filingURL || "",
-            cap_gains_over_200_usd: trade.hasCapitalGains || false
-        }));
-    } catch (error) {
-        console.error("Error fetching trades:", error);
-        return [];
-    }
+// Matches StockTradeRow from the Rust backend
+export interface StockTrade {
+  trade_id: string;
+  bioguide_id: string | null;
+  politician_id: string | null;
+  ticker: string | null;
+  asset_name: string | null;
+  tx_type: string;
+  amount_min: number | null;
+  amount_max: number | null;
+  estimated_value: number | null;
+  transaction_date: string | null;
+  disclosure_date: string | null;
+  filing_url: string | null;
+  source: string;
+  member_name: string;
+  chamber: string;
+  state: string;
+  party: string;
+  district: string | null;
 }
 
-export async function getRecentTrades(limit = 50): Promise<StockTrade[]> {
-    const allTrades = await getAllTrades();
-    return allTrades
-        .sort((a, b) => new Date(b.transaction_date).getTime() - new Date(a.transaction_date).getTime())
-        .slice(0, limit);
+export interface TradesResponse {
+  trades: StockTrade[];
+  total: number;
+  limit: number;
+  offset: number;
+  tickers: string[];
 }
 
-export async function getTradesByLegislator(name: string): Promise<StockTrade[]> {
-    const allTrades = await getAllTrades();
-    return allTrades.filter(t => t.representative && t.representative.toLowerCase().includes(name.toLowerCase()));
+export async function getIntelTrades(
+  limit = 100,
+  offset = 0,
+): Promise<TradesResponse> {
+  const params = new URLSearchParams();
+  params.set("limit", String(limit));
+  params.set("offset", String(offset));
+
+  const response = await fetch(
+    `${BACKEND_URL}/api/stocks/transactions?${params}`,
+    { next: { revalidate: 3600 } },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Backend API error: ${response.status} ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+export async function getRecentTrades(
+  limit = 80,
+): Promise<StockTrade[]> {
+  const data = await getIntelTrades(limit, 0);
+  return data.trades;
 }
 
 export async function getTradesByTicker(ticker: string): Promise<StockTrade[]> {
-    const allTrades = await getAllTrades();
-    return allTrades.filter(t => t.ticker && t.ticker.toUpperCase() === ticker.toUpperCase());
+  const response = await fetch(
+    `${BACKEND_URL}/api/intel/trades/${encodeURIComponent(ticker)}`,
+    { next: { revalidate: 3600 } },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Backend API error: ${response.status} ${response.statusText}`);
+  }
+
+  return response.json();
 }
 
-export async function getTradesByPoliticianId(id: string): Promise<StockTrade[]> {
-    try {
-        const response = await fetch(`${BACKEND_URL}/api/trades?politician=${id}`, { next: { revalidate: 3600 } });
-        if (!response.ok) throw new Error(`Backend API error: ${response.statusText}`);
-        
-        const data = await response.json();
-        const trades = data.data || [];
+export async function getTradesByPoliticianId(politicianId: string): Promise<StockTrade[]> {
+  const data = await getIntelTrades(200, 0);
+  return data.trades.filter(t => t.politician_id === politicianId);
+}
 
-        return trades.map((trade: BackendTradeRaw) => ({
-            disclosure_year: trade.filingDate ? new Date(trade.filingDate).getFullYear() : (trade.pubDate ? new Date(trade.pubDate).getFullYear() : 0),
-            disclosure_date: trade.filingDate || trade.pubDate || "",
-            transaction_date: trade.txDate || "",
-            owner: trade.owner || "unknown", 
-            ticker: trade.asset?.assetTicker || trade.issuer?.issuerTicker || "",
-            asset_description: trade.issuer?.issuerName || trade.asset?.instrument || "",
-            type: trade.txType || "", 
-            amount: trade.value ? `$${trade.value.toLocaleString()}` : "N/A",
-            representative: trade.politician ? `${trade.politician.firstName || ''} ${trade.politician.lastName || ''}`.trim() : "",
-            district: trade.politician?._stateId || trade.politician?.state || "",
-            ptr_link: trade.filingURL || "",
-            cap_gains_over_200_usd: trade.hasCapitalGains || false
-        }));
-    } catch (error) {
-        console.error("Error fetching trades for politician:", error);
-        return [];
-    }
+export function formatAmountRange(
+  amountMin: number | null,
+  amountMax: number | null,
+): string {
+  if (amountMin == null && amountMax == null) return "Not disclosed";
+  if (amountMin != null && amountMax != null) {
+    if (amountMin === amountMax) return formatDollar(amountMin);
+    return `${formatDollar(amountMin)} – ${formatDollar(amountMax)}`;
+  }
+  if (amountMin != null) return `≥ ${formatDollar(amountMin)}`;
+  return `≤ ${formatDollar(amountMax!)}`;
+}
+
+function formatDollar(value: number): string {
+  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `$${(value / 1_000).toFixed(0)}K`;
+  return `$${value.toLocaleString()}`;
 }

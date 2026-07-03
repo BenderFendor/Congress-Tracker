@@ -5,6 +5,7 @@ import { Calendar, ChevronDown, ChevronUp, FileText, Filter, Landmark } from "lu
 import { ArchiveHero, ArchiveMetrics, ArchivePage, ArchivePanel, ArchiveSearch } from "@/components/ui/archive-ui"
 
 type CongressBill = {
+  id: string
   congress: number
   latestAction: { actionDate: string; text: string } | null
   number: string
@@ -16,10 +17,10 @@ type CongressBill = {
 }
 
 type BillDetail = {
-  sponsors?: Array<{ bioguideId?: string; fullName: string; url: string }>
-  actions?: { count: number; url: string }
-  committees?: { count: number; url: string }
-  textVersions?: { count: number; url: string }
+  sponsors?: Array<{ bioguide_id?: string; name: string }>
+  actions?: Array<{ action_date?: string; action_text: string }>
+  committees?: Array<{ committee_id: string; name: string }>
+  text_versions?: Array<{ url: string }>
 }
 
 export default function BillsPage() {
@@ -35,11 +36,20 @@ export default function BillsPage() {
   useEffect(() => {
     async function fetchBills() {
       try {
-        const url = "https://api.congress.gov/v3/bill?format=json&limit=100&sort=updateDate+desc"
-        const response = await fetch(`/api/congress-proxy?url=${encodeURIComponent(url)}`)
+        const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4020"}/api/bills?limit=100`)
         if (!response.ok) throw new Error(`Failed to fetch bills: ${response.statusText}`)
         const data = await response.json()
-        setBills(Array.isArray(data.bills) ? data.bills : [])
+        setBills((data.bills || []).map((bill: Record<string, unknown>) => ({
+          id: String(bill.bill_id || ""),
+          congress: Number(bill.congress || 0),
+          latestAction: bill.latest_action_text ? { actionDate: String(bill.latest_action_date || ""), text: String(bill.latest_action_text) } : null,
+          number: String(bill.bill_number || ""),
+          originChamber: String(bill.origin_chamber || ""),
+          title: String(bill.title || ""),
+          type: String(bill.bill_type || "").toUpperCase(),
+          updateDate: String(bill.latest_action_date || bill.introduced_date || ""),
+          url: String(bill.url || ""),
+        })))
       } catch (err) {
         setError(err instanceof Error ? err.message : "Unable to load bills")
       } finally {
@@ -72,17 +82,17 @@ export default function BillsPage() {
   const recentActions = bills.filter((bill) => bill.latestAction?.actionDate).length
 
   async function toggleBill(bill: CongressBill) {
-    const key = bill.url || `${bill.type}-${bill.number}`
+    const key = bill.id || bill.url || `${bill.type}-${bill.number}`
     setExpanded((current) => ({ ...current, [key]: !current[key] }))
-    if (details[key] || !bill.url) return
+    if (details[key] || !bill.id) return
 
-    const response = await fetch(`/api/congress-proxy?url=${encodeURIComponent(bill.url)}`)
+    const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4020"}/api/bills/${encodeURIComponent(bill.id)}`)
     if (!response.ok) {
       setDetails((current) => ({ ...current, [key]: null }))
       return
     }
     const data = await response.json()
-    setDetails((current) => ({ ...current, [key]: data.bill || null }))
+    setDetails((current) => ({ ...current, [key]: data || null }))
   }
 
   return (
@@ -166,9 +176,9 @@ export default function BillsPage() {
                     {isExpanded ? (
                       <div className="mt-4 grid gap-3 border-t border-border pt-4 text-sm text-muted-foreground md:grid-cols-4">
                         <div><span className="archive-metric-label">Sponsors</span><strong className="mt-1 block text-foreground">{detail?.sponsors?.length ?? "Loading"}</strong></div>
-                        <div><span className="archive-metric-label">Actions</span><strong className="mt-1 block text-foreground">{detail?.actions?.count ?? "Loading"}</strong></div>
-                        <div><span className="archive-metric-label">Committees</span><strong className="mt-1 block text-foreground">{detail?.committees?.count ?? "Loading"}</strong></div>
-                        <div><span className="archive-metric-label">Text versions</span><strong className="mt-1 block text-foreground">{detail?.textVersions?.count ?? "Loading"}</strong></div>
+                        <div><span className="archive-metric-label">Actions</span><strong className="mt-1 block text-foreground">{detail?.actions?.length ?? "Loading"}</strong></div>
+                        <div><span className="archive-metric-label">Committees</span><strong className="mt-1 block text-foreground">{detail?.committees?.length ?? "N/A"}</strong></div>
+                        <div><span className="archive-metric-label">Text versions</span><strong className="mt-1 block text-foreground">{detail?.text_versions?.length ?? "Loading"}</strong></div>
                       </div>
                     ) : null}
                   </div>

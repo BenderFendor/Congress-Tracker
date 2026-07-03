@@ -1,265 +1,351 @@
-import { ArrowLeft, Database, ExternalLink, Shield, Clock } from "lucide-react"
-import { Button } from "@/components/ui/button"
+"use client"
+
+import { useState, useEffect } from "react"
+import { Shield, ExternalLink, Clock, Database, Lock, Layers } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 
+interface SourceRunRecord {
+  id?: string
+  source: string
+  endpoint?: string
+  status: string
+  started_at?: string
+  finished_at?: string
+  rows_seen?: number
+  rows_written?: number
+  error_message?: string
+}
+
 export default function DataSourcesPage() {
+  const [sourceRuns, setSourceRuns] = useState<SourceRunRecord[]>([])
+  const [loadingRuns, setLoadingRuns] = useState(true)
+
+  useEffect(() => {
+    async function fetchSourceRuns() {
+      try {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4020"}/api/admin/source-runs`)
+        if (res.ok) {
+          const data = await res.json()
+          if (Array.isArray(data)) {
+            setSourceRuns(data)
+          } else if (data && Array.isArray(data.runs)) {
+            setSourceRuns(data.runs)
+          }
+        }
+      } catch {
+        // Backend offline or endpoint not yet seeded; keep default state
+      } finally {
+        setLoadingRuns(false)
+      }
+    }
+    fetchSourceRuns()
+  }, [])
+
+  const dataSources = [
+    {
+      name: "Congress.gov API",
+      type: "Official Legislative API",
+      license: "Public Domain / US Government Work",
+      url: "https://api.congress.gov/",
+      sourceKey: "congress_gov",
+      badgeVariant: "default" as const,
+      description: "Library of Congress official legislative API providing bills, amendments, summaries, actions, cosponsors, and member committee assignments.",
+      updateRate: "Real-time / Daily",
+    },
+    {
+      name: "OpenFEC API",
+      type: "Official Campaign Finance API",
+      license: "Public Domain / Official Records",
+      url: "https://api.open.fec.gov/",
+      sourceKey: "openfec",
+      badgeVariant: "default" as const,
+      description: "Federal Election Commission official API providing candidate filings, principal campaign committees, Schedule A receipts, Schedule B disbursements, and Schedule E independent expenditures.",
+      updateRate: "Nightly / Daily Cycles",
+    },
+    {
+      name: "Senate Lobbying Disclosure (LDA)",
+      type: "Official Lobbying API",
+      license: "Public Access / Government Records",
+      url: "https://lda.gov/api",
+      sourceKey: "lda",
+      badgeVariant: "default" as const,
+      description: "Official lobbying disclosure filings (LD-1, LD-2, LD-203) detailing registrants, clients, reported lobbying income, expenses, issue codes, and contacted government entities.",
+      updateRate: "Quarterly Filings",
+    },
+    {
+      name: "UnitedStates Congressional Legislators",
+      type: "Community / Public Repository",
+      license: "CC0 1.0 Universal / Public Domain",
+      url: "https://github.com/unitedstates/congress-legislators",
+      sourceKey: "unitedstates_legislators",
+      badgeVariant: "secondary" as const,
+      description: "Comprehensive historical and current legislator terms, biographical data, social media handles, district office addresses, and crosswalk IDs (Bioguide, FEC, ICPSR, Wikidata).",
+      updateRate: "Continuous GitHub Pipeline",
+    },
+    {
+      name: "Voteview Roll Call & Ideology Data",
+      type: "Academic Dataset",
+      license: "Open Access / Academic Citation",
+      url: "https://voteview.com/data",
+      sourceKey: "voteview",
+      badgeVariant: "secondary" as const,
+      description: "Congressional roll-call voting datasets and DW-NOMINATE ideological positioning dimensions (Economic/Redistributive Dim 1 and Social/Racial Dim 2) maintained by UCLA.",
+      updateRate: "Bi-weekly / After Votes",
+    },
+    {
+      name: "CapitolTrades",
+      type: "Financial Disclosures Aggregation",
+      license: "Public Access / Fair Use",
+      url: "https://www.capitoltrades.com/",
+      sourceKey: "capitoltrades",
+      badgeVariant: "outline" as const,
+      description: "Structured congressional STOCK Act disclosures detailing politician stock trades, transaction types, asset tickers, disclosure intervals, and estimated value bands.",
+      updateRate: "Continuous Monitoring",
+    },
+    {
+      name: "CIVIQ Enrichment Layer",
+      type: "Civic Intelligence Service",
+      license: "Open Access",
+      url: "https://github.com/",
+      sourceKey: "civiq",
+      badgeVariant: "outline" as const,
+      description: "Enriched legislator metadata including tenure duration, next election timeline calculations, committee ranking, and district demographics.",
+      updateRate: "Periodic Releases",
+    },
+    {
+      name: "Wikidata Congressional Crosswalks",
+      type: "Open Knowledge Graph",
+      license: "CC0 1.0 Universal",
+      url: "https://www.wikidata.org/",
+      sourceKey: "wikidata",
+      badgeVariant: "secondary" as const,
+      description: "Global open knowledge graph providing entity resolution crosswalks linking biographical entries, official roles, and institutional identifiers.",
+      updateRate: "Community Maintained",
+    },
+    {
+      name: "Curated Influence Network Seeds",
+      type: "Verified Public Entity Seeds",
+      license: "Public Domain / OpenFEC Citations",
+      url: "https://www.fec.gov/",
+      sourceKey: "manual_influence_seed",
+      badgeVariant: "default" as const,
+      description: "Verified public FEC committee identifiers mapping major advocacy networks (including AIPAC PAC C00797670, UDP C00799031, and DMFI C90022864) to direct spending pipelines.",
+      updateRate: "Curated Verification",
+    },
+  ]
+
+  const getRunStatusForSource = (key: string) => {
+    const match = sourceRuns.find((r) => r.source === key || r.source.toLowerCase().includes(key.toLowerCase()))
+    return match
+  }
+
   return (
-    <div className="min-h-screen bg-background">
-
-
-      <div className="container mx-auto px-4 py-8">
-        {/* Introduction */}
-        <div className="mb-12">
-          <h2 className="text-4xl font-bold text-foreground mb-6">Our Data Sources</h2>
-          <p className="text-lg text-muted-foreground max-w-3xl leading-relaxed">
-            We aggregate data from official government sources and trusted institutions to provide
-            comprehensive insights into congressional activity and political influence.
+    <div className="min-h-screen bg-background py-10 px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-6xl space-y-12">
+        {/* Page Header */}
+        <div className="space-y-4 border-b border-border pb-8">
+          <div className="flex items-center gap-2 text-accent">
+            <Database className="h-6 w-6" />
+            <span className="text-sm font-semibold uppercase tracking-wider">System Architecture</span>
+          </div>
+          <h1 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
+            Data Sources & Pipeline Freshness
+          </h1>
+          <p className="max-w-3xl text-lg text-muted-foreground leading-relaxed">
+            CongressTracker unifies disparate legislative, campaign finance, lobbying, and financial disclosure datasets into a single PostgreSQL-backed intelligence layer. Every record preserves strict data provenance and verification audit trails.
           </p>
         </div>
 
-        {/* Primary Sources */}
-        <div className="mb-12">
-          <h3 className="text-2xl font-bold text-foreground mb-6">Primary Government Sources</h3>
-          <div className="grid gap-6">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <Shield className="h-6 w-6 text-green-600" />
-                    <CardTitle>Congress.gov API</CardTitle>
-                    <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                      Official
-                    </Badge>
-                  </div>
-                  <Button variant="outline" size="sm" asChild>
-                    <a href="https://api.congress.gov/" target="_blank" rel="noopener noreferrer">
-                      <ExternalLink className="h-4 w-4 mr-2" />
-                      Visit Source
-                    </a>
-                  </Button>
-                </div>
-                <CardDescription>
-                  Library of Congress official API for legislative information
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div>
-                    <h4 className="font-semibold mb-2">Data Provided:</h4>
-                    <ul className="text-sm text-muted-foreground space-y-1">
-                      <li>• Congressional member information and biographies</li>
-                      <li>• Bill texts, summaries, and legislative histories</li>
-                      <li>• Voting records and roll call votes</li>
-                      <li>• Committee assignments and hearing schedules</li>
-                      <li>• Congressional reports and documents</li>
-                    </ul>
-                  </div>
-                  <div className="flex items-center space-x-4 text-sm">
-                    <div className="flex items-center space-x-1">
-                      <Clock className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-muted-foreground">Updated: Real-time</span>
-                    </div>
-                    <Badge variant="secondary">Free API</Badge>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <Shield className="h-6 w-6 text-green-600" />
-                    <CardTitle>Senate Lobbying Disclosure</CardTitle>
-                    <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                      Official
-                    </Badge>
-                  </div>
-                  <Button variant="outline" size="sm" asChild>
-                    <a href="https://lda.senate.gov/" target="_blank" rel="noopener noreferrer">
-                      <ExternalLink className="h-4 w-4 mr-2" />
-                      Visit Source
-                    </a>
-                  </Button>
-                </div>
-                <CardDescription>
-                  Senate Office of Public Records lobbying database
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div>
-                    <h4 className="font-semibold mb-2">Data Provided:</h4>
-                    <ul className="text-sm text-muted-foreground space-y-1">
-                      <li>• Lobbying disclosure filings (LD-1, LD-2)</li>
-                      <li>• Registered lobbyists and firms</li>
-                      <li>• Client information and spending amounts</li>
-                      <li>• Issue areas and government contacts</li>
-                      <li>• Contribution reports (LD-203)</li>
-                    </ul>
-                  </div>
-                  <div className="flex items-center space-x-4 text-sm">
-                    <div className="flex items-center space-x-1">
-                      <Clock className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-muted-foreground">Updated: Quarterly</span>
-                    </div>
-                    <Badge variant="secondary">Public Access</Badge>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <Shield className="h-6 w-6 text-blue-600" />
-                    <CardTitle>OpenFEC API</CardTitle>
-                    <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
-                      Official
-                    </Badge>
-                  </div>
-                  <Button variant="outline" size="sm" asChild>
-                    <a href="https://api.open.fec.gov/" target="_blank" rel="noopener noreferrer">
-                      <ExternalLink className="h-4 w-4 mr-2" />
-                      Visit Source
-                    </a>
-                  </Button>
-                </div>
-                <CardDescription>
-                  Federal Election Commission official API for campaign finance data
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div>
-                    <h4 className="font-semibold mb-2">Data Provided:</h4>
-                    <ul className="text-sm text-muted-foreground space-y-1">
-                      <li>• Candidate and committee information</li>
-                      <li>• Campaign contribution records (Schedule A)</li>
-                      <li>• Independent expenditures</li>
-                      <li>• Committee filings and financial reports</li>
-                      <li>• Election spending and fundraising data</li>
-                    </ul>
-                  </div>
-                  <div className="flex items-center space-x-4 text-sm">
-                    <div className="flex items-center space-x-1">
-                      <Clock className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-muted-foreground">Updated: Nightly</span>
-                    </div>
-                    <Badge variant="secondary">Free API</Badge>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-
-        {/* Data Processing */}
-        <div className="mb-12">
-          <h3 className="text-2xl font-bold text-foreground mb-6">Data Processing & Quality</h3>
-          <div className="grid md:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Data Validation</CardTitle>
-                <CardDescription>
-                  Our approach to ensuring data accuracy and reliability
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ul className="space-y-3 text-sm">
-                  <li className="flex items-start space-x-2">
-                    <div className="w-2 h-2 bg-primary rounded-full mt-2" />
-                    <span>Cross-reference multiple sources for verification</span>
-                  </li>
-                  <li className="flex items-start space-x-2">
-                    <div className="w-2 h-2 bg-primary rounded-full mt-2" />
-                    <span>Automated data quality checks and validation</span>
-                  </li>
-                  <li className="flex items-start space-x-2">
-                    <div className="w-2 h-2 bg-primary rounded-full mt-2" />
-                    <span>Regular audits against official records</span>
-                  </li>
-                  <li className="flex items-start space-x-2">
-                    <div className="w-2 h-2 bg-primary rounded-full mt-2" />
-                    <span>User reporting system for data corrections</span>
-                  </li>
-                </ul>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Update Frequency</CardTitle>
-                <CardDescription>
-                  How often different datasets are refreshed
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3 text-sm">
-                  <div className="flex justify-between items-center">
-                    <span>Congressional Votes</span>
-                    <Badge variant="outline">Real-time</Badge>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span>Bill Information</span>
-                    <Badge variant="outline">Daily</Badge>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span>Lobbying Filings</span>
-                    <Badge variant="outline">Weekly</Badge>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span>Campaign Finance</span>
-                    <Badge variant="outline">Monthly</Badge>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span>Financial Disclosures</span>
-                    <Badge variant="outline">Annually</Badge>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-
-        {/* Data Limitations */}
-        <Card>
+        {/* Postgres-Backed Source Freshness */}
+        <Card className="border-border bg-card shadow-sm">
           <CardHeader>
-            <CardTitle>Data Limitations & Disclaimers</CardTitle>
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <div className="flex items-center gap-3">
+                <Clock className="h-5 w-5 text-primary" />
+                <CardTitle className="text-xl font-bold">PostgreSQL Source Freshness Monitor</CardTitle>
+              </div>
+              <Badge variant="outline" className="font-mono text-xs">
+                Table: source_runs
+              </Badge>
+            </div>
             <CardDescription>
-              Important considerations when interpreting our data
+              Real-time ingestion pipelines track execution history, row volumes, and API rate limits directly in our canonical database.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4 text-sm">
-              <div>
-                <h4 className="font-semibold mb-2">Reporting Delays</h4>
-                <p className="text-muted-foreground">
-                  Some data may be delayed due to official filing requirements. Stock trades must be
-                  disclosed within 45 days, lobbying reports are filed quarterly.
-                </p>
+            {loadingRuns ? (
+              <div className="py-6 text-center text-sm text-muted-foreground">Checking live ingestion pipeline runs...</div>
+            ) : sourceRuns.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-border text-muted-foreground">
+                      <th className="pb-3 font-semibold">Source Identifier</th>
+                      <th className="pb-3 font-semibold">Status</th>
+                      <th className="pb-3 font-semibold">Rows Processed</th>
+                      <th className="pb-3 font-semibold">Last Execution</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {sourceRuns.map((run, idx) => (
+                      <tr key={run.id || idx} className="py-3">
+                        <td className="py-3 font-mono font-medium text-foreground">{run.source}</td>
+                        <td className="py-3">
+                          <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                            run.status === "success" ? "bg-green-500/10 text-green-700 dark:text-green-400" :
+                            run.status === "running" ? "bg-blue-500/10 text-blue-700 dark:text-blue-400" :
+                            run.status === "partial" ? "bg-amber-500/10 text-amber-700 dark:text-amber-400" :
+                            "bg-red-500/10 text-red-700 dark:text-red-400"
+                          }`}>
+                            {run.status.toUpperCase()}
+                          </span>
+                        </td>
+                        <td className="py-3 text-muted-foreground">
+                          {run.rows_written !== undefined ? `${run.rows_written} written` : `${run.rows_seen || 0} seen`}
+                        </td>
+                        <td className="py-3 text-muted-foreground">
+                          {run.finished_at ? new Date(run.finished_at).toLocaleString() : run.started_at ? new Date(run.started_at).toLocaleString() : "Pending"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-
-              <div>
-                <h4 className="font-semibold mb-2">Data Completeness</h4>
-                <p className="text-muted-foreground">
-                  Not all officials may file required disclosures on time. We clearly mark when data
-                  is incomplete or overdue.
-                </p>
+            ) : (
+              <div className="rounded-md border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
+                Canonical PostgreSQL pipeline ingestion is managed by automated scheduled workers. Run <code className="font-mono bg-background px-1.5 py-0.5 rounded border border-border">cargo run -p intel_backend --bin ingest -- all-smoke</code> from the terminal to populate live execution metadata.
               </div>
-
-              <div>
-                <h4 className="font-semibold mb-2">Historical Accuracy</h4>
-                <p className="text-muted-foreground">
-                  Older records may have different reporting standards or requirements. We note
-                  these differences where applicable.
-                </p>
-              </div>
-            </div>
+            )}
           </CardContent>
         </Card>
+
+        {/* Unified Data Sources Catalog */}
+        <div className="space-y-6">
+          <h2 className="text-2xl font-bold tracking-tight text-foreground">Catalog of Integrated Datasets</h2>
+          <div className="grid gap-6 md:grid-cols-2">
+            {dataSources.map((source) => {
+              const runInfo = getRunStatusForSource(source.sourceKey)
+              return (
+                <Card key={source.name} className="flex flex-col justify-between border-border bg-card transition-all hover:border-border/80">
+                  <CardHeader>
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="space-y-1">
+                        <CardTitle className="text-lg font-bold text-foreground">{source.name}</CardTitle>
+                        <div className="text-xs font-medium text-muted-foreground">{source.type}</div>
+                      </div>
+                      <Badge variant={source.badgeVariant} className="shrink-0 text-xs">
+                        {source.license.split("/")[0].trim()}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <p className="text-sm text-muted-foreground leading-relaxed">{source.description}</p>
+                    <div className="flex items-center justify-between border-t border-border/60 pt-4 text-xs text-muted-foreground">
+                      <div className="flex items-center gap-1.5">
+                        <Clock className="h-3.5 w-3.5" />
+                        <span>{source.updateRate}</span>
+                        {runInfo && (
+                          <span className="ml-1 rounded bg-muted px-1.5 py-0.2 font-mono text-[10px]">
+                            {runInfo.status}
+                          </span>
+                        )}
+                      </div>
+                      <a
+                        href={source.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                      >
+                        Source Access <ExternalLink className="h-3 w-3" />
+                      </a>
+                    </div>
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Critical Methodological Rules & Distinctions */}
+        <div className="space-y-6">
+          <h2 className="text-2xl font-bold tracking-tight text-foreground">Methodological Accounting & Attribution Rules</h2>
+          <div className="grid gap-6 md:grid-cols-3">
+            {/* Direct PAC vs IE */}
+            <Card className="border-border bg-card">
+              <CardHeader>
+                <div className="flex items-center gap-2.5 text-primary mb-1">
+                  <Shield className="h-5 w-5" />
+                  <CardTitle className="text-base font-bold">Direct PAC vs. Independent Expenditures</CardTitle>
+                </div>
+                <CardDescription>Strict legal separation of campaign finances</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm text-muted-foreground leading-relaxed">
+                <p>
+                  Federal election law strictly distinguishes between direct candidate campaign contributions and independent outside spending.
+                </p>
+                <ul className="list-disc pl-4 space-y-1.5">
+                  <li>
+                    <strong className="text-foreground">Direct PAC Contributions (Schedule A):</strong> Direct money given to a candidate campaign or authorized leadership PAC. Subject to statutory contribution caps ($5,000 per election per PAC).
+                  </li>
+                  <li>
+                    <strong className="text-foreground">Independent Expenditures (Schedule E):</strong> Spending by Super PACs or outside committees supporting or opposing a candidate. By law, these funds <em className="text-foreground">cannot be coordinated</em> with candidate campaigns.
+                  </li>
+                </ul>
+                <p className="border-t border-border pt-2 font-medium text-foreground">
+                  Rule: Independent expenditures are NEVER summed into a candidate campaign receipt totals. They are displayed as distinct external advocacy metrics.
+                </p>
+              </CardContent>
+            </Card>
+
+            {/* Heuristic Lobbying Matches */}
+            <Card className="border-border bg-card">
+              <CardHeader>
+                <div className="flex items-center gap-2.5 text-primary mb-1">
+                  <Layers className="h-5 w-5" />
+                  <CardTitle className="text-base font-bold">Heuristic Lobbying Attribution</CardTitle>
+                </div>
+                <CardDescription>Correlating legislative topics to disclosures</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm text-muted-foreground leading-relaxed">
+                <p>
+                  Senate LDA disclosure filings report broad quarterly activities under standardized 3-letter issue codes (e.g., TAX, HCR, DEF) along with free-text descriptions of lobbying focus.
+                </p>
+                <p>
+                  When a filing explicitly names a bill number (e.g., &quot;H.R. 1&quot; or &quot;S. 500&quot;), our resolution engine links the filing directly to that bill record.
+                </p>
+                <p>
+                  When specific bill numbers are omitted, our intelligence pipeline performs case-insensitive keyword and subject matching between bill policy areas and lobbying text descriptions.
+                </p>
+                <p className="border-t border-border pt-2 font-medium text-foreground">
+                  Rule: All keyword-derived correlations are explicitly tagged with <code className="font-mono bg-muted px-1 py-0.5 rounded text-xs">confidence: &apos;heuristic&apos;</code> to distinguish them from direct statutory citations.
+                </p>
+              </CardContent>
+            </Card>
+
+            {/* Dark Money / 501(c)(4) */}
+            <Card className="border-border bg-card">
+              <CardHeader>
+                <div className="flex items-center gap-2.5 text-amber-600 dark:text-amber-400 mb-1">
+                  <Lock className="h-5 w-5" />
+                  <CardTitle className="text-base font-bold">Dark-Money &amp; 501(c)(4) Unknowns</CardTitle>
+                </div>
+                <CardDescription>Tracing limits of opaque political spending</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm text-muted-foreground leading-relaxed">
+                <p>
+                  Under 26 U.S.C. § 501(c)(4), social welfare organizations and industry trade associations can participate in political advocacy and make unlimited transfers to Super PACs without disclosing their underlying individual donors to the FEC.
+                </p>
+                <p>
+                  Consequently, when a Super PAC reports receiving funds from a 501(c)(4) advocacy organization, public government disclosure records end at the organizational level.
+                </p>
+                <p className="border-t border-border pt-2 font-medium text-foreground">
+                  Rule: We attribute spending only to verified public FEC committee entities. Opaque donor pools behind 501(c)(4) vehicles are explicitly labeled as <span className="underline">undisclosed / untraceable</span> under current federal statutory law.
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
       </div>
     </div>
   )

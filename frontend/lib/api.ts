@@ -4,10 +4,11 @@ export interface Candidate {
     party?: string;
     state?: string;
     district?: string;
-    office_sought?: string;
-    incumbent?: boolean;
-    committee_id?: string;
-    committee_name?: string;
+    office?: string;
+    incumbent_challenge?: string;
+    active_through?: number;
+    first_file_date?: string;
+    last_file_date?: string;
 }
 
 export interface Receipt {
@@ -34,8 +35,8 @@ export interface PaginatedResponse<T> {
 
 import { BACKEND_URL } from "./constants";
 
-export async function fetchCandidates(name?: string, state?: string): Promise<PaginatedResponse<Candidate>> {
-    let url = `${BACKEND_URL}/api/fec/candidates`;
+export async function fetchCandidates(name?: string, state?: string): Promise<Candidate[]> {
+    let url = `${BACKEND_URL}/api/intel/fec/candidates`;
     const params = new URLSearchParams();
     if (name) params.append('name', name);
     if (state) params.append('state', state);

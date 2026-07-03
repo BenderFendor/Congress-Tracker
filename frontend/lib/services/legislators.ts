@@ -1,12 +1,6 @@
-interface CapitolTradesMember {
-  _politicianId: number;
-  stats?: { count_trades?: number; count_issuers?: number; volume?: number; date_last_traded?: string | null };
-}
-
 import { getTradesByPoliticianId, StockTrade } from "./stocks";
 import { BACKEND_URL } from "@/lib/constants";
-
-const CONGRESS_PROXY_BASE = "/api/congress-proxy?url=https://api.congress.gov/v3";
+import type { ProvenanceSummary } from "./provenance";
 
 export type LegislatorTradeSummary = {
     politician_id: string;
@@ -27,289 +21,176 @@ export type Legislator = {
     name: string;
     first_name: string;
     last_name: string;
+    official_full_name?: string;
     party: string;
+    current_party?: string;
     state: string;
+    current_state?: string;
     district: string;
+    current_district?: string;
     chamber: string;
+    current_chamber?: string;
     avatar: string;
     bio: string;
-    totalDonations: number;
+    totalDonations?: number;
     billsSponsored: number;
-    votingScore: number;
-    committees: string[];
-    topDonors: { name: string; amount: number; industry: string }[];
-    recentBills: { title: string; status: string; date: string }[];
+    votingScore?: number;
+    committees?: Array<string | { committee_id?: string; name?: string; chamber?: string; rank?: number; title?: string; congress?: number }>;
+    topDonors?: Array<{ name: string; amount: number; industry?: string }>;
+    recentBills?: Array<{ id?: string; title: string; status?: string; date: string }>;
     recentTrades: StockTrade[];
     url: string;
     twitter_account: string;
     facebook_account: string;
     youtube_account: string;
-    contact_form: string;
+    contact_form?: string | null;
     in_office: boolean;
     next_election: string;
     trade_summary: LegislatorTradeSummary | null;
+    // New intelligence fields from MemberProfile
+    depiction_url?: string | null;
+    website_url?: string | null;
+    office_address?: string | null;
+    phone?: string | null;
+    years_in_office?: number | null;
+    birthday?: string | null;
+    age?: number | null;
+    gender?: string | null;
+    service_start?: string | null;
+    current_term_end?: string | null;
+    party_history?: Array<{ party: string; start?: string; end?: string }>;
+    terms?: Array<{ chamber: string; state: string; district?: string; party: string; start_date: string; end_date?: string | null; senate_class?: number | null }>;
+    identifiers?: Record<string, string[]>;
+    education?: string[];
+    prior_employment?: string[];
+    hometown?: string | null;
+    birthplace?: string | null;
+    nominate_dim1?: number | null;
+    nominate_dim2?: number | null;
+    vote_summary?: {
+        bioguide_id?: string;
+        congress?: number;
+        total_votes?: number;
+        missed_votes?: number;
+        missed_vote_pct?: number | null;
+        party_line_votes?: number;
+        party_line_pct?: number | null;
+        recent_votes?: Array<{
+            vote_id: string;
+            congress?: number;
+            chamber?: string;
+            roll_number?: number;
+            vote_date?: string | null;
+            question: string;
+            position: string;
+        }>;
+    } | null;
+    matchConfidence?: string;
+    provenance?: ProvenanceSummary;
 };
 
 type LegislatorsResponse = {
-    data: Array<Record<string, unknown>>;
-};
-
-type CongressProxyMember = {
-    bioguideId: string;
-    name?: string;
-    firstName?: string;
-    lastName?: string;
-    directOrderName?: string;
-    invertedOrderName?: string;
-    partyName?: string;
-    partyHistory?: Array<{
-        partyAbbreviation?: string;
-        partyName?: string;
-        startYear?: number;
-    }>;
-    state?: string;
-    district?: number;
-    terms?: Array<{
-        chamber?: string;
-        memberType?: string;
-    }>;
-    depiction?: {
-        imageUrl?: string;
-    };
-    url?: string;
-    officialWebsiteUrl?: string;
+    data?: Array<Record<string, unknown>>;
+    members?: Array<Record<string, unknown>>;
 };
 
 function mapLegislator(raw: Record<string, unknown>, recentTrades: StockTrade[] = []): Legislator {
     const tradeSummary = raw.trade_summary as LegislatorTradeSummary | null | undefined;
 
     return {
-        id: String(raw.id || ""),
+        id: String(raw.id || raw.bioguide_id || ""),
         bioguide_id: String(raw.bioguide_id || raw.id || ""),
-        name: String(raw.name || ""),
+        name: String(raw.name || raw.official_full_name || raw.first_name + " " + raw.last_name || ""),
         first_name: String(raw.first_name || ""),
         last_name: String(raw.last_name || ""),
-        party: String(raw.party || "Unknown"),
-        state: String(raw.state || ""),
-        district: String(raw.district || ""),
-        chamber: String(raw.chamber || "Congress"),
-        avatar: String(raw.avatar || ""),
+        official_full_name: raw.official_full_name as string | undefined,
+        party: String(raw.party || raw.current_party || "Unknown"),
+        current_party: raw.current_party as string | undefined,
+        state: String(raw.state || raw.current_state || ""),
+        current_state: raw.current_state as string | undefined,
+        district: String(raw.district || raw.current_district || ""),
+        current_district: raw.current_district as string | undefined,
+        chamber: String(raw.chamber || raw.current_chamber || "Congress"),
+        current_chamber: raw.current_chamber as string | undefined,
+        avatar: String(raw.avatar || raw.depiction_url || ""),
         bio: String(raw.bio || ""),
-        // Fields to populate when API enrichment is ready:
-        totalDonations: 0,      // Source: OpenFEC /api/fec/receipts
-        billsSponsored: Number(raw.bills_sponsored || 0),
-        votingScore: 0,         // Source: Congress.gov /api/congress/votes + member filter
-        committees: Array.isArray(raw.committees) ? raw.committees.map(String) : [],
-        topDonors: [],          // Source: OpenFEC /api/fec/receipts aggregated by committee
-        recentBills: [],        // Source: Congress.gov /api/congress/bills with member param
+        billsSponsored: Number(raw.bills_sponsored || raw.billsSponsored || 0),
         recentTrades,
-        url: String(raw.url || ""),
-        twitter_account: "",    // Source: Congress.gov member detail
-        facebook_account: "",
-        youtube_account: "",
-        contact_form: "",
-        in_office: Boolean(raw.in_office),
-        next_election: String(raw.next_election || ""), // Source: computed from Congress number
+        url: String(raw.url || raw.website_url || ""),
+        twitter_account: String(raw.twitter_account || ""),
+        facebook_account: String(raw.facebook_account || ""),
+        youtube_account: String(raw.youtube_account || ""),
+        contact_form: raw.contact_form as string | null | undefined ?? null,
+        in_office: raw.in_office !== undefined ? Boolean(raw.in_office) : true,
+        next_election: String(raw.next_election || ""),
         trade_summary: tradeSummary ?? null,
+        // New intelligence fields — undefined when backend has no data
+        depiction_url: raw.depiction_url as string | null | undefined,
+        website_url: raw.website_url as string | null | undefined,
+        office_address: raw.office_address as string | null | undefined,
+        phone: raw.phone as string | null | undefined,
+        years_in_office: raw.years_in_office as number | null | undefined,
+        birthday: raw.birthday as string | null | undefined,
+        age: raw.age as number | null | undefined,
+        gender: raw.gender as string | null | undefined,
+        service_start: raw.service_start as string | null | undefined,
+        current_term_end: raw.current_term_end as string | null | undefined,
+        party_history: raw.party_history as Array<{ party: string; start?: string; end?: string }> | undefined,
+        terms: raw.terms as Array<{ chamber: string; state: string; district?: string; party: string; start_date: string; end_date?: string | null; senate_class?: number | null }> | undefined,
+        identifiers: raw.identifiers as Record<string, string[]> | undefined,
+        education: raw.education as string[] | undefined,
+        prior_employment: raw.prior_employment as string[] | undefined,
+        hometown: raw.hometown as string | null | undefined,
+        birthplace: raw.birthplace as string | null | undefined,
+        nominate_dim1: raw.nominate_dim1 as number | null | undefined,
+        nominate_dim2: raw.nominate_dim2 as number | null | undefined,
+        totalDonations: raw.totalDonations as number | undefined,
+        votingScore: raw.votingScore as number | undefined,
+        committees: raw.committees as Array<string | { committee_id?: string; name?: string; chamber?: string; rank?: number; title?: string; congress?: number }> | undefined,
+        topDonors: raw.topDonors as Array<{ name: string; amount: number; industry?: string }> | undefined,
+        recentBills: raw.recentBills as Array<{ id?: string; title: string; status?: string; date: string }> | undefined,
+        matchConfidence: raw.matchConfidence as string | undefined,
+        provenance: raw.provenance as ProvenanceSummary | undefined,
+        vote_summary: raw.vote_summary as Legislator['vote_summary'] | undefined,
     };
-}
-
-function normalizeName(value: string): string {
-    return value
-        .toLowerCase()
-        .replace(/,/g, " ")
-        .replace(/\./g, " ")
-        .replace(/\s+/g, " ")
-        .trim();
-}
-
-function normalizeParty(party: string): string {
-    if (party.toLowerCase().includes("democrat")) return "Democrat";
-    if (party.toLowerCase().includes("republican")) return "Republican";
-    if (party.toLowerCase().includes("independent")) return "Independent";
-    return party || "Unknown";
-}
-
-async function getCapitolTradesMap(): Promise<Map<string, LegislatorTradeSummary>> {
-    try {
-        const response = await fetch(`${BACKEND_URL}/api/politicians`);
-        if (!response.ok) {
-            return new Map();
-        }
-
-        const payload = await response.json();
-        const members = Array.isArray(payload.data) ? payload.data : [];
-        const map = new Map<string, LegislatorTradeSummary>();
-
-        members.forEach((member: CapitolTradesMember) => {
-            const id = String(member._politicianId || "");
-            if (!id) return;
-
-            map.set(id, {
-                politician_id: id,
-                matched: true,
-                match_confidence: "exact_id",
-                source: "capitoltrades",
-                stats: {
-                    count_trades: Number(member.stats?.count_trades || 0),
-                    count_issuers: Number(member.stats?.count_issuers || 0),
-                    volume: Number(member.stats?.volume || 0),
-                    last_traded: member.stats?.date_last_traded || null,
-                },
-            });
-        });
-
-        return map;
-    } catch (error) {
-        console.error("Error fetching CapitolTrades map:", error);
-        return new Map();
-    }
-}
-
-function mergeProxyMember(member: CongressProxyMember, trades: Map<string, LegislatorTradeSummary>): Legislator {
-    const terms = member.terms;
-    const currentTerm = Array.isArray(terms) ? terms[terms.length - 1] : undefined;
-    const tradeSummary = trades.get(member.bioguideId) ?? null;
-
-    const rawName = member.name || member.directOrderName || member.invertedOrderName || `${member.firstName || ""} ${member.lastName || ""}`.trim() || "Unknown";
-    const name = rawName.includes(",")
-        ? rawName.split(",").slice(1).join(",").trim() + " " + rawName.split(",")[0].trim()
-        : rawName;
-    const cleanedName = normalizeName(name).split(" ");
-    const first_name = member.firstName || cleanedName.slice(0, -1).join(" ") || cleanedName[0] || "";
-    const last_name = member.lastName || (cleanedName.length > 1 ? cleanedName[cleanedName.length - 1] : "");
-
-    const latestParty = member.partyHistory?.[member.partyHistory.length - 1]?.partyName;
-    const party = member.partyName || latestParty || "Unknown";
-
-    return {
-        id: member.bioguideId,
-        bioguide_id: member.bioguideId,
-        name,
-        first_name,
-        last_name,
-        party: normalizeParty(party),
-        state: member.state || "",
-        district: member.district ? String(member.district) : "",
-        chamber: currentTerm?.chamber || "Congress",
-        avatar: member.depiction?.imageUrl || `https://www.congress.gov/img/member/${member.bioguideId.toLowerCase()}_200.jpg`,
-        bio: `${currentTerm?.chamber === "Senate" ? "Senator" : "Representative"} ${name} serves ${member.state || ""}.`.trim(),
-        totalDonations: 0,
-        billsSponsored: 0,
-        votingScore: 0,
-        committees: [],
-        topDonors: [],
-        recentBills: [],
-        recentTrades: [],
-        url: member.officialWebsiteUrl || member.url || "",
-        twitter_account: "",
-        facebook_account: "",
-        youtube_account: "",
-        contact_form: "",
-        in_office: true,
-        next_election: "",
-        trade_summary: tradeSummary,
-    };
-}
-
-async function getAllLegislatorsFromProxy(chamber?: string): Promise<Legislator[]> {
-    try {
-        const tradesPromise = getCapitolTradesMap();
-        const members: CongressProxyMember[] = [];
-        let offset = 0;
-        let totalCount = Number.POSITIVE_INFINITY;
-
-        while (members.length < totalCount) {
-            const response = await fetch(`${CONGRESS_PROXY_BASE}/member?format=json&limit=250&offset=${offset}`);
-            if (!response.ok) {
-                throw new Error(`Congress proxy error: ${response.statusText}`);
-            }
-
-            const data = await response.json();
-            const pageMembers = Array.isArray(data.members) ? data.members : [];
-            const count = Number(data.pagination?.count || pageMembers.length || 0);
-
-            totalCount = Number.isFinite(count) && count > 0 ? count : pageMembers.length;
-            members.push(...pageMembers);
-
-            if (pageMembers.length === 0 || pageMembers.length < 250) {
-                break;
-            }
-
-            offset += pageMembers.length;
-        }
-
-        const trades = await tradesPromise;
-
-        return members
-            .map((member: CongressProxyMember) => mergeProxyMember(member, trades))
-            .filter((member) => !chamber || chamber === "all" || member.chamber.toLowerCase() === chamber.toLowerCase());
-    } catch (error) {
-        console.error("Error fetching legislators from proxy:", error);
-        return [];
-    }
-}
-
-async function getLegislatorFromProxy(id: string): Promise<Legislator | null> {
-    try {
-        const [memberResponse, trades] = await Promise.all([
-            fetch(`${CONGRESS_PROXY_BASE}/member/${id}?format=json`),
-            getCapitolTradesMap(),
-        ]);
-
-        if (!memberResponse.ok) {
-            throw new Error(`Congress proxy error: ${memberResponse.statusText}`);
-        }
-
-        const data = await memberResponse.json();
-        if (!data.member) {
-            return null;
-        }
-
-        const legislator = mergeProxyMember(data.member as CongressProxyMember, trades);
-        const tradeId = legislator.trade_summary?.politician_id || legislator.bioguide_id;
-        const recentTrades = tradeId ? await getTradesByPoliticianId(tradeId) : [];
-        return { ...legislator, recentTrades };
-    } catch (error) {
-        console.error("Error fetching legislator from proxy:", error);
-        return null;
-    }
 }
 
 export async function getLegislator(id: string): Promise<Legislator | null> {
     try {
-        const response = await fetch(`${BACKEND_URL}/api/legislators/${id}`);
+        const response = await fetch(`${BACKEND_URL}/api/members/${id}/profile`);
         if (!response.ok) {
-            return getLegislatorFromProxy(id);
+            if (response.status === 404) return null;
+            throw new Error(`Failed to fetch legislator: ${response.status} ${response.statusText}`);
         }
 
         const raw = await response.json();
-        const tradeId = raw.trade_summary?.politician_id || raw.bioguide_id || raw.id;
+        const memberData = raw.member || raw;
+        const tradeId = memberData.trade_summary?.politician_id || memberData.bioguide_id || memberData.id;
         const recentTrades = tradeId ? await getTradesByPoliticianId(String(tradeId)) : [];
-        return mapLegislator(raw, recentTrades);
+        return mapLegislator(memberData, recentTrades);
     } catch (error) {
         console.error("Error fetching legislator:", error);
-        return getLegislatorFromProxy(id);
+        throw error;
     }
 }
-
 export async function getAllLegislators(chamber?: string): Promise<Legislator[]> {
     try {
         const params = new URLSearchParams();
-        params.set("limit", "535");
+        params.set("limit", chamber ? "100" : "535");
         if (chamber && chamber !== "all") {
             params.set("chamber", chamber);
         }
 
-        const response = await fetch(`${BACKEND_URL}/api/legislators?${params.toString()}`);
+        const response = await fetch(`${BACKEND_URL}/api/members?${params.toString()}`);
         if (!response.ok) {
-            return getAllLegislatorsFromProxy(chamber);
+            throw new Error(`Failed to fetch legislators: ${response.status} ${response.statusText}`);
         }
 
         const data = (await response.json()) as LegislatorsResponse;
-        return (data.data || []).map((item) => mapLegislator(item));
+        const members = Array.isArray(data) ? data : (data.data || data.members || []);
+        return members.map((item: Record<string, unknown>) => mapLegislator(item));
     } catch (error) {
         console.error("Error fetching legislators:", error);
-        return getAllLegislatorsFromProxy(chamber);
+        throw error;
     }
 }

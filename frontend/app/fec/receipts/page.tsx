@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Search, Calendar, DollarSign, Building, User, Filter, ExternalLink } from "lucide-react"
+import { Search, Calendar, DollarSign, User, Filter } from "lucide-react"
 import { getAllReceipts, FECReceipt } from "@/lib/services/fec"
 import { useSearchParams } from "next/navigation"
 

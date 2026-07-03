@@ -1,12 +1,18 @@
 "use client"
 
-import type { ReactNode } from "react"
+import { useEffect, useState, type ReactNode } from "react"
 import { useTheme } from "next-themes"
 import { ArrowRight, Landmark, Shield } from "lucide-react"
 
 export function ArchivePage({ children }: { children: ReactNode }) {
   const { resolvedTheme } = useTheme()
-  const isDark = resolvedTheme === "dark"
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  const isDark = mounted && resolvedTheme === "dark"
 
   return (
     <main className={`archive-page ${isDark ? "archive-page-dark" : "archive-page-light"}`}>
@@ -137,4 +143,3 @@ export function ArchiveLink({ href, children }: { href: string; children: ReactN
     </a>
   )
 }
-

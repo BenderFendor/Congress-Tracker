@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
-import { Search, MapPin, Users, DollarSign, Filter, ExternalLink, Building } from "lucide-react"
+import { Search, MapPin, Users, Filter, ExternalLink, Building } from "lucide-react"
 import { getAllCandidates, FECandidate, getCommittees, FECCommittee } from "@/lib/services/fec"
 
 export default function CandidatesPage() {
@@ -55,8 +55,6 @@ export default function CandidatesPage() {
     // Get unique states and offices
     const states = [...new Set(candidates.map(c => c.state).filter(Boolean))].sort();
     const offices = [...new Set(candidates.map(c => c.office_sought).filter(Boolean))].sort();
-
-    const committeeTypes = [...new Set(committees.map(c => c.committee_type).filter(Boolean))].sort();
 
     return (
         <div className="min-h-screen bg-background text-foreground font-sans selection:bg-accent text-accent-foreground selection:text-foreground pb-20">

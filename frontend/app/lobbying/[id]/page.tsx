@@ -4,7 +4,6 @@ import { useState, useEffect } from "react"
 import { useParams } from "next/navigation"
 import {
     ArrowLeft,
-    Building2,
     DollarSign,
     Users,
     FileText,
@@ -57,7 +56,6 @@ export default function OrganizationProfilePage() {
     }, [id, searchName])
 
     const totalIncome = filings.reduce((sum, f) => sum + (f.income || 0), 0)
-    const totalExpenses = filings.reduce((sum, f) => sum + (f.expenses || 0), 0)
     const uniqueClients = new Set(filings.map((f) => f.client?.name).filter(Boolean))
     const allIssues = new Set(
         filings.flatMap((f) =>

@@ -1,13 +1,16 @@
 import { BACKEND_URL } from "@/lib/constants";
 
 export interface PortfolioSummary {
-    total_politicians: number;
-    total_trades: number;
-    buy_orders: number;
-    sell_orders: number;
-    net_activity: number;
-    timely_disclosure_rate: number;
-    total_volume: number;
+    total_members: number;
+    total_committees: number;
+    in_office_count: number;
+    house_count: number;
+    senate_count: number;
+    democratic_count: number;
+    republican_count: number;
+    independent_count: number;
+    avg_years_in_office: number;
+    avg_ideology_score: number;
 }
 
 export interface FeaturedMember {
@@ -32,8 +35,7 @@ export interface HoldingInfo {
 export interface SectorWeight {
     sector: string;
     weight: number;
-    trade_count: number;
-    volume: number;
+    committee_count: number;
 }
 
 export interface FeaturedPortfolio {
@@ -46,17 +48,18 @@ export interface FeaturedPortfolio {
 
 export interface MemberRank {
     rank: number;
+    bioguide_id: string;
+    first_name: string;
+    last_name: string;
+    full_name: string;
     name: string;
     party: string;
     state: string;
     chamber: string;
-    total_trades: number;
-    volume: number;
-    buy_count: number;
-    sell_count: number;
-    net_activity: number;
-    estimated_return_pct: number;
-    image_url: string | null;
+    years_in_office: number;
+    committee_count: number;
+    ideology_score: number | null;
+    depiction_url: string | null;
 }
 
 export interface TopMembersResponse {
@@ -67,45 +70,46 @@ export interface TopMembersResponse {
 export interface SectorExposureResponse {
     basis: string;
     sectors: SectorWeight[];
-    sp500_comparison_pct: number;
 }
 
 export interface MarketPulseResponse {
-    most_traded_ticker: string;
-    most_traded_count: number;
-    most_traded_company: string;
-    trending_sector: string;
-    trending_sector_weight: number;
-    timely_disclosure_rate: number;
-    total_trades_sampled: number;
+    status: string;
+    message: string;
+    total_members_tracked: number;
+    total_committees: number;
 }
 
 export async function fetchPortfolioSummary(): Promise<PortfolioSummary> {
-    const res = await fetch(`${BACKEND_URL}/api/portfolio/summary`);
+    const res = await fetch(`${BACKEND_URL}/api/intel/portfolio/summary`);
     if (!res.ok) throw new Error("Failed to fetch portfolio summary");
     return res.json();
 }
 
 export async function fetchFeaturedPortfolio(): Promise<FeaturedPortfolio> {
-    const res = await fetch(`${BACKEND_URL}/api/portfolio/featured`);
-    if (!res.ok) throw new Error("Failed to fetch featured portfolio");
-    return res.json();
+    throw new Error("Featured brokerage-style portfolio endpoint is not implemented. Congressional disclosure aggregation must use official disclosure rows.");
 }
 
 export async function fetchTopMembers(): Promise<TopMembersResponse> {
-    const res = await fetch(`${BACKEND_URL}/api/portfolio/top-members`);
+    const res = await fetch(`${BACKEND_URL}/api/intel/portfolio/members`);
     if (!res.ok) throw new Error("Failed to fetch top members");
-    return res.json();
+    const data = await res.json();
+    return {
+        ...data,
+        members: data.members.map((member: Omit<MemberRank, "name">) => ({
+            ...member,
+            name: member.full_name,
+        })),
+    };
 }
 
 export async function fetchSectorExposure(): Promise<SectorExposureResponse> {
-    const res = await fetch(`${BACKEND_URL}/api/portfolio/sector-exposure`);
+    const res = await fetch(`${BACKEND_URL}/api/intel/portfolio/sectors`);
     if (!res.ok) throw new Error("Failed to fetch sector exposure");
     return res.json();
 }
 
 export async function fetchMarketPulse(): Promise<MarketPulseResponse> {
-    const res = await fetch(`${BACKEND_URL}/api/portfolio/market-pulse`);
+    const res = await fetch(`${BACKEND_URL}/api/intel/portfolio/pulse`);
     if (!res.ok) throw new Error("Failed to fetch market pulse");
     return res.json();
 }

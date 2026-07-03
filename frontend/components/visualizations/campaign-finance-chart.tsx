@@ -16,13 +16,14 @@ interface CampaignFinanceChartProps {
   type?: "bar" | "pie"
   title?: string
   description?: string
+  emptyMessage?: string
 }
-
 export function CampaignFinanceChart({
   data,
   type = "bar",
   title = "Campaign Finance Breakdown",
   description = "Analysis of campaign contributions by source",
+  emptyMessage,
 }: CampaignFinanceChartProps) {
   const COLORS = [
     "hsl(var(--chart-1))",
@@ -65,6 +66,22 @@ export function CampaignFinanceChart({
       )
     }
     return null
+  }
+
+  if (data.length === 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>{title}</CardTitle>
+          <CardDescription>{description}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex h-80 items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground">
+            {emptyMessage || "No campaign finance records match the current filters."}
+          </div>
+        </CardContent>
+      </Card>
+    )
   }
 
   if (type === "pie") {

@@ -1,18 +1,18 @@
-// Senate Lobbying Disclosure Act (LDA) data.
-// Based on lobbyR by Chris Cioffi (LGPLv3).
+import { BACKEND_URL } from "@/lib/constants";
 
 export interface LobbyingFiling {
   filing_uuid: string;
-  filing_year: number;
-  filing_period: string;
-  filing_type: string;
-  income: string | null;
-  expenses: string | null;
-  dt_posted: string;
-  registrant: { name: string; description: string } | null;
-  client: { name: string; description: string } | null;
-  lobbyists: Array<{ name: string }> | null;
-  issues: string[];
+  filing_year: number | null;
+  filing_period: string | null;
+  filing_type: string | null;
+  income: number | null;
+  expenses: number | null;
+  dt_posted: string | null;
+  registrant_id: number | null;
+  registrant_name: string | null;
+  client_id: number | null;
+  client_name: string | null;
+  issue_codes: string[];
 }
 
 export interface Registrant {
@@ -60,37 +60,22 @@ export interface Filing {
     url: string
 }
 
-const BASE_URL = 'https://lda.senate.gov/api/v1';
-
 export async function getRecentFilings(page = 1, pageSize = 25): Promise<{ count: number, results: Filing[] }> {
-    const currentYear = new Date().getFullYear();
-    const url = `${BASE_URL}/filings/?filing_year=${currentYear}&page=${page}&page_size=${pageSize}&ordering=-dt_posted`;
-
-    const fetchUrl = typeof window !== 'undefined'
-        ? `/api/congress-proxy?url=${encodeURIComponent(url)}`
-        : url;
-
-    const response = await fetch(fetchUrl);
+    const offset = (page - 1) * pageSize;
+    const params = new URLSearchParams({ limit: String(pageSize), offset: String(offset) });
+    const response = await fetch(`${BACKEND_URL}/api/lobbying/filings?${params}`);
     if (!response.ok) {
         throw new Error(`Failed to fetch filings: ${response.statusText}`);
     }
-    return response.json();
+    const data = await response.json();
+    return { count: data.total, results: data.filings };
 }
 
 export async function getRegistrants(page = 1, pageSize = 25): Promise<{ count: number, results: Registrant[] }> {
-    const url = `${BASE_URL}/registrants/?page=${page}&page_size=${pageSize}`;
-    const fetchUrl = typeof window !== 'undefined'
-        ? `/api/congress-proxy?url=${encodeURIComponent(url)}`
-        : url;
-
-    const response = await fetch(fetchUrl);
-    if (!response.ok) {
-        throw new Error(`Failed to fetch registrants: ${response.statusText}`);
-    }
-    return response.json();
+    void page;
+    void pageSize;
+    throw new Error("Lobbying registrant list endpoint is not implemented yet. Use /api/lobbying/filings for LDA-backed filings.");
 }
-
-import { BACKEND_URL } from "@/lib/constants";
 
 export interface LobbyingClient {
   id: number;
@@ -111,14 +96,8 @@ export async function getLobbyingClients(params: {
   searchParams.set('page_size', String(params.page_size ?? 25));
   if (params.page) searchParams.set('page', String(params.page));
 
-  try {
-    const res = await fetch(`${BACKEND_URL}/api/lobbying/clients?${searchParams}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
-  } catch (error) {
-    console.error('Failed to fetch lobbying clients:', error);
-    return null;
-  }
+  void searchParams;
+  throw new Error("Lobbying client search endpoint is not implemented yet. Use /api/lobbying/filings with client filters.");
 }
 
 export async function getLobbyingRegistrants(params: {
@@ -131,14 +110,8 @@ export async function getLobbyingRegistrants(params: {
   searchParams.set('page_size', String(params.page_size ?? 25));
   if (params.page) searchParams.set('page', String(params.page));
 
-  try {
-    const res = await fetch(`${BACKEND_URL}/api/lobbying/registrants?${searchParams}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
-  } catch (error) {
-    console.error('Failed to fetch lobbying registrants:', error);
-    return null;
-  }
+  void searchParams;
+  throw new Error("Lobbying registrant search endpoint is not implemented yet. Use /api/lobbying/filings with registrant filters.");
 }
 
 export interface Lobbyist {
@@ -159,14 +132,8 @@ export async function getLobbyingLobbyists(params: {
   searchParams.set('page_size', String(params.page_size ?? 25));
   if (params.page) searchParams.set('page', String(params.page));
 
-  try {
-    const res = await fetch(`${BACKEND_URL}/api/lobbying/lobbyists?${searchParams}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
-  } catch (error) {
-    console.error('Failed to fetch lobbyists:', error);
-    return null;
-  }
+  void searchParams;
+  throw new Error("Lobbyist endpoint is not implemented yet. LDA filings are available through /api/lobbying/filings.");
 }
 
 export async function getFilingDetail(uuid: string): Promise<LobbyingFiling | null> {
@@ -360,4 +327,3 @@ export async function fetchTopSectors(year?: number): Promise<TopSectorsResponse
     return null;
   }
 }
-

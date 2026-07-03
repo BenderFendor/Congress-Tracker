@@ -18,10 +18,13 @@ export function Navbar() {
         { href: "/", label: "Home" },
         { href: "/legislators", label: "Legislators" },
         { href: "/bills", label: "Bills" },
+        { href: "/influence", label: "Influence" },
+        { href: "/committees", label: "Committees" },
         { href: "/stocks", label: "Stocks" },
         { href: "/portfolio", label: "Portfolio" },
         { href: "/lobbying", label: "Lobbying" },
-        { href: "/visualizations", label: "Visualizations" },
+        { href: "/elections", label: "Elections" },
+        { href: "/search", label: "Search" },
     ]
 
     return (
@@ -35,7 +38,7 @@ export function Navbar() {
                     Congress<span className="italic text-accent">Tracker</span>
                 </h1>
             </Link>
-            <nav className="hidden items-center gap-8 xl:flex">
+            <nav className="hidden items-center gap-6 xl:flex">
                 {navLinks.map((link) => (
                     <Link
                         key={link.href}

@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { Building2, Landmark, Shield, Users, Search, Filter, Info, ChevronDown, Check } from "lucide-react"
+import { Building2, Landmark, Shield, Users, Search, Info, ChevronDown, Check } from "lucide-react"
 import { ArchivePage } from "@/components/ui/archive-ui"
 import { getAllLegislators, type Legislator } from "@/lib/services/legislators"
 import { LegislatorCard } from "@/components/ui/legislator-card"

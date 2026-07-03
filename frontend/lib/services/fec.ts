@@ -1,4 +1,4 @@
-import { fetchCandidates, fetchReceipts, Candidate, Receipt } from '@/lib/api';
+import { BACKEND_URL } from "@/lib/constants";
 
 export interface FECandidate {
     candidate_id: string;
@@ -23,41 +23,26 @@ export interface FECReceipt {
 }
 
 export async function getAllCandidates(name?: string, state?: string): Promise<FECandidate[]> {
-    try {
-        const response = await fetchCandidates(name, state);
-        return response.data.map((c: Candidate) => ({
-            candidate_id: c.candidate_id,
-            name: c.name,
-            party: c.party,
-            state: c.state,
-            district: c.district,
-            office_sought: c.office_sought,
-            incumbent: c.incumbent,
-            committee_id: c.committee_id,
-            committee_name: c.committee_name
-        }));
-    } catch (error) {
-        console.error("Error fetching candidates:", error);
-        return [];
-    }
+    const params = new URLSearchParams();
+    if (name) params.set("name", name);
+    if (state) params.set("state", state);
+    const response = await fetch(`${BACKEND_URL}/api/elections/candidates?${params}`);
+    if (!response.ok) throw new Error(`Failed to fetch candidates: ${response.status} ${response.statusText}`);
+    const candidates = await response.json();
+    return candidates.map((c: Record<string, unknown>) => ({
+        candidate_id: String(c.candidate_id),
+        name: String(c.name),
+        party: c.party ? String(c.party) : undefined,
+        state: c.state ? String(c.state) : undefined,
+        district: c.district ? String(c.district) : undefined,
+        office_sought: c.office ? String(c.office) : undefined,
+        incumbent: c.incumbent_challenge === "Incumbent",
+    }));
 }
 
 export async function getAllReceipts(committeeId?: string): Promise<FECReceipt[]> {
-    try {
-        const response = await fetchReceipts(committeeId);
-        return response.data.map((r: Receipt) => ({
-            committee_id: r.committee_id,
-            committee_name: r.committee_name,
-            contributor_name: r.contributor_name,
-            contribution_date: r.contribution_date,
-            amount: r.amount,
-            employer: r.employer,
-            occupation: r.occupation
-        }));
-    } catch (error) {
-        console.error("Error fetching receipts:", error);
-        return [];
-    }
+    void committeeId;
+    throw new Error("FEC receipts endpoint is not implemented in the canonical backend yet.");
 }
 
 export async function getRecentCandidates(limit = 50, name?: string, state?: string): Promise<FECandidate[]> {
@@ -84,16 +69,8 @@ export interface FECCommittee {
     candidate_id?: string;
 }
 
-import { BACKEND_URL } from "@/lib/constants";
-
 export async function getCommittees(): Promise<FECCommittee[]> {
-    try {
-        const res = await fetch(`${BACKEND_URL}/api/fec/committees`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        return data.committees || [];
-    } catch (error) {
-        console.error('Failed to fetch FEC committees:', error);
-        return [];
-    }
+    const res = await fetch(`${BACKEND_URL}/api/intel/fec/committees`);
+    if (!res.ok) throw new Error(`Failed to fetch FEC committees: ${res.status} ${res.statusText}`);
+    return res.json();
 }

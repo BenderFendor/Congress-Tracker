@@ -1,249 +1,245 @@
-import { ArrowLeft, BarChart3, GitBranch, Target, AlertTriangle } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { Target, AlertTriangle, CheckCircle2, Award, Sliders } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 
 export default function MethodologyPage() {
   return (
-    <div className="min-h-screen bg-background">
-
-
-      <div className="container mx-auto px-4 py-8">
-        {/* Introduction */}
-        <div className="mb-12">
-          <h2 className="text-4xl font-bold text-foreground mb-6">Our Methodology</h2>
-          <p className="text-lg text-muted-foreground max-w-3xl leading-relaxed">
-            We employ rigorous data collection, processing, and analysis methods to ensure accuracy
-            and transparency in government accountability tracking.
+    <div className="min-h-screen bg-background py-10 px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-6xl space-y-12">
+        {/* Header */}
+        <div className="space-y-4 border-b border-border pb-8">
+          <div className="flex items-center gap-2 text-accent">
+            <Sliders className="h-6 w-6" />
+            <span className="text-sm font-semibold uppercase tracking-wider">Methodology & Resolution Engine</span>
+          </div>
+          <h1 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
+            Entity Resolution & Provenance Standards
+          </h1>
+          <p className="max-w-3xl text-lg text-muted-foreground leading-relaxed">
+            To prevent misattribution across millions of disparate legislative, campaign finance, and trading records, CongressTracker implements deterministic entity resolution cascades, tiered confidence scoring, and first-class provenance envelopes.
           </p>
         </div>
 
-        {/* Data Collection */}
-        <div className="mb-12">
-          <h3 className="text-2xl font-bold text-foreground mb-6">Data Collection Process</h3>
-          <div className="grid gap-6">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center space-x-3">
-                  <GitBranch className="h-6 w-6 text-primary" />
-                  <CardTitle>Automated Data Pipeline</CardTitle>
-                </div>
-                <CardDescription>
-                  How we collect and process government data in real-time
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-6">
-                  <div className="flex items-start space-x-4">
-                    <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center flex-shrink-0">
-                      <span className="text-sm font-bold text-primary">1</span>
-                    </div>
-                    <div>
-                      <h4 className="font-semibold mb-2">API Integration</h4>
-                      <p className="text-sm text-muted-foreground">
-                        Direct connections to official government APIs (Congress.gov, Senate Lobbying Disclosure)
-                        ensure we receive data as soon as it's officially published.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start space-x-4">
-                    <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center flex-shrink-0">
-                      <span className="text-sm font-bold text-primary">2</span>
-                    </div>
-                    <div>
-                      <h4 className="font-semibold mb-2">Data Validation</h4>
-                      <p className="text-sm text-muted-foreground">
-                        Each data point is validated against multiple sources and checked for consistency.
-                        Automated quality checks flag potential errors for manual review.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start space-x-4">
-                    <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center flex-shrink-0">
-                      <span className="text-sm font-bold text-primary">3</span>
-                    </div>
-                    <div>
-                      <h4 className="font-semibold mb-2">Data Enrichment</h4>
-                      <p className="text-sm text-muted-foreground">
-                        Raw data is enhanced with additional context, standardized formatting,
-                        and cross-references to related information for comprehensive analysis.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start space-x-4">
-                    <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center flex-shrink-0">
-                      <span className="text-sm font-bold text-primary">4</span>
-                    </div>
-                    <div>
-                      <h4 className="font-semibold mb-2">Real-time Updates</h4>
-                      <p className="text-sm text-muted-foreground">
-                        Changes are immediately reflected in our system, providing users with
-                        the most current information available.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-
-        {/* Analysis Methods */}
-        <div className="mb-12">
-          <h3 className="text-2xl font-bold text-foreground mb-6">Analysis Methods</h3>
-          <div className="grid md:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center space-x-3">
-                  <Target className="h-6 w-6 text-primary" />
-                  <CardTitle>Financial Analysis</CardTitle>
-                </div>
-                <CardDescription>
-                  How we track and analyze financial relationships
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div>
-                    <h4 className="font-semibold mb-2">Campaign Contributions</h4>
-                    <ul className="text-sm text-muted-foreground space-y-1">
-                      <li>• Aggregate donations by industry, company, and time period</li>
-                      <li>• Calculate contribution patterns and trends</li>
-                      <li>• Identify top donors and recipients</li>
-                      <li>• Track PAC and individual contribution sources</li>
-                    </ul>
-                  </div>
-
-                  <div>
-                    <h4 className="font-semibold mb-2">Stock Trading Analysis</h4>
-                    <ul className="text-sm text-muted-foreground space-y-1">
-                      <li>• Monitor disclosure timing compliance</li>
-                      <li>• Calculate portfolio performance and returns</li>
-                      <li>• Identify potential conflicts of interest</li>
-                      <li>• Track unusual trading patterns</li>
-                    </ul>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <div className="flex items-center space-x-3">
-                  <BarChart3 className="h-6 w-6 text-primary" />
-                  <CardTitle>Legislative Analysis</CardTitle>
-                </div>
-                <CardDescription>
-                  Tracking legislative activity and influence
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div>
-                    <h4 className="font-semibold mb-2">Bill Tracking</h4>
-                    <ul className="text-sm text-muted-foreground space-y-1">
-                      <li>• Monitor bill progression through Congress</li>
-                      <li>• Analyze voting patterns and party alignment</li>
-                      <li>• Track amendments and committee activity</li>
-                      <li>• Identify sponsor and co-sponsor relationships</li>
-                    </ul>
-                  </div>
-
-                  <div>
-                    <h4 className="font-semibold mb-2">Lobbying Impact</h4>
-                    <ul className="text-sm text-muted-foreground space-y-1">
-                      <li>• Correlate lobbying spending with legislative outcomes</li>
-                      <li>• Map lobbyist-legislator interactions</li>
-                      <li>• Track issue area focus and spending patterns</li>
-                      <li>• Analyze firm and client relationships</li>
-                    </ul>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-
-        {/* Transparency Standards */}
-        <div className="mb-12">
-          <h3 className="text-2xl font-bold text-foreground mb-6">Transparency Standards</h3>
-          <div className="grid gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Our Commitments</CardTitle>
-                <CardDescription>
-                  Standards we maintain for data accuracy and transparency
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid md:grid-cols-2 gap-6">
-                  <div>
-                    <h4 className="font-semibold mb-3">Data Integrity</h4>
-                    <ul className="text-sm text-muted-foreground space-y-2">
-                      <li>• All data sources are clearly documented</li>
-                      <li>• Original sources are always linked</li>
-                      <li>• Data processing methods are transparent</li>
-                      <li>• Corrections and updates are publicly logged</li>
-                    </ul>
-                  </div>
-
-                  <div>
-                    <h4 className="font-semibold mb-3">Bias Prevention</h4>
-                    <ul className="text-sm text-muted-foreground space-y-2">
-                      <li>• Non-partisan approach to data presentation</li>
-                      <li>• Equal treatment of all political parties</li>
-                      <li>• Context provided for all statistical claims</li>
-                      <li>• Multiple perspectives included in analysis</li>
-                    </ul>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-
-        {/* Limitations */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center space-x-3">
-              <AlertTriangle className="h-6 w-6 text-orange-600" />
-              <CardTitle>Limitations & Caveats</CardTitle>
+        {/* Deterministic Entity Resolution Rules */}
+        <div className="space-y-6">
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div>
+              <h2 className="text-2xl font-bold tracking-tight text-foreground">Deterministic Entity Resolution Cascade</h2>
+              <p className="text-sm text-muted-foreground">Order of operations applied to crosswalk external records to canonical legislator profiles</p>
             </div>
-            <CardDescription>
-              Important limitations to consider when interpreting our analysis
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
-                <h4 className="font-semibold text-orange-800 mb-2">Reporting Delays</h4>
-                <p className="text-sm text-orange-700">
-                  Government data may be delayed due to filing requirements, processing times,
-                  or compliance issues. We clearly indicate when data may be incomplete.
-                </p>
-              </div>
+            <Badge variant="outline" className="font-mono text-xs">
+              Module: entity_resolution.rs
+            </Badge>
+          </div>
 
-              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                <h4 className="font-semibold text-blue-800 mb-2">Correlation vs. Causation</h4>
-                <p className="text-sm text-blue-700">
-                  Statistical relationships shown in our analysis indicate correlation, not
-                  necessarily causation. Users should consider multiple factors when drawing conclusions.
-                </p>
-              </div>
+          <div className="grid gap-4">
+            <Card className="border-border bg-card">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 font-mono text-xs font-bold text-primary">01</span>
+                    <CardTitle className="text-lg font-bold">Primary Key Match: Canonical Bioguide ID</CardTitle>
+                  </div>
+                  <Badge className="bg-green-600/15 text-green-700 dark:text-green-400 border-green-500/20">Confidence: 1.00 (Verified)</Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="text-sm text-muted-foreground pl-14">
+                When incoming source data (such as Congress.gov bill sponsorships or roll-call voting registries) provides an official alphanumeric Bioguide identifier (e.g., <code className="font-mono bg-muted px-1 py-0.5 rounded text-xs">A000360</code>), the engine performs an immediate primary key lookup against the <code className="font-mono text-foreground">members</code> table.
+              </CardContent>
+            </Card>
 
-              <div className="p-4 bg-purple-50 border border-purple-200 rounded-lg">
-                <h4 className="font-semibold text-purple-800 mb-2">Data Interpretation</h4>
-                <p className="text-sm text-purple-700">
-                  Government data can be complex and context-dependent. We encourage users to
-                  review original sources and consider multiple data points before making judgments.
+            <Card className="border-border bg-card">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 font-mono text-xs font-bold text-primary">02</span>
+                    <CardTitle className="text-lg font-bold">FEC Identifier Crosswalk</CardTitle>
+                  </div>
+                  <Badge className="bg-green-600/15 text-green-700 dark:text-green-400 border-green-500/20">Confidence: 1.00 (Verified)</Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="text-sm text-muted-foreground pl-14">
+                For campaign finance records from OpenFEC, the engine queries the <code className="font-mono text-foreground">member_identifiers</code> table where <code className="font-mono bg-muted px-1 py-0.5 rounded text-xs">scheme = &apos;fec&apos;</code>. This deterministically maps candidate IDs (such as <code className="font-mono bg-muted px-1 py-0.5 rounded text-xs">H8CA11084</code>) to their corresponding Bioguide entity without relying on name spelling.
+              </CardContent>
+            </Card>
+
+            <Card className="border-border bg-card">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 font-mono text-xs font-bold text-primary">03</span>
+                    <CardTitle className="text-lg font-bold">ICPSR Identifier Crosswalk</CardTitle>
+                  </div>
+                  <Badge className="bg-green-600/15 text-green-700 dark:text-green-400 border-green-500/20">Confidence: 1.00 (Verified)</Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="text-sm text-muted-foreground pl-14">
+                To link DW-NOMINATE ideological positioning scores and historical roll-call datasets from Voteview, records are resolved via <code className="font-mono text-foreground">member_identifiers</code> where <code className="font-mono bg-muted px-1 py-0.5 rounded text-xs">scheme = &apos;icpsr&apos;</code>.
+              </CardContent>
+            </Card>
+
+            <Card className="border-border bg-card">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-amber-500/10 font-mono text-xs font-bold text-amber-600 dark:text-amber-400">04</span>
+                    <CardTitle className="text-lg font-bold">Normalized Full Name + State + Chamber + Term Overlap</CardTitle>
+                  </div>
+                  <Badge variant="outline" className="border-amber-500/30 text-amber-600 dark:text-amber-400">Confidence: 0.85 (High Heuristic)</Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="text-sm text-muted-foreground pl-14">
+                When records lack stable unique identifiers (such as stock disclosures or unstructured state filings), strings undergo strict normalization (diacritics stripped, suffixes parsed, lowercased). A match is established if the normalized name matches exactly AND coincides with candidate state, congressional chamber, and active service date boundaries.
+              </CardContent>
+            </Card>
+
+            <Card className="border-border bg-card">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-orange-500/10 font-mono text-xs font-bold text-orange-600 dark:text-orange-400">05</span>
+                    <CardTitle className="text-lg font-bold">Normalized Full Name + State (Chamber or Dates Missing)</CardTitle>
+                  </div>
+                  <Badge variant="outline" className="border-orange-500/30 text-orange-600 dark:text-orange-400">Confidence: 0.65 (Quarantine Queue)</Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="text-sm text-muted-foreground pl-14 space-y-2">
+                <p>
+                  If chamber or term overlap cannot be confirmed, exact name and state matches yield a confidence score of 0.65.
                 </p>
-              </div>
+                <p className="font-semibold text-foreground">
+                  Safeguard Rule: Records resolved at confidence &lt; 0.85 are NEVER automatically attached to member financial totals or public profile aggregates. Instead, they are quarantined in the <code className="font-mono bg-muted px-1.5 py-0.5 rounded text-xs font-normal">entity_resolution_queue</code> table for manual human verification.
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+
+        {/* Confidence Scoring Tiers */}
+        <div className="space-y-6">
+          <h2 className="text-2xl font-bold tracking-tight text-foreground">Confidence Scoring Tiers & Enforcement</h2>
+          <div className="grid gap-6 md:grid-cols-3">
+            <Card className="border-border bg-card">
+              <CardHeader>
+                <div className="flex items-center gap-2 text-green-600 dark:text-green-400 mb-1">
+                  <Award className="h-5 w-5" />
+                  <CardTitle className="text-lg font-bold">Tier 1: Verified (1.00)</CardTitle>
+                </div>
+                <CardDescription>Cryptographic or official identifier match</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm text-muted-foreground leading-relaxed">
+                <p>
+                  Assigned exclusively to records joined via stable primary keys (<code className="font-mono">bioguide_id</code>, <code className="font-mono">fec</code> candidate ID, or <code className="font-mono">icpsr</code> ID).
+                </p>
+                <p className="border-t border-border pt-2 font-medium text-foreground">
+                  Usage: Directly populates member profile heroes, roll-call voting tables, campaign finance totals, and official legislative history.
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border bg-card">
+              <CardHeader>
+                <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 mb-1">
+                  <Target className="h-5 w-5" />
+                  <CardTitle className="text-lg font-bold">Tier 2: High Heuristic (0.85)</CardTitle>
+                </div>
+                <CardDescription>Multi-factor biographical overlap</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm text-muted-foreground leading-relaxed">
+                <p>
+                  Assigned when exact normalized string matching corroborates state, chamber, and service window boundaries.
+                </p>
+                <p className="border-t border-border pt-2 font-medium text-foreground">
+                  Usage: Displayed in secondary analytical panels (e.g., stock disclosures or lobbying correlation overlays) with prominent visual confidence indicators.
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border bg-card">
+              <CardHeader>
+                <div className="flex items-center gap-2 text-orange-600 dark:text-orange-400 mb-1">
+                  <AlertTriangle className="h-5 w-5" />
+                  <CardTitle className="text-lg font-bold">Tier 3: Low / Quarantine (&le; 0.65)</CardTitle>
+                </div>
+                <CardDescription>Ambiguous or partial string matches</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm text-muted-foreground leading-relaxed">
+                <p>
+                  Assigned when partial name matches lack chamber or date corroboration, or when common names create ambiguity across multiple politicians.
+                </p>
+                <p className="border-t border-border pt-2 font-medium text-foreground">
+                  Usage: Blocked from public API aggregation. Held in administrative resolution queues awaiting manual audit and sign-off.
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+
+        {/* First-Class Source Provenance Model */}
+        <div className="space-y-6">
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div>
+              <h2 className="text-2xl font-bold tracking-tight text-foreground">First-Class Source Provenance Envelopes</h2>
+              <p className="text-sm text-muted-foreground">Every API response embeds audit trails explaining origins and missing data</p>
             </div>
-          </CardContent>
-        </Card>
+            <Badge variant="outline" className="font-mono text-xs">
+              Contract: ProvenanceSummary
+            </Badge>
+          </div>
+
+          <Card className="border-border bg-card">
+            <CardContent className="pt-6 space-y-6">
+              <div className="grid md:grid-cols-2 gap-8 items-start">
+                <div className="space-y-4">
+                  <h3 className="text-base font-bold text-foreground">Transparent Audit Payloads</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed">
+                    Rather than presenting opaque numbers or silent zeros when upstream data is missing, every endpoint served by <code className="font-mono text-foreground">intel_backend</code> attaches a structured <code className="font-mono text-foreground">provenance</code> envelope.
+                  </p>
+                  <ul className="text-sm text-muted-foreground space-y-2">
+                    <li className="flex items-start gap-2">
+                      <CheckCircle2 className="h-4 w-4 text-green-600 mt-0.5 shrink-0" />
+                      <span><strong>Source Tracking:</strong> Lists exact upstream data providers, sync status, and fetch timestamps.</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <CheckCircle2 className="h-4 w-4 text-green-600 mt-0.5 shrink-0" />
+                      <span><strong>Confidence Tagging:</strong> Explicitly reports the resolution confidence tier governing the payload.</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <CheckCircle2 className="h-4 w-4 text-green-600 mt-0.5 shrink-0" />
+                      <span><strong>Structured Warnings:</strong> Returns standardized error codes when fields are unavailable (e.g., <code className="font-mono bg-muted px-1 py-0.5 rounded text-xs">next_election_unavailable_missing_terms</code>), preventing silent display distortion.</span>
+                    </li>
+                  </ul>
+                </div>
+
+                <div className="rounded-lg border border-border bg-muted/40 p-4 font-mono text-xs text-foreground overflow-x-auto space-y-2">
+                  <div className="text-muted-foreground">{'// Example API Response Envelope'}</div>
+                  <pre className="text-[11px] leading-relaxed">{`{
+  "bioguide_id": "A000360",
+  "official_full_name": "Mark Amodei",
+  "next_election": "2026-11-03",
+  "provenance": {
+    "sources": [
+      {
+        "source": "unitedstates_legislators",
+        "status": "success",
+        "fetched_at": "2026-07-03T04:12:00Z",
+        "confidence": "verified"
+      },
+      {
+        "source": "openfec",
+        "status": "success",
+        "fetched_at": "2026-07-03T02:00:00Z",
+        "confidence": "verified"
+      }
+    ],
+    "warnings": []
+  }
+}`}</pre>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   )

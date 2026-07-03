@@ -5,7 +5,7 @@ import Link from "next/link"
 import { ArrowRight, FileText, Landmark, Network, TrendingUp, Users } from "lucide-react"
 import { ArchiveHero, ArchiveMetrics, ArchivePage, ArchivePanel } from "@/components/ui/archive-ui"
 import { getAllLegislators, type Legislator } from "@/lib/services/legislators"
-import { getRecentTrades, type StockTrade } from "@/lib/services/stocks"
+import { formatAmountRange, getRecentTrades, type StockTrade } from "@/lib/services/stocks"
 import { getRecentFilings, type Filing } from "@/lib/services/lobbying"
 import { getRecentBills, type Bill } from "@/lib/services/bills"
 import { compactNumber, formatDate } from "@/lib/format"
@@ -67,8 +67,8 @@ export default function HomePage() {
     })),
     ...trades.slice(0, 3).map((trade) => ({
       type: "Trade",
-      title: `${trade.representative || "Member"} ${trade.type || "filed"} ${trade.ticker || "trade"}`,
-      meta: `${trade.amount || "Undisclosed range"} on ${formatDate(trade.transaction_date)}`,
+      title: `${trade.member_name || "Member"} ${trade.tx_type || "filed"} ${trade.ticker || "trade"}`,
+      meta: `${formatAmountRange(trade.amount_min, trade.amount_max)} on ${formatDate(trade.transaction_date || undefined)}`,
       href: "/stocks",
     })),
     ...filings.slice(0, 3).map((filing) => ({
@@ -106,11 +106,11 @@ export default function HomePage() {
                 <span className="font-serif text-2xl">{loading ? "..." : legislators.length}</span>
               </div>
               <div className="flex items-center justify-between border-b border-border pb-3">
-                <span className="text-sm text-muted-foreground">Disclosures sampled</span>
+                <span className="text-sm text-muted-foreground">Disclosure rows loaded</span>
                 <span className="font-serif text-2xl">{loading ? "..." : trades.length}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Senate filings sampled</span>
+                <span className="text-sm text-muted-foreground">LDA filings loaded</span>
                 <span className="font-serif text-2xl">{loading ? "..." : filings.length}</span>
               </div>
             </div>
@@ -120,9 +120,9 @@ export default function HomePage() {
 
       <ArchiveMetrics
         metrics={[
-          { label: "Active legislators", value: loading ? "..." : legislators.length || 535, detail: "Congress.gov directory", icon: <Users size={20} /> },
+          { label: "Active legislators", value: loading ? "..." : legislators.length, detail: "Canonical member table", icon: <Users size={20} /> },
           { label: "Bills tracked", value: loading ? "..." : compactNumber(bills.length), detail: "Recent Congress.gov feed", icon: <FileText size={20} /> },
-          { label: "Lobbying reports", value: loading ? "..." : compactNumber(filings.length), detail: `$${compactNumber(totalLobbyingIncome)} sampled spend`, icon: <Network size={20} /> },
+          { label: "Lobbying reports", value: loading ? "..." : compactNumber(filings.length), detail: `$${compactNumber(totalLobbyingIncome)} disclosed spend`, icon: <Network size={20} /> },
           { label: "Stock trades", value: loading ? "..." : compactNumber(trades.length), detail: `${matchedTradeMembers} matched members`, icon: <TrendingUp size={20} /> },
         ]}
       />
