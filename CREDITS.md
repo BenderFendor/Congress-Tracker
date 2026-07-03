@@ -66,6 +66,43 @@ The Congress Accountability Tracker aggregates data from multiple US government 
 - **What we adapted:** Free civic data aggregation API reference architecture. CIV.IQ's approach of combining multiple government APIs (FEC, LDA, USAspending) into a unified query interface informed our backend server design, which similarly aggregates CapitolTrades, Congress.gov, and OpenFEC under one REST API.
 - **Used in:** `backend/crates/backend_server/src/main.rs` — the multi-source aggregation pattern where legislators are enriched with trading data, committee assignments, and campaign finance information mirrors CIV.IQ's cross-referencing architecture.
 
+### [unitedstates/congress-legislators](https://github.com/unitedstates/congress-legislators)
+- **Author:** Community project (multiple contributors)
+- **License:** CC0 (Public Domain)
+- **What we use:** Current and historical legislator dataset with biographical data, terms, committee assignments, social media accounts, and crosswalk IDs (bioguide, FEC, ICPSR, OpenSecrets, Wikidata, GovTrack, VoteSmart). Primary source for member seeds in the `intel_backend` ingest pipeline.
+- **Used in:** `backend/crates/intel_backend/src/bin/ingest.rs` — the `members` subcommand downloads `legislators-current.json`, `legislators-social-media.json`, `committees-current.json`, and `committee-membership-current.json` from this dataset.
+
+### [Voteview](https://voteview.com)
+- **Organization:** Washington University in St. Louis, Department of Political Science
+- **License:** CC0 (Public Domain) / Various (data sourced from official congressional records)
+- **What we use:** Congressional roll-call vote data, NOMINATE ideology scores (DW-NOMINATE), and member-to-vote position records spanning all congresses.
+- **Used in:** `backend/crates/intel_backend/src/bin/ingest.rs` — the `voteview` subcommand downloads `HSall_members.csv`, `HSall_rollcalls.csv`, and `HSall_votes.csv` for ideology scores and vote analysis.
+
+### [LDA.gov](https://lda.gov)
+- **Provided by:** Office of the Clerk, U.S. House of Representatives / Senate Office of Public Records
+- **License:** Public Domain
+- **What we use:** Lobbying disclosure data including LD-1 (new registrations), LD-2 (quarterly activity), and LD-203 (contributions) filings with registrant, client, lobbying activity, and government entity information.
+- **Note:** This API replaced the legacy `lda.senate.gov` endpoint. The old URL will be unavailable after `07/31/2026`.
+- **Used in:** `backend/crates/intel_backend/src/bin/ingest.rs` — the `lobbying-filings` subcommand; `backend/crates/lobbying_client/` — API client for LDA filings.
+
+### [SQLx](https://github.com/launchbadge/sqlx)
+- **Author:** Launchbadge (Ryan C. and contributors)
+- **License:** Apache 2.0 / MIT
+- **What we use:** Async PostgreSQL driver with compile-time checked queries and migration support for the `intel_backend` crate.
+- **Used in:** `backend/crates/intel_backend/src/db.rs` — connection pooling, migration execution, and all repository queries.
+
+### [Moka](https://github.com/moka-rs/moka)
+- **Author:** Takeru Hirai and contributors
+- **License:** MIT
+- **What we use:** High-performance concurrent in-memory cache for GET endpoint responses in the `intel_backend` crate.
+- **Used in:** `backend/crates/intel_backend/src/cache.rs` — Moka `future::Cache` for hot endpoint payloads.
+
+### [clap](https://github.com/clap-rs/clap)
+- **Author:** Kevin K. and contributors
+- **License:** Apache 2.0 / MIT
+- **What we use:** Command-line argument parsing for the `ingest` binary.
+- **Used in:** `backend/crates/intel_backend/src/bin/ingest.rs` — all subcommand definitions and argument parsing.
+
 ---
 
 ## Data Sources
