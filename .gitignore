@@ -10,5 +10,7 @@
 *.log
 *.pid
 
+/reports/verification/*
+
 # Generated insta snapshots pending review
 *.snap.new
