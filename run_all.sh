@@ -10,6 +10,11 @@ cleanup() {
 # Trap SIGINT (Ctrl+C) and call cleanup
 trap cleanup SIGINT EXIT
 
+echo "Loading environment from .env..."
+set -a
+source .env
+set +a
+
 echo "Killing any process on ports 4020 and 3000..."
 # Kill any process using port 4020 or 3000
 for port in 4020 3000; do
@@ -40,9 +45,8 @@ if ! command -v cargo &> /dev/null; then
     exit 1
 fi
 
-# Build and run the backend
-# We use --bin if there are multiple, but default run should work for single binary package
-cargo run -p backend_server &
+# Build and run the canonical Postgres-backed backend.
+cargo run -p intel_backend --bin intel_backend &
 BACKEND_PID=$!
 cd ..
 
@@ -57,7 +61,7 @@ else
 fi
 
 $PNPM_CMD install
-$PNPM_CMD run dev &
+PORT=3000 NEXT_PUBLIC_BACKEND_URL="${NEXT_PUBLIC_BACKEND_URL:-http://localhost:4020}" $PNPM_CMD run dev &
 FRONTEND_PID=$!
 cd ..
 

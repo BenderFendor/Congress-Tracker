@@ -167,40 +167,6 @@ async fn main() {
     let civiq_client = CiviqClient::new();
     tracing::info!("CIV.IQ API client initialized (free, no key)");
 
-    // Initialize intel_backend (Postgres-backed intelligence layer)
-    let intel_router = match std::env::var("DATABASE_URL") {
-        Ok(db_url) if !db_url.is_empty() => {
-            match intel_backend::Db::connect(&db_url).await {
-                Ok(db) => {
-                    if let Err(e) = db.migrate().await {
-                        tracing::warn!("Intel backend migrations failed: {:?}", e);
-                        None
-                    } else {
-                        let cache = std::sync::Arc::new(intel_backend::CacheLayer::new(
-                            std::env::var("INTEL_CACHE_TTL_SECONDS")
-                                .ok()
-                                .and_then(|s| s.parse().ok())
-                                .unwrap_or(300),
-                        ));
-                        let repo = intel_backend::Repository::new(db, cache.clone());
-                        tracing::info!("Intel backend initialized with Postgres");
-                        Some(intel_backend::routes::build_router(repo, cache))
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!("Intel backend DB connection failed: {:?}. Falling back to pass-through mode.", e);
-                    None
-                }
-            }
-        }
-        _ => {
-            tracing::warn!(
-                "DATABASE_URL not set. Running without Intel backend (pass-through mode)."
-            );
-            None
-        }
-    };
-
     let app_state = Arc::new(AppState {
         capitoltrades: Arc::new(capitoltrades_client),
         congress: congress_client,
@@ -258,9 +224,6 @@ async fn main() {
         .layer(cors)
         .with_state(app_state);
 
-    let legacy: Router = app;
-    let intel: Router = intel_router.unwrap_or_else(Router::new);
-    let app = legacy.merge(intel);
     let port = std::env::var("PORT")
         .ok()
         .and_then(|p| p.parse().ok())
