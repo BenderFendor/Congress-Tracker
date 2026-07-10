@@ -1,4 +1,5 @@
 pub mod cache;
+pub mod fec_bulk;
 pub mod config;
 pub mod db;
 pub mod disclosures;

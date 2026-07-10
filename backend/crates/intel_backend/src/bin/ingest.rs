@@ -119,6 +119,18 @@ enum Command {
         #[arg(long, default_value = "100")]
         limit: u32,
     },
+    /// Download and ingest FEC bulk ZIP data for one or more cycles.
+    ///
+    /// Downloads individual contributions (indiv), committee transactions (oth),
+    /// committee master (cm), and candidate-committee links (ccl) from
+    /// fec.gov/files/bulk-downloads/. Parses pipe-delimited records into staging
+    /// tables for canonicalization.
+    FecBulk {
+        #[arg(long, value_delimiter = ',', default_value = "2026")]
+        cycles: Vec<u32>,
+        #[arg(long, default_value_t = false)]
+        force: bool,
+    },
     /// Ingest lobbying filings
     LobbyingFilings {
         #[arg(long)]
@@ -229,6 +241,7 @@ async fn main() {
             committee_id,
             limit,
         } => cmd_fec_transactions(&repo, *cycle, committee_id, *limit).await,
+        Command::FecBulk { cycles, force } => cmd_fec_bulk(cycles, *force).await,
         Command::FecIndependentExpenditures {
             cycle,
             committee_id,
@@ -1996,6 +2009,111 @@ async fn try_fec_committees(
     }
 
     Ok((seen, written))
+}
+
+// ── FEC Bulk ZIP ingestion ─────────────────────────────────────────────────
+
+/// Download and parse FEC bulk ZIP files for the given cycles.
+async fn cmd_fec_bulk(cycles: &[u32], force: bool) {
+    use intel_backend::fec_bulk;
+    use intel_backend::fec_bulk::download::{download_zip, local_path};
+    use intel_backend::fec_bulk::parse::{
+        parse_committee_txns_from_zip,
+        parse_individuals_from_zip,
+    };
+
+    let storage = fec_bulk::storage_dir();
+    let base_url = fec_bulk::CycleFiles::base_url();
+
+    for &cycle in cycles {
+        if !fec_bulk::valid_cycle(cycle) {
+            tracing::warn!(cycle, "Invalid election cycle (must be even, >= 1980), skipping");
+            continue;
+        }
+
+        let cycle_files = fec_bulk::CycleFiles::new(cycle);
+        info!(cycle, "Starting FEC bulk ingest");
+
+        for file in &cycle_files.files {
+            let url = format!("{}/{}", base_url, file.url_path);
+            let dest = local_path(&storage, &file.dataset_name);
+
+            match download_zip(&url, &dest, force).await {
+                Ok(hash) => {
+                    info!(
+                        dataset = %file.dataset_name,
+                        hash = %hash,
+                        "Downloaded {} ({})",
+                        file.label,
+                        file.dataset_name
+                    );
+                }
+                Err(e) => {
+                    tracing::error!(
+                        dataset = %file.dataset_name,
+                        error = %e,
+                        "Failed to download {}",
+                        file.label
+                    );
+                    // Continue with other files instead of aborting
+                }
+            }
+        }
+
+        // Parse individual contributions ZIP
+        let indiv_path = local_path(&storage, &format!("indiv{}", cycle_files.suffix));
+        if indiv_path.exists() {
+            match std::fs::read(&indiv_path) {
+                Ok(bytes) => {
+                    let entry_name = format!("itcont.txt");
+                    match parse_individuals_from_zip(&bytes, &entry_name) {
+                        Ok((rows, skipped)) => {
+                            info!(
+                                cycle,
+                                rows = rows.len(),
+                                skipped = skipped,
+                                "Parsed individual contributions"
+                            );
+                        }
+                        Err(e) => {
+                            tracing::error!(cycle, error = %e, "Failed to parse individuals ZIP");
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::error!(cycle, error = %e, "Failed to read individuals ZIP");
+                }
+            }
+        }
+
+        // Parse committee transactions ZIP (oth)
+        let oth_path = local_path(&storage, &format!("oth{}", cycle_files.suffix));
+        if oth_path.exists() {
+            match std::fs::read(&oth_path) {
+                Ok(bytes) => {
+                    let entry_name = format!("itpas2.txt");
+                    match parse_committee_txns_from_zip(&bytes, &entry_name) {
+                        Ok((rows, skipped)) => {
+                            info!(
+                                cycle,
+                                rows = rows.len(),
+                                skipped = skipped,
+                                "Parsed committee transactions"
+                            );
+                        }
+                        Err(e) => {
+                            tracing::error!(cycle, error = %e, "Failed to parse oth ZIP");
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::error!(cycle, error = %e, "Failed to read oth ZIP");
+                }
+            }
+        }
+    }
+
+    info!("FEC bulk ingest complete");
 }
 
 // ── FEC Transactions (receipts) ───────────────────────────────────────────
