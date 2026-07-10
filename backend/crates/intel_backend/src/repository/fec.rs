@@ -788,17 +788,28 @@ impl Repository {
             None => return Ok(None),
         };
 
-        // Get totals from the MV (still the fastest source for aggregates)
-        let totals: Option<(f64, f64, f64, f64, f64)> = sqlx::query_as(
-            r#"SELECT COALESCE(direct_receipts, 0),
-                      COALESCE(pac_receipts, 0),
-                      COALESCE(individual_receipts, 0),
-                      COALESCE(independent_expenditures_supporting, 0),
-                      COALESCE(independent_expenditures_opposing, 0)
-               FROM member_funding_cycle_mv
-               WHERE bioguide_id = $1 AND cycle = $2"#,
+        // Compute totals from canonical tables via candidate-committee crosswalk.
+        // This is the correct source when bulk data has been ingested.
+        let totals: Option<(f64, f64, f64)> = sqlx::query_as(
+            r#"
+            WITH my_committees AS (
+                SELECT committee_id FROM fec_candidate_committees
+                WHERE candidate_id = $1 AND election_cycle = $2
+            )
+            SELECT
+                COALESCE((SELECT SUM(amount) FROM fec_canonical_individual_receipts
+                          WHERE committee_id IN (SELECT committee_id FROM my_committees)
+                            AND election_cycle = $2 AND is_current = true), 0),
+                COALESCE((SELECT SUM(amount) FROM fec_canonical_individual_receipts
+                          WHERE committee_id IN (SELECT committee_id FROM my_committees)
+                            AND election_cycle = $2 AND is_current = true
+                            AND donor_key != ''), 0),
+                COALESCE((SELECT SUM(amount) FROM fec_canonical_committee_receipts
+                          WHERE recipient_committee_id IN (SELECT committee_id FROM my_committees)
+                            AND election_cycle = $2 AND is_current = true), 0)
+            "#,
         )
-        .bind(bioguide_id)
+        .bind(&candidate_id)
         .bind(cycle)
         .fetch_optional(self.pool())
         .await?;
@@ -847,8 +858,8 @@ impl Repository {
         })
         .collect();
 
-    let has_rankings = !top_donors.is_empty() || !top_committees.is_empty();
-    let (direct, pac, indiv, ie_support, ie_oppose) = totals.unwrap_or_default();
+        let has_rankings = !top_donors.is_empty() || !top_committees.is_empty();
+        let (direct, indiv, pac) = totals.unwrap_or_default();
 
         let provenance = ProvenanceSummary {
             sources: vec![ProvenanceSource {
@@ -870,8 +881,8 @@ impl Repository {
             direct_receipts: direct,
             pac_receipts: pac,
             individual_receipts: indiv,
-            independent_expenditures_supporting: ie_support,
-            independent_expenditures_opposing: ie_oppose,
+            independent_expenditures_supporting: 0.0,
+            independent_expenditures_opposing: 0.0,
             top_donors,
             top_committees,
             influence_networks: Vec::new(),
