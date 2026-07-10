@@ -790,7 +790,7 @@ impl Repository {
 
         // Compute totals from canonical tables via candidate-committee crosswalk.
         // This is the correct source when bulk data has been ingested.
-        let totals: Option<(f64, f64, f64)> = sqlx::query_as(
+        let totals: Option<(f64, f64)> = sqlx::query_as(
             r#"
             WITH my_committees AS (
                 SELECT committee_id FROM fec_candidate_committees
@@ -800,10 +800,6 @@ impl Repository {
                 COALESCE((SELECT SUM(amount) FROM fec_canonical_individual_receipts
                           WHERE committee_id IN (SELECT committee_id FROM my_committees)
                             AND election_cycle = $2 AND is_current = true), 0),
-                COALESCE((SELECT SUM(amount) FROM fec_canonical_individual_receipts
-                          WHERE committee_id IN (SELECT committee_id FROM my_committees)
-                            AND election_cycle = $2 AND is_current = true
-                            AND donor_key != ''), 0),
                 COALESCE((SELECT SUM(amount) FROM fec_canonical_committee_receipts
                           WHERE recipient_committee_id IN (SELECT committee_id FROM my_committees)
                             AND election_cycle = $2 AND is_current = true), 0)
@@ -859,7 +855,8 @@ impl Repository {
         .collect();
 
         let has_rankings = !top_donors.is_empty() || !top_committees.is_empty();
-        let (direct, indiv, pac) = totals.unwrap_or_default();
+        let (indiv, pac) = totals.unwrap_or_default();
+        let direct = indiv + pac;
 
         let provenance = ProvenanceSummary {
             sources: vec![ProvenanceSource {
@@ -889,9 +886,9 @@ impl Repository {
             has_successful_fec_run: has_rankings,
             provenance,
         }))
+
     }
 }
-
 // ── Private row types ───────────────────────────────────────────────────
 
 #[derive(sqlx::FromRow)]
