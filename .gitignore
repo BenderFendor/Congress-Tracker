@@ -8,8 +8,7 @@
 # Runtime artifacts
 *.log
 *.pid
-/worker_storage/
-/backend/log/
+**/log/
 
 /reports/verification/*
 *.snap.new
