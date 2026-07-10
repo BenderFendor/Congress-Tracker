@@ -63,6 +63,12 @@ async fn main() {
         .max(60);
     let mut profile_refresh_tick =
         tokio::time::interval(Duration::from_secs(profile_refresh_seconds));
+    let fec_refresh_seconds: u64 = std::env::var("FEC_BULK_REFRESH_SECONDS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(21_600)
+        .max(3600);
+    let mut fec_bulk_tick = tokio::time::interval(Duration::from_secs(fec_refresh_seconds));
 
     loop {
         tokio::select! {
@@ -96,6 +102,14 @@ async fn main() {
                 tokio::spawn(async move {
                     if let Err(e) = run_profile_evidence_refresh(&refresh_pool).await {
                         warn!(error = %e, "All-member profile evidence refresh failed");
+                    }
+                });
+            }
+            _ = fec_bulk_tick.tick() => {
+                let refresh_pool = pool.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = run_fec_bulk_refresh(&refresh_pool).await {
+                        warn!(error = %e, "FEC bulk refresh failed");
                     }
                 });
             }
@@ -147,6 +161,60 @@ async fn run_profile_evidence_refresh(pool: &PgPool) -> Result<(), Box<dyn std::
     }
 }
 
+// ── FEC Bulk ZIP refresh (scheduled) ────────────────────────────────────────
+
+/// Check and refresh FEC bulk ZIP data periodically.
+/// Runs the `ingest fec-bulk` CLI command for the current cycle.
+async fn run_fec_bulk_refresh(pool: &PgPool) -> Result<(), Box<dyn std::error::Error>> {
+    const FEC_BULK_LOCK: i64 = 42_042_042_042;
+    let mut lock_connection = pool.acquire().await?;
+    let locked: bool = sqlx::query_scalar("SELECT pg_try_advisory_lock($1)")
+        .bind(FEC_BULK_LOCK)
+        .fetch_one(&mut *lock_connection)
+        .await?;
+    if !locked {
+        info!("FEC bulk refresh already running on another worker");
+        return Ok(());
+    }
+
+    info!("Starting scheduled FEC bulk refresh");
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
+    let current_cycle = {
+        let year = chrono::Utc::now().year();
+        if year % 2 == 0 { year } else { year - 1 }
+    };
+    let mut command = TokioCommand::new(&cargo);
+    command
+        .args([
+            "run",
+            "-p",
+            "intel_backend",
+            "--bin",
+            "ingest",
+            "--",
+            "fec-bulk",
+            "--cycles",
+            &current_cycle.to_string(),
+        ])
+        .kill_on_drop(true);
+
+    let result = tokio::time::timeout(Duration::from_secs(7_200), command.status()).await;
+
+    let _: bool = sqlx::query_scalar("SELECT pg_advisory_unlock($1)")
+        .bind(FEC_BULK_LOCK)
+        .fetch_one(&mut *lock_connection)
+        .await?;
+
+    match result {
+        Ok(Ok(status)) if status.success() => {
+            info!("Scheduled FEC bulk refresh completed");
+            Ok(())
+        }
+        Ok(Ok(status)) => Err(format!("fec-bulk ingest exited with {status}").into()),
+        Ok(Err(error)) => Err(error.into()),
+        Err(_) => Err("fec-bulk ingest exceeded the two-hour timeout".into()),
+    }
+}
 // ── Discovery ────────────────────────────────────────────────────────────────
 
 /// Advisory lock key helper — deterministic hash of a string.

@@ -10,6 +10,8 @@
 
 pub mod download;
 pub mod parse;
+pub mod canonicalize;
+pub mod rankings;
 
 
 /// FEC bulk data file types for a given election cycle.

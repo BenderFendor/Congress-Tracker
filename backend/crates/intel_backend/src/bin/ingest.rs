@@ -241,7 +241,7 @@ async fn main() {
             committee_id,
             limit,
         } => cmd_fec_transactions(&repo, *cycle, committee_id, *limit).await,
-        Command::FecBulk { cycles, force } => cmd_fec_bulk(cycles, *force).await,
+        Command::FecBulk { cycles, force } => cmd_fec_bulk(&repo, cycles, *force).await,
         Command::FecIndependentExpenditures {
             cycle,
             committee_id,
@@ -2013,14 +2013,10 @@ async fn try_fec_committees(
 
 // ── FEC Bulk ZIP ingestion ─────────────────────────────────────────────────
 
-/// Download and parse FEC bulk ZIP files for the given cycles.
-async fn cmd_fec_bulk(cycles: &[u32], force: bool) {
+/// Download FEC bulk ZIPs, parse into staging, canonicalize, build rankings.
+async fn cmd_fec_bulk(repo: &Repository, cycles: &[u32], force: bool) {
     use intel_backend::fec_bulk;
-    use intel_backend::fec_bulk::download::{download_zip, local_path};
-    use intel_backend::fec_bulk::parse::{
-        parse_committee_txns_from_zip,
-        parse_individuals_from_zip,
-    };
+    use intel_backend::fec_bulk::download::{download_zip, local_path, sha256_of};
 
     let storage = fec_bulk::storage_dir();
     let base_url = fec_bulk::CycleFiles::base_url();
@@ -2032,84 +2028,136 @@ async fn cmd_fec_bulk(cycles: &[u32], force: bool) {
         }
 
         let cycle_files = fec_bulk::CycleFiles::new(cycle);
-        info!(cycle, "Starting FEC bulk ingest");
+        let suffix = &cycle_files.suffix;
+        let import_batch = uuid::Uuid::new_v4();
+        info!(cycle, import_batch = %import_batch, "Starting FEC bulk ingest");
 
+        // ── Step 1: Download all ZIPs ────────────────────────────────────
         for file in &cycle_files.files {
             let url = format!("{}/{}", base_url, file.url_path);
             let dest = local_path(&storage, &file.dataset_name);
 
+            if dest.exists() && !force {
+                if let Ok(hash) = sha256_of(&dest).await {
+                    if repo.bulk_import_exists(&file.dataset_name, &hash).await.unwrap_or(false) {
+                        info!(dataset = %file.dataset_name, hash = %hash, "Already imported, skipping");
+                        continue;
+                    }
+                }
+            }
+
             match download_zip(&url, &dest, force).await {
                 Ok(hash) => {
-                    info!(
-                        dataset = %file.dataset_name,
-                        hash = %hash,
-                        "Downloaded {} ({})",
-                        file.label,
-                        file.dataset_name
-                    );
+                    let size = std::fs::metadata(&dest).map(|m| m.len() as i64).unwrap_or(0);
+                    if let Err(e) = repo.insert_bulk_import(&file.dataset_name, cycle as i32, &url, &hash, size).await {
+                        tracing::warn!(dataset = %file.dataset_name, error = %e, "Import record failed");
+                    }
+                    info!(dataset = %file.dataset_name, hash = %hash, "Downloaded {}", file.label);
                 }
-                Err(e) => {
-                    tracing::error!(
-                        dataset = %file.dataset_name,
-                        error = %e,
-                        "Failed to download {}",
-                        file.label
-                    );
-                    // Continue with other files instead of aborting
+                Err(e) => tracing::error!(dataset = %file.dataset_name, error = %e, "Failed to download {}", file.label),
+            }
+        }
+
+        // ── Step 2: Committee master (cm) ────────────────────────────────
+        {
+            let path = local_path(&storage, &format!("cm{}", suffix));
+            if path.exists() {
+                match std::fs::read(&path) {
+                    Ok(bytes) => match fec_bulk::parse::extract_zip_entry(&bytes, "cm.txt") {
+                        Ok(text) => {
+                            let (rows, skipped) = fec_bulk::parse::parse_committee_master(&text);
+                            info!(cycle, rows = rows.len(), skipped = skipped, "Committee master parsed");
+                            for row in &rows {
+                                if let Err(e) = repo.upsert_committee_master(row).await {
+                                    tracing::warn!(c = %row.committee_id, error = %e, "Skipping cm row");
+                                }
+                            }
+                            let _ = repo.update_bulk_import_status(&format!("cm{}", suffix), "", "parsed", rows.len() as i64, None).await;
+                        }
+                        Err(e) => tracing::error!(cycle, error = %e, "cm.txt extraction failed"),
+                    },
+                    Err(e) => tracing::error!(cycle, error = %e, "Reading cm ZIP failed"),
                 }
             }
         }
 
-        // Parse individual contributions ZIP
-        let indiv_path = local_path(&storage, &format!("indiv{}", cycle_files.suffix));
-        if indiv_path.exists() {
-            match std::fs::read(&indiv_path) {
-                Ok(bytes) => {
-                    let entry_name = format!("itcont.txt");
-                    match parse_individuals_from_zip(&bytes, &entry_name) {
-                        Ok((rows, skipped)) => {
-                            info!(
-                                cycle,
-                                rows = rows.len(),
-                                skipped = skipped,
-                                "Parsed individual contributions"
-                            );
+        // ── Step 3: Candidate-committee links (ccl) ──────────────────────
+        {
+            let path = local_path(&storage, &format!("ccl{}", suffix));
+            if path.exists() {
+                match std::fs::read(&path) {
+                    Ok(bytes) => match fec_bulk::parse::extract_zip_entry(&bytes, "ccl.txt") {
+                        Ok(text) => {
+                            let (rows, skipped) = fec_bulk::parse::parse_ccl(&text);
+                            info!(cycle, rows = rows.len(), skipped = skipped, "CCL parsed");
+                            for row in &rows {
+                                if let Err(e) = repo.upsert_candidate_committee(row).await {
+                                    tracing::warn!(cand = %row.candidate_id, cmte = %row.committee_id, error = %e, "Skipping ccl row");
+                                }
+                            }
+                            let _ = repo.update_bulk_import_status(&format!("ccl{}", suffix), "", "parsed", rows.len() as i64, None).await;
                         }
-                        Err(e) => {
-                            tracing::error!(cycle, error = %e, "Failed to parse individuals ZIP");
-                        }
-                    }
-                }
-                Err(e) => {
-                    tracing::error!(cycle, error = %e, "Failed to read individuals ZIP");
+                        Err(e) => tracing::error!(cycle, error = %e, "ccl.txt extraction failed"),
+                    },
+                    Err(e) => tracing::error!(cycle, error = %e, "Reading ccl ZIP failed"),
                 }
             }
         }
 
-        // Parse committee transactions ZIP (oth)
-        let oth_path = local_path(&storage, &format!("oth{}", cycle_files.suffix));
-        if oth_path.exists() {
-            match std::fs::read(&oth_path) {
-                Ok(bytes) => {
-                    let entry_name = format!("itpas2.txt");
-                    match parse_committee_txns_from_zip(&bytes, &entry_name) {
+        // ── Step 4: Individual contributions (indiv) ─────────────────────
+        {
+            let path = local_path(&storage, &format!("indiv{}", suffix));
+            if path.exists() {
+                let _ = repo.insert_bulk_import(&format!("indiv{}", suffix), cycle as i32, "", "",
+                    std::fs::metadata(&path).map(|m| m.len() as i64).unwrap_or(0)).await;
+                match std::fs::read(&path) {
+                    Ok(bytes) => match fec_bulk::parse::parse_individuals_from_zip(&bytes, "itcont.txt") {
                         Ok((rows, skipped)) => {
-                            info!(
-                                cycle,
-                                rows = rows.len(),
-                                skipped = skipped,
-                                "Parsed committee transactions"
-                            );
+                            info!(cycle, rows = rows.len(), skipped = skipped, "Individuals parsed");
+                            for chunk in rows.chunks(1000) {
+                                if let Err(e) = repo.insert_staging_individuals_batch(chunk, import_batch, cycle as i32).await {
+                                    tracing::warn!(error = %e, "indiv batch insert failed");
+                                }
+                            }
+                            let _ = repo.update_bulk_import_status(&format!("indiv{}", suffix), "", "parsed", rows.len() as i64, None).await;
                         }
-                        Err(e) => {
-                            tracing::error!(cycle, error = %e, "Failed to parse oth ZIP");
-                        }
-                    }
-                }
-                Err(e) => {
-                    tracing::error!(cycle, error = %e, "Failed to read oth ZIP");
+                        Err(e) => tracing::error!(cycle, error = %e, "indiv parsing failed"),
+                    },
+                    Err(e) => tracing::error!(cycle, error = %e, "Reading indiv ZIP failed"),
                 }
             }
+        }
+
+        // ── Step 5: Committee transactions (oth) ─────────────────────────
+        {
+            let path = local_path(&storage, &format!("oth{}", suffix));
+            if path.exists() {
+                let _ = repo.insert_bulk_import(&format!("oth{}", suffix), cycle as i32, "", "",
+                    std::fs::metadata(&path).map(|m| m.len() as i64).unwrap_or(0)).await;
+                match std::fs::read(&path) {
+                    Ok(bytes) => match fec_bulk::parse::parse_committee_txns_from_zip(&bytes, "itpas2.txt") {
+                        Ok((rows, skipped)) => {
+                            info!(cycle, rows = rows.len(), skipped = skipped, "Committee txns parsed");
+                            for chunk in rows.chunks(1000) {
+                                if let Err(e) = repo.insert_staging_committee_txns_batch(chunk, import_batch, cycle as i32).await {
+                                    tracing::warn!(error = %e, "oth batch insert failed");
+                                }
+                            }
+                            let _ = repo.update_bulk_import_status(&format!("oth{}", suffix), "", "parsed", rows.len() as i64, None).await;
+                        }
+                        Err(e) => tracing::error!(cycle, error = %e, "oth parsing failed"),
+                    },
+                    Err(e) => tracing::error!(cycle, error = %e, "Reading oth ZIP failed"),
+                }
+            }
+        }
+
+        // ── Step 6: Canonicalize + build rankings + refresh MV ─────────
+        info!(cycle, import_batch = %import_batch, "Running canonicalization and rankings");
+        if let Err(e) = repo.run_bulk_canonicalize_and_rank(cycle as i32, import_batch).await {
+            tracing::error!(cycle, error = %e, "Canonicalization/ranking failed");
+        } else {
+            info!(cycle, "Canonicalization and rankings complete");
         }
     }
 

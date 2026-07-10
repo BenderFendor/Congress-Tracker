@@ -46,8 +46,32 @@ pub async fn get_member_funding(
         state.cache.set(cache_key, cache_value).await;
         return Ok(Json(cached));
     }
+    // 3. Precomputed rankings (bulk import path — preferred)
+    match state
+        .repo
+        .get_member_funding_from_rankings(&bioguide_id, cycle)
+        .await
+    {
+        Ok(Some(funding))
+            if !funding.top_donors.is_empty() || !funding.top_committees.is_empty() =>
+        {
+            let cache_value = serde_json::to_value(&funding)
+                .map_err(|_| crate::models::AppError::Internal("cache serialization failed".into()))?;
+            state.cache.set(cache_key, cache_value).await;
+            return Ok(Json(funding));
+        }
+        Ok(Some(_)) => {
+            tracing::info!(bioguide_id = %bioguide_id, cycle = %cycle, "No rankings found, falling back to MV");
+        }
+        Ok(None) => {
+            tracing::info!(bioguide_id = %bioguide_id, cycle = %cycle, "No FEC candidate found, falling back to MV");
+        }
+        Err(e) => {
+            tracing::warn!(bioguide_id = %bioguide_id, error = %e, "Rankings query failed, falling back to MV");
+        }
+    }
 
-    // 3. DB materialized view
+    // 4. DB materialized view (legacy / totals-only path)
     let funding = state
         .repo
         .get_member_funding(&bioguide_id, cycle)
@@ -57,7 +81,7 @@ pub async fn get_member_funding(
             crate::models::AppError::NotFound(format!("Member {} not found", bioguide_id))
         })?;
 
-    // 4. If MV has no data, auto_ingest from OpenFEC
+    // 5. If MV has no data, auto_ingest from OpenFEC
     tracing::info!(
         bioguide_id = %bioguide_id,
         top_donors_len = funding.top_donors.len(),
@@ -116,7 +140,7 @@ pub async fn get_member_funding(
         funding
     };
 
-    // 5. Cache in memory and return
+    // 6. Cache in memory and return
     let cache_value = serde_json::to_value(&funding)
         .map_err(|_| crate::models::AppError::Internal("serialization failed".into()))?;
     state.cache.set(cache_key, cache_value).await;

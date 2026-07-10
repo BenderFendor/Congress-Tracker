@@ -531,6 +531,354 @@ impl Repository {
         .await?;
         Ok(())
     }
+
+    // ── Bulk import tracking ────────────────────────────────────────────
+
+    /// Record a successful bulk ZIP import.
+    pub async fn insert_bulk_import(
+        &self,
+        dataset_name: &str,
+        election_cycle: i32,
+        source_url: &str,
+        sha256: &str,
+        compressed_bytes: i64,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"INSERT INTO fec_bulk_imports
+               (dataset_name, election_cycle, source_url, sha256, compressed_bytes, status)
+               VALUES ($1, $2, $3, $4, $5, 'downloaded')
+               ON CONFLICT (dataset_name, sha256) DO NOTHING"#,
+        )
+        .bind(dataset_name)
+        .bind(election_cycle)
+        .bind(source_url)
+        .bind(sha256)
+        .bind(compressed_bytes)
+        .execute(self.pool())
+        .await?;
+        Ok(())
+    }
+
+    /// Update a bulk import's status and row count.
+    pub async fn update_bulk_import_status(
+        &self,
+        dataset_name: &str,
+        sha256: &str,
+        status: &str,
+        extracted_rows: i64,
+        error_message: Option<&str>,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"UPDATE fec_bulk_imports
+               SET status = $1, extracted_rows = $2, error_message = $3
+               WHERE dataset_name = $4 AND sha256 = $5"#,
+        )
+        .bind(status)
+        .bind(extracted_rows)
+        .bind(error_message)
+        .bind(dataset_name)
+        .bind(sha256)
+        .execute(self.pool())
+        .await?;
+        Ok(())
+    }
+
+    /// Check if a given dataset+sha256 was already downloaded (idempotency).
+    pub async fn bulk_import_exists(&self, dataset_name: &str, sha256: &str) -> Result<bool, sqlx::Error> {
+        let row: Option<(bool,)> = sqlx::query_as(
+            "SELECT true FROM fec_bulk_imports WHERE dataset_name = $1 AND sha256 = $2",
+        )
+        .bind(dataset_name)
+        .bind(sha256)
+        .fetch_optional(self.pool())
+        .await?;
+        Ok(row.is_some())
+    }
+
+    // ── Staging inserts (batched) ────────────────────────────────────────
+
+    /// Insert a batch of raw individual receipt rows into the staging table.
+    pub async fn insert_staging_individuals_batch(
+        &self,
+        rows: &[crate::fec_bulk::parse::RawIndividualReceipt],
+        import_batch: uuid::Uuid,
+        file_year: i32,
+    ) -> Result<i64, sqlx::Error> {
+        use sqlx::QueryBuilder;
+        let mut builder = QueryBuilder::new(
+            "INSERT INTO fec_staging_individuals (
+                sub_id, committee_id, amendment_ind, report_type, transaction_pgi,
+                image_num, transaction_type, entity_type, contributor_name,
+                contributor_city, contributor_state, contributor_zip,
+                contributor_employer, contributor_occupation, transaction_date,
+                transaction_amount, other_id, tran_id, filing_num, memo_code,
+                memo_text, file_year, import_batch
+            ) "
+        );
+        builder.push_values(rows, |mut b, row| {
+            b.push_bind(row.sub_id)
+             .push_bind(&row.committee_id)
+             .push_bind(row.amendment_ind.as_deref())
+             .push_bind(row.report_type.as_deref())
+             .push_bind(row.transaction_pgi.as_deref())
+             .push_bind(row.image_num.as_deref())
+             .push_bind(row.transaction_type.as_deref())
+             .push_bind(row.entity_type.as_deref())
+             .push_bind(row.contributor_name.as_deref())
+             .push_bind(row.contributor_city.as_deref())
+             .push_bind(row.contributor_state.as_deref())
+             .push_bind(row.contributor_zip.as_deref())
+             .push_bind(row.contributor_employer.as_deref())
+             .push_bind(row.contributor_occupation.as_deref())
+             .push_bind(row.transaction_date)
+             .push_bind(row.transaction_amount)
+             .push_bind(row.other_id.as_deref())
+             .push_bind(row.tran_id.as_deref())
+             .push_bind(row.filing_num)
+             .push_bind(row.memo_code.as_deref())
+             .push_bind(row.memo_text.as_deref())
+             .push_bind(file_year)
+             .push_bind(import_batch);
+        });
+        builder.push(" ON CONFLICT (sub_id, import_batch) DO NOTHING");
+        let result = builder.build().execute(self.pool()).await?;
+        Ok(result.rows_affected() as i64)
+    }
+
+    /// Insert a batch of raw committee transaction rows into the staging table.
+    pub async fn insert_staging_committee_txns_batch(
+        &self,
+        rows: &[crate::fec_bulk::parse::RawCommitteeTxn],
+        import_batch: uuid::Uuid,
+        file_year: i32,
+    ) -> Result<i64, sqlx::Error> {
+        use sqlx::QueryBuilder;
+        let mut builder = QueryBuilder::new(
+            "INSERT INTO fec_staging_committee_txns (
+                sub_id, committee_id, amendment_ind, report_type, transaction_pgi,
+                image_num, transaction_type, entity_type, contributor_name,
+                contributor_city, contributor_state, contributor_zip,
+                contributor_employer, contributor_occupation, transaction_date,
+                transaction_amount, other_id, tran_id, filing_num, memo_code,
+                memo_text, file_year, import_batch
+            ) "
+        );
+        builder.push_values(rows, |mut b, row| {
+            b.push_bind(row.sub_id)
+             .push_bind(&row.committee_id)
+             .push_bind(row.amendment_ind.as_deref())
+             .push_bind(row.report_type.as_deref())
+             .push_bind(row.transaction_pgi.as_deref())
+             .push_bind(row.image_num.as_deref())
+             .push_bind(row.transaction_type.as_deref())
+             .push_bind(row.entity_type.as_deref())
+             .push_bind(row.contributor_name.as_deref())
+             .push_bind(row.contributor_city.as_deref())
+             .push_bind(row.contributor_state.as_deref())
+             .push_bind(row.contributor_zip.as_deref())
+             .push_bind(row.contributor_employer.as_deref())
+             .push_bind(row.contributor_occupation.as_deref())
+             .push_bind(row.transaction_date)
+             .push_bind(row.transaction_amount)
+             .push_bind(row.other_id.as_deref())
+             .push_bind(row.tran_id.as_deref())
+             .push_bind(row.filing_num)
+             .push_bind(row.memo_code.as_deref())
+             .push_bind(row.memo_text.as_deref())
+             .push_bind(file_year)
+             .push_bind(import_batch);
+        });
+        builder.push(" ON CONFLICT (sub_id, import_batch) DO NOTHING");
+        let result = builder.build().execute(self.pool()).await?;
+        Ok(result.rows_affected() as i64)
+    }
+
+    // ── Committee master and candidate-committee links ───────────────────
+
+    /// Upsert a committee from the `cm` bulk file.
+    pub async fn upsert_committee_master(
+        &self,
+        row: &crate::fec_bulk::parse::CommitteeMasterRow,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"INSERT INTO fec_committees
+               (committee_id, name, committee_type, party, state,
+                treasurer_name, source_run_id)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)
+               ON CONFLICT (committee_id) DO UPDATE SET
+                 name            = COALESCE(EXCLUDED.name, fec_committees.name),
+                 committee_type  = COALESCE(EXCLUDED.committee_type, fec_committees.committee_type),
+                 party           = COALESCE(EXCLUDED.party, fec_committees.party),
+                 state           = COALESCE(EXCLUDED.state, fec_committees.state),
+                 treasurer_name  = COALESCE(EXCLUDED.treasurer_name, fec_committees.treasurer_name)"#,
+        )
+        .bind(&row.committee_id)
+        .bind(row.name.as_deref())
+        .bind(row.committee_type.as_deref())
+        .bind(row.party.as_deref())
+        .bind(row.state.as_deref())
+        .bind(row.treasurer_name.as_deref())
+        .bind(row.candidate_id.as_deref().and_then(|_| None::<uuid::Uuid>))
+        .execute(self.pool())
+        .await?;
+        Ok(())
+    }
+
+    /// Insert a candidate-committee linkage row.
+    pub async fn upsert_candidate_committee(
+        &self,
+        row: &crate::fec_bulk::parse::CclRow,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"INSERT INTO fec_candidate_committees
+               (candidate_id, committee_id, election_cycle, committee_type, committee_designation, linkage_id)
+               VALUES ($1, $2, $3, $4, $5, $6)
+               ON CONFLICT (candidate_id, committee_id, election_cycle) DO UPDATE SET
+                 committee_type        = COALESCE(EXCLUDED.committee_type, fec_candidate_committees.committee_type),
+                 committee_designation = COALESCE(EXCLUDED.committee_designation, fec_candidate_committees.committee_designation)"#,
+        )
+        .bind(&row.candidate_id)
+        .bind(&row.committee_id)
+        .bind(row.candidate_election_year.unwrap_or(0))
+        .bind(row.committee_type.as_deref())
+        .bind(row.committee_designation.as_deref())
+        .bind(row.linkage_id)
+        .execute(self.pool())
+        .await?;
+        Ok(())
+    }
+
+    // ── Run canonicalization and rankings (delegates to fec_bulk modules) ─
+
+    /// Run the full post-parse pipeline: canonicalize staging → canonical tables,
+    /// build rankings, refresh materialized views, clear staging.
+    pub async fn run_bulk_canonicalize_and_rank(
+        &self,
+        election_cycle: i32,
+        import_batch: uuid::Uuid,
+    ) -> Result<(), sqlx::Error> {
+        crate::fec_bulk::canonicalize::canonicalize_individuals(self.pool(), election_cycle, import_batch).await?;
+        crate::fec_bulk::canonicalize::canonicalize_committee_txns(self.pool(), election_cycle, import_batch).await?;
+        crate::fec_bulk::rankings::build_donor_rankings(self.pool(), election_cycle).await?;
+        crate::fec_bulk::rankings::build_committee_rankings(self.pool(), election_cycle).await?;
+        crate::fec_bulk::rankings::refresh_funding_mv(self.pool()).await?;
+        crate::fec_bulk::canonicalize::clear_staging_batch(self.pool(), import_batch).await?;
+        Ok(())
+    }
+
+    // ── Read funding from precomputed rankings ───────────────────────────
+
+    /// Get member funding from the precomputed rankings tables.
+    /// Returns the full MemberFunding struct if rankings exist for this cycle.
+    pub async fn get_member_funding_from_rankings(
+        &self,
+        bioguide_id: &str,
+        cycle: i32,
+    ) -> Result<Option<MemberFunding>, sqlx::Error> {
+        // Look up FEC candidate_id from member_identifiers
+        let fec_id: Option<(String,)> = sqlx::query_as(
+            "SELECT value FROM member_identifiers WHERE bioguide_id = $1 AND scheme = 'fec'"
+        )
+        .bind(bioguide_id)
+        .fetch_optional(self.pool())
+        .await?;
+
+        let candidate_id = match fec_id {
+            Some((id,)) => id,
+            None => return Ok(None),
+        };
+
+        // Get totals from the MV (still the fastest source for aggregates)
+        let totals: Option<(f64, f64, f64, f64, f64)> = sqlx::query_as(
+            r#"SELECT COALESCE(direct_receipts, 0),
+                      COALESCE(pac_receipts, 0),
+                      COALESCE(individual_receipts, 0),
+                      COALESCE(independent_expenditures_supporting, 0),
+                      COALESCE(independent_expenditures_opposing, 0)
+               FROM member_funding_cycle_mv
+               WHERE bioguide_id = $1 AND cycle = $2"#,
+        )
+        .bind(bioguide_id)
+        .bind(cycle)
+        .fetch_optional(self.pool())
+        .await?;
+
+        // Get top donors from rankings
+        let top_donors: Vec<DonorSummary> = sqlx::query_as::<_, DonorRow>(
+            r#"SELECT display_name AS contributor_name,
+                      total_amount::double precision AS amount,
+                      contribution_count::bigint AS cnt
+               FROM fec_candidate_donor_rankings
+               WHERE candidate_id = $1 AND election_cycle = $2
+               ORDER BY rank ASC"#,
+        )
+        .bind(&candidate_id)
+        .bind(cycle)
+        .fetch_all(self.pool())
+        .await?
+        .into_iter()
+        .map(|d: DonorRow| DonorSummary {
+            contributor_name: d.contributor_name,
+            amount: d.amount,
+            count: d.cnt,
+        })
+        .collect();
+
+        // Get top committees from rankings
+        let top_committees: Vec<CommitteeFunding> = sqlx::query_as::<_, CommFundingRow>(
+            r#"SELECT r.committee_id,
+                      COALESCE(fc.name, r.committee_id) AS committee_name,
+                      r.total_amount::double precision AS amount
+               FROM fec_candidate_committee_rankings r
+               LEFT JOIN fec_committees fc ON fc.committee_id = r.committee_id
+               WHERE r.candidate_id = $1 AND r.election_cycle = $2
+                 AND r.ranking_type = 'contribution'
+               ORDER BY r.rank ASC"#,
+        )
+        .bind(&candidate_id)
+        .bind(cycle)
+        .fetch_all(self.pool())
+        .await?
+        .into_iter()
+        .map(|c: CommFundingRow| CommitteeFunding {
+            committee_id: c.committee_id,
+            committee_name: c.committee_name,
+            amount: c.amount,
+        })
+        .collect();
+
+    let has_rankings = !top_donors.is_empty() || !top_committees.is_empty();
+    let (direct, pac, indiv, ie_support, ie_oppose) = totals.unwrap_or_default();
+
+        let provenance = ProvenanceSummary {
+            sources: vec![ProvenanceSource {
+                source: "openfec".to_string(),
+                status: if has_rankings { "loaded" } else { "not_seeded" }.to_string(),
+                fetched_at: None,
+                confidence: Some("verified".to_string()),
+            }],
+            warnings: if !has_rankings {
+                vec!["No FEC transactions loaded. Run fec-bulk ingest for this cycle.".to_string()]
+            } else {
+                Vec::new()
+            },
+        };
+
+        Ok(Some(MemberFunding {
+            bioguide_id: bioguide_id.to_string(),
+            cycle,
+            direct_receipts: direct,
+            pac_receipts: pac,
+            individual_receipts: indiv,
+            independent_expenditures_supporting: ie_support,
+            independent_expenditures_opposing: ie_oppose,
+            top_donors,
+            top_committees,
+            influence_networks: Vec::new(),
+            has_successful_fec_run: has_rankings,
+            provenance,
+        }))
+    }
 }
 
 // ── Private row types ───────────────────────────────────────────────────
