@@ -181,10 +181,7 @@ impl Repository {
                 filing_url, raw_json)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
              ON CONFLICT (document_id, owner_type, asset_name, ticker, transaction_type, transaction_date)
-             DO UPDATE SET organization_id = COALESCE(EXCLUDED.organization_id, disclosure_transactions.organization_id),
-                           amount_min = EXCLUDED.amount_min, amount_max = EXCLUDED.amount_max,
-                           disclosure_date = EXCLUDED.disclosure_date, filing_url = EXCLUDED.filing_url,
-                           raw_json = EXCLUDED.raw_json",
+             DO NOTHING",
         )
         .bind(input.document_id)
         .bind(input.bioguide_id)

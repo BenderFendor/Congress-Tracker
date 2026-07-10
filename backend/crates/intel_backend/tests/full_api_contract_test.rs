@@ -1,0 +1,747 @@
+use reqwest::StatusCode;
+use serde_json::Value;
+use std::net::TcpListener;
+use std::process::{Child, Command};
+use std::time::Duration;
+use tokio::time::{sleep, timeout};
+
+const TEST_MEMBER: &str = "A000370"; // Alma Adams — most complete data
+const UNKNOWN_MEMBER: &str = "ZZ99999";
+const UNKNOWN_BILL: &str = "99999";
+const UNKNOWN_SLUG: &str = "this-network-does-not-exist";
+const UNKNOWN_COMMITTEE: &str = "ZZZZZ99";
+const UNKNOWN_ORG: &str = "999999";
+const UNKNOWN_LOBBYING: &str = "999999";
+const UNKNOWN_TICKER: &str = "ZZZZZ";
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+fn get_available_port() -> u16 {
+    (8000..9000)
+        .find(|port| TcpListener::bind(("127.0.0.1", *port)).is_ok())
+        .expect("No free ports available in range 8000-9000")
+}
+
+async fn wait_for_health(base_url: &str) -> reqwest::Client {
+    let builder = reqwest::Client::builder().timeout(Duration::from_secs(3));
+    let client = builder.build().expect("Failed to build HTTP client");
+    let check = || async {
+        loop {
+            if let Ok(response) = client.get(format!("{base_url}/api/health")).send().await {
+                if response.status() == StatusCode::OK {
+                    return;
+                }
+            }
+            sleep(Duration::from_millis(250)).await;
+        }
+    };
+    timeout(Duration::from_secs(30), check())
+        .await
+        .expect("intel_backend did not become healthy");
+    client
+}
+
+fn spawn_intel_backend(port: u16) -> Option<Child> {
+    let database_url = match std::env::var("DATABASE_URL") {
+        Ok(value) if !value.is_empty() => value,
+        _ => return None,
+    };
+    // Try the binary in the cargo target dir first (during `cargo test` the binary
+    // is built in test profile, so fall back to test target if dev doesn't exist).
+    let binary = find_binary();
+    Some(
+        Command::new(binary)
+            .env("DATABASE_URL", database_url)
+            .env("PORT", port.to_string())
+            .env("RUST_LOG", "off")
+            .spawn()
+            .expect("Failed to start intel_backend"),
+    )
+}
+
+fn find_binary() -> String {
+    // Try multiple relative and absolute patterns to handle different CWD setups.
+    let candidates = [
+        // Workspace root: ~/classwork/congress-tracker/
+        "backend/target/debug/intel_backend",
+        // Member root: ~/classwork/congress-tracker/backend/
+        "target/debug/intel_backend",
+        // Release profile
+        "backend/target/release/intel_backend",
+        "target/release/intel_backend",
+        // Target test profile run from workspace root
+        "backend/target/release/intel_backend",
+    ];
+    for c in &candidates {
+        if std::path::Path::new(c).exists() {
+            return c.to_string();
+        }
+    }
+    // Also try via CARGO_MANIFEST_DIR if set
+    if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
+        let p = format!("{manifest_dir}/target/debug/intel_backend");
+        if std::path::Path::new(&p).exists() {
+            return p;
+        }
+    }
+    // Last resort
+    "target/debug/intel_backend".to_string()
+}
+
+async fn setup() -> Option<(reqwest::Client, String, Child)> {
+    let port = get_available_port();
+    let child = spawn_intel_backend(port)?;
+    let base_url = format!("http://127.0.0.1:{port}");
+    let client = wait_for_health(&base_url).await;
+    Some((client, base_url, child))
+}
+
+fn print_section(label: &str) {
+    println!("\n─── {label} ───");
+}
+
+fn summarize_json(label: &str, value: &Value) {
+    let summary = match value {
+        Value::Object(m) => {
+            let fields: Vec<String> = m
+                .iter()
+                .map(|(k, v)| match v {
+                    Value::String(s) if s.len() > 60 => format!("{k}: \"{}…\"", &s[..57]),
+                    Value::Array(a) => format!("{k}: [{} items]", a.len()),
+                    Value::Object(_) => format!("{k}: {{…}}"),
+                    other => format!("{k}: {other}"),
+                })
+                .collect();
+            fields.join(", ")
+        }
+        Value::Array(a) => format!("[{} items]", a.len()),
+        other => format!("{other}"),
+    };
+    println!("  [{label}] {summary}");
+}
+
+async fn kill_server(child: &mut Child) {
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+/// Assert a response is a well-formed JSON error with status/message fields.
+fn assert_json_error(status: StatusCode, body: &Value) {
+    assert!(
+        status.is_client_error() || status.is_server_error(),
+        "expected error status, got {status}"
+    );
+    let has_status = body.get("status").or_else(|| body.get("error")).is_some();
+    let has_message = body.get("message").or_else(|| body.get("msg")).is_some();
+    assert!(
+        has_status && has_message,
+        "error response should have status+message fields, got: {body}"
+    );
+    println!("  ⚠ expected {status} — well-formed error response");
+}
+
+/// Get and print response summary for a successful endpoint call.
+async fn check_endpoint(
+    client: &reqwest::Client,
+    base_url: &str,
+    method: &str,
+    label: &str,
+) -> (StatusCode, Value) {
+    let resp = client
+        .get(format!("{base_url}{method}"))
+        .send()
+        .await
+        .unwrap_or_else(|_| panic!("{label}: request failed"));
+
+    let status = resp.status();
+    let body: Value = resp
+        .json()
+        .await
+        .unwrap_or_else(|_| panic!("{label}: response was not JSON"));
+
+    println!("  {method}");
+    if status == StatusCode::OK {
+        summarize_json(label, &body);
+        println!("  ✓ {status}");
+    } else {
+        println!("  ⚠ {status}");
+    }
+    (status, body)
+}
+
+// ── Main Test ────────────────────────────────────────────────────────────────
+// Single comprehensive test covering ALL endpoints. Runs sequentially in one
+// server spawn to avoid 37+ separate boot cycles.
+
+#[tokio::test]
+async fn test_all_api_endpoints() {
+    print_section("Setting up intel_backend");
+    let Some((client, base_url, mut child)) = setup().await else {
+        eprintln!("Skipping: DATABASE_URL is not set");
+        return;
+    };
+
+    // ── Health & System ──
+    print_section("Health & System");
+
+    let (status, body) = check_endpoint(&client, &base_url, "/api/health", "health").await;
+    assert_eq!(status, StatusCode::OK, "health endpoint");
+    assert!(
+        body.get("status").is_some(),
+        "health should have status field"
+    );
+
+    let (status, _body) = check_endpoint(
+        &client,
+        &base_url,
+        "/api/system/disclosure-coverage",
+        "disclosure-coverage",
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "disclosure-coverage should return 200"
+    );
+
+    let (status, _body) = check_endpoint(
+        &client,
+        &base_url,
+        "/api/system/worker-health",
+        "worker-health",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "worker-health should return 200");
+
+    let (status, body) =
+        check_endpoint(&client, &base_url, "/api/home/summary", "home-summary").await;
+    assert_eq!(status, StatusCode::OK, "home summary");
+    assert!(body.is_object(), "home summary should be an object");
+
+    let (status, _body) =
+        check_endpoint(&client, &base_url, "/api/sources/status", "sources-status").await;
+    assert_eq!(status, StatusCode::OK, "sources status should return 200");
+
+    let (status, _body) = check_endpoint(
+        &client,
+        &base_url,
+        "/api/sources/coverage",
+        "sources-coverage",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "sources coverage should return 200");
+
+    // ── Members ──
+    print_section("Members");
+
+    let (status, body) = check_endpoint(
+        &client,
+        &base_url,
+        "/api/legislators?limit=5",
+        "legislators-list",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "legislators list");
+    assert!(body.is_array(), "legislators list should be an array");
+    assert!(
+        !body.as_array().unwrap().is_empty(),
+        "legislators list should not be empty"
+    );
+    if let Some(first) = body.as_array().unwrap().first() {
+        assert!(
+            first["bioguide_id"].as_str().is_some(),
+            "member should have bioguide_id"
+        );
+    }
+
+    // Test both profile routes
+    let member_endpoint = format!("/api/legislators/{TEST_MEMBER}");
+    let (status, body) =
+        check_endpoint(&client, &base_url, &member_endpoint, "legislator-profile").await;
+    if status == StatusCode::NOT_FOUND {
+        println!("  Member {TEST_MEMBER} not found — profiles will be skipped");
+    } else {
+        assert_eq!(status, StatusCode::OK, "legislator profile");
+        assert_eq!(body["bioguide_id"], TEST_MEMBER);
+        assert!(
+            body["first_name"].as_str().is_some_and(|s| !s.is_empty()),
+            "first_name should be present"
+        );
+        assert!(
+            body["last_name"].as_str().is_some_and(|s| !s.is_empty()),
+            "last_name should be present"
+        );
+
+        // /api/members/:bioguide_id/votes
+        let (status, body) = check_endpoint(
+            &client,
+            &base_url,
+            &format!("/api/members/{TEST_MEMBER}/votes?congress=119&limit=10"),
+            "member-votes",
+        )
+        .await;
+        if status == StatusCode::NOT_FOUND {
+            assert_json_error(status, &body);
+        } else {
+            assert_eq!(status, StatusCode::OK, "member votes");
+            assert!(body["votes"].is_array(), "votes should be an array");
+        }
+
+        // /api/members/:bioguide_id/legislation
+        let (status, body) = check_endpoint(
+            &client,
+            &base_url,
+            &format!("/api/members/{TEST_MEMBER}/legislation"),
+            "member-legislation",
+        )
+        .await;
+        if status == StatusCode::NOT_FOUND {
+            assert_json_error(status, &body);
+        } else {
+            assert_eq!(status, StatusCode::OK, "member legislation");
+            assert!(body["sponsor"].is_array(), "sponsor should be an array");
+            assert!(body["cosponsor"].is_array(), "cosponsor should be an array");
+        }
+
+        // /api/members/:bioguide_id/disclosures
+        let (status, body) = check_endpoint(
+            &client,
+            &base_url,
+            &format!("/api/members/{TEST_MEMBER}/disclosures"),
+            "member-disclosures",
+        )
+        .await;
+        if status == StatusCode::NOT_FOUND {
+            assert_json_error(status, &body);
+        } else {
+            assert_eq!(status, StatusCode::OK, "member disclosures");
+            assert!(body["documents"].is_array(), "documents should be an array");
+            assert!(body["holdings"].is_array(), "holdings should be an array");
+            assert!(
+                body["transactions"].is_array(),
+                "transactions should be an array"
+            );
+        }
+
+        // /api/members/:bioguide_id/funding
+        let (status, body) = check_endpoint(
+            &client,
+            &base_url,
+            &format!("/api/members/{TEST_MEMBER}/funding?cycle=2026"),
+            "member-funding",
+        )
+        .await;
+        if status == StatusCode::NOT_FOUND {
+            assert_json_error(status, &body);
+        } else {
+            assert_eq!(status, StatusCode::OK, "member funding");
+            assert_eq!(body["bioguide_id"], TEST_MEMBER);
+            assert!(
+                body["direct_receipts"].as_f64().is_some(),
+                "direct_receipts should be present"
+            );
+            assert!(
+                body["top_donors"].is_array(),
+                "top_donors should be an array"
+            );
+        }
+    }
+
+    // Test unknown member returns 404 with well-formed error
+    let unknown_member_url = format!("/api/legislators/{UNKNOWN_MEMBER}");
+    let (status, body) =
+        check_endpoint(&client, &base_url, &unknown_member_url, "unknown-member").await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "unknown member should 404");
+    assert_json_error(status, &body);
+
+    // ── Bills ──
+    print_section("Bills");
+
+    let (status, body) =
+        check_endpoint(&client, &base_url, "/api/bills?limit=5", "bills-list").await;
+    assert_eq!(status, StatusCode::OK, "bills list");
+    assert!(
+        body.is_array() || body.get("bills").or_else(|| body.get("results")).is_some(),
+        "bills list should be array or have bills/results field"
+    );
+
+    // Known bill ID or 404
+    let (status, _body) = check_endpoint(
+        &client,
+        &base_url,
+        &format!("/api/bills/{UNKNOWN_BILL}"),
+        "bills-get",
+    )
+    .await;
+    if status == StatusCode::NOT_FOUND {
+        // acceptable — bill may not exist
+        println!("  ⚠ bill not found (expected for test data)");
+    } else {
+        assert_eq!(status, StatusCode::OK, "bill detail");
+    }
+
+    // Compound bill intel route
+    let (status, body) = check_endpoint(
+        &client,
+        &base_url,
+        "/api/bills/119/hr/1234/intel",
+        "bill-intel",
+    )
+    .await;
+    // This likely 404s since test data doesn't have this exact bill
+    if status == StatusCode::NOT_FOUND {
+        assert_json_error(status, &body);
+    } else {
+        assert_eq!(status, StatusCode::OK, "bill intel");
+    }
+
+    // ── Influence ──
+    print_section("Influence");
+
+    let (status, body) = check_endpoint(
+        &client,
+        &base_url,
+        "/api/influence/networks",
+        "influence-networks",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "influence networks");
+    assert!(
+        body.is_array() || body.get("networks").is_some(),
+        "networks should be array or have networks field"
+    );
+
+    // Unknown network slug
+    let (status, body) = check_endpoint(
+        &client,
+        &base_url,
+        &format!("/api/influence/networks/{UNKNOWN_SLUG}"),
+        "influence-network-slug",
+    )
+    .await;
+    if status == StatusCode::NOT_FOUND {
+        assert_json_error(status, &body);
+    } else {
+        assert_eq!(status, StatusCode::OK, "network by slug");
+    }
+
+    // Unknown network financials
+    let (status, body) = check_endpoint(
+        &client,
+        &base_url,
+        &format!("/api/influence/networks/{UNKNOWN_SLUG}/financials"),
+        "influence-network-financials",
+    )
+    .await;
+    if status == StatusCode::NOT_FOUND {
+        assert_json_error(status, &body);
+    } else {
+        assert_eq!(status, StatusCode::OK, "network financials");
+    }
+
+    // ── Committees ──
+    print_section("Committees");
+
+    let (status, body) = check_endpoint(
+        &client,
+        &base_url,
+        "/api/committees?limit=5",
+        "committees-list",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "committees list");
+    assert!(
+        body.is_array() || body.get("committees").is_some(),
+        "committees should be array or have committees field"
+    );
+
+    // Unknown committee
+    let (status, body) = check_endpoint(
+        &client,
+        &base_url,
+        &format!("/api/committees/{UNKNOWN_COMMITTEE}"),
+        "committee-get",
+    )
+    .await;
+    if status == StatusCode::NOT_FOUND {
+        assert_json_error(status, &body);
+    } else {
+        assert_eq!(status, StatusCode::OK, "committee detail");
+    }
+
+    // ── Chambers ──
+    print_section("Chambers");
+
+    let (status, body) = check_endpoint(
+        &client,
+        &base_url,
+        "/api/chambers/house/dashboard",
+        "chamber-house",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "house dashboard");
+    assert!(body.is_object(), "house dashboard should be an object");
+
+    let (status, body) = check_endpoint(
+        &client,
+        &base_url,
+        "/api/chambers/senate/dashboard",
+        "chamber-senate",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "senate dashboard");
+    assert!(body.is_object(), "senate dashboard should be an object");
+
+    // Bad chamber returns 400 or 404
+    let (status, body) = check_endpoint(
+        &client,
+        &base_url,
+        "/api/chambers/void/dashboard",
+        "chamber-void",
+    )
+    .await;
+    if status != StatusCode::OK {
+        assert_json_error(status, &body);
+        println!("  ⚠ void chamber correctly rejected");
+    }
+
+    // ── Trades & Portfolio ──
+    print_section("Trades & Portfolio");
+
+    let (status, body) = check_endpoint(
+        &client,
+        &base_url,
+        "/api/intel/trades?limit=5",
+        "intel-trades",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "intel trades");
+    assert!(
+        body.is_array() || body.get("trades").is_some(),
+        "trades should be array or have trades field"
+    );
+
+    // Unknown ticker
+    let (status, body) = check_endpoint(
+        &client,
+        &base_url,
+        &format!("/api/intel/trades/{UNKNOWN_TICKER}"),
+        "trades-by-ticker",
+    )
+    .await;
+    if status == StatusCode::NOT_FOUND {
+        assert_json_error(status, &body);
+    } else {
+        assert_eq!(status, StatusCode::OK, "trades by ticker");
+    }
+
+    let (status, body) = check_endpoint(
+        &client,
+        &base_url,
+        "/api/stocks/transactions?limit=5",
+        "stocks-transactions",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "stocks/transactions");
+    assert!(
+        body.is_array() || body.get("trades").is_some(),
+        "transactions should be array or have trades field"
+    );
+
+    let (status, body) = check_endpoint(
+        &client,
+        &base_url,
+        "/api/intel/portfolio/summary",
+        "portfolio-summary",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "portfolio summary");
+    assert!(body.is_object(), "portfolio summary should be object");
+
+    let (status, body) = check_endpoint(
+        &client,
+        &base_url,
+        "/api/intel/portfolio/members?limit=5",
+        "portfolio-members",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "portfolio members");
+    assert!(
+        body.is_array() || body.get("members").is_some(),
+        "portfolio members should be array or have members field"
+    );
+
+    let (status, body) = check_endpoint(
+        &client,
+        &base_url,
+        "/api/portfolios?limit=5",
+        "portfolios-alias",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "portfolios alias");
+    assert!(
+        body.is_array() || body.get("members").is_some(),
+        "portfolios should be array or have members field"
+    );
+
+    let (status, body) = check_endpoint(
+        &client,
+        &base_url,
+        "/api/intel/portfolio/sectors",
+        "portfolio-sectors",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "portfolio sectors");
+    assert!(
+        body.is_array() || body.is_object(),
+        "sectors should be array or object"
+    );
+
+    let (status, body) = check_endpoint(
+        &client,
+        &base_url,
+        "/api/intel/portfolio/pulse",
+        "portfolio-pulse",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "portfolio pulse");
+    assert!(
+        body.is_object() || body.is_array(),
+        "pulse should be object or array"
+    );
+
+    // ── Search ──
+    print_section("Search");
+
+    let (status, body) = check_endpoint(&client, &base_url, "/api/search?q=health", "search").await;
+    assert_eq!(status, StatusCode::OK, "search");
+    // Search could return array or object with results
+    assert!(
+        body.is_array() || body.get("results").is_some() || body.get("members").is_some(),
+        "search should return results"
+    );
+
+    // ── Relationships & Organizations ──
+    print_section("Relationships & Organizations");
+
+    let (status, body) = check_endpoint(
+        &client,
+        &base_url,
+        "/api/relationships?limit=5",
+        "relationships",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "relationships");
+    assert!(
+        body.get("relationships").is_some(),
+        "relationships should have relationships field"
+    );
+
+    // Unknown organization
+    let (status, body) = check_endpoint(
+        &client,
+        &base_url,
+        &format!("/api/organizations/{UNKNOWN_ORG}"),
+        "organization-get",
+    )
+    .await;
+    if status == StatusCode::NOT_FOUND {
+        assert_json_error(status, &body);
+    } else {
+        assert_eq!(status, StatusCode::OK, "organization detail");
+    }
+
+    // ── Lobbying ──
+    print_section("Lobbying");
+
+    let (status, body) = check_endpoint(
+        &client,
+        &base_url,
+        "/api/lobbying/filings?limit=5",
+        "lobbying-filings",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "lobbying filings");
+    assert!(
+        body.is_array() || body.get("filings").is_some(),
+        "filings should be array or have filings field"
+    );
+
+    // Unknown filing
+    let (status, body) = check_endpoint(
+        &client,
+        &base_url,
+        &format!("/api/lobbying/filings/{UNKNOWN_LOBBYING}"),
+        "lobbying-filing-get",
+    )
+    .await;
+    if status == StatusCode::NOT_FOUND {
+        assert_json_error(status, &body);
+    } else {
+        assert_eq!(status, StatusCode::OK, "lobbying filing detail");
+    }
+
+    // ── FEC ──
+    print_section("FEC");
+
+    let (status, body) = check_endpoint(
+        &client,
+        &base_url,
+        "/api/intel/fec/candidates?limit=5",
+        "fec-candidates",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "fec candidates");
+    assert!(
+        body.is_array() || body.get("candidates").is_some(),
+        "candidates should be array or have candidates field"
+    );
+
+    let (status, body) = check_endpoint(
+        &client,
+        &base_url,
+        "/api/intel/fec/committees?limit=5",
+        "fec-committees",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "fec committees");
+    assert!(
+        body.is_array() || body.get("committees").is_some(),
+        "fec committees should be array or have committees field"
+    );
+
+    // Alias route
+    let (status, body) = check_endpoint(
+        &client,
+        &base_url,
+        "/api/elections/candidates?limit=5",
+        "elections-candidates",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "elections candidates alias");
+    assert!(
+        body.is_array() || body.get("candidates").is_some(),
+        "elections candidates should have data"
+    );
+
+    // ── Admin ──
+    print_section("Admin");
+
+    let (status, body) = check_endpoint(
+        &client,
+        &base_url,
+        "/api/admin/entity-resolution-queue?limit=5",
+        "admin-entity-resolution",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "entity resolution queue");
+    assert!(
+        body.is_array() || body.is_object() || body.get("items").is_some(),
+        "entity resolution should return valid shape"
+    );
+
+    // ── Done ──
+    println!("\n─── All endpoints tested ───");
+    kill_server(&mut child).await;
+    println!("✓ full API contract test complete");
+}

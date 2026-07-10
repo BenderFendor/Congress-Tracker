@@ -169,6 +169,18 @@ Fix:
 2. Update the corresponding types in `backend/crates/congress_api/src/types.rs`
 3. Update the ingest parser in `backend/crates/intel_backend/src/ingest/`
 
+## Congress.gov vote resource returns 404
+
+Symptom:
+- `congress-votes` returns `Unknown resource: vote` from Congress.gov v3.
+
+Cause:
+- The current Congress.gov v3 API does not expose the legacy generic vote resource used by the old command.
+
+Fix:
+- Use the Congress-specific Voteview ingest for roll calls and member positions.
+- Do not schedule `congress-votes` in the automatic profile evidence pipeline.
+
 ---
 
 ## FEC candidate-to-bioguide unresolved

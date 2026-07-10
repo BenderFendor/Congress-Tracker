@@ -3,14 +3,13 @@
 .env.*
 !.env.example
 
-# Agent scratch files
-.codex
+.agent/
 
 # Runtime artifacts
 *.log
 *.pid
+/worker_storage/
+/backend/log/
 
 /reports/verification/*
-
-# Generated insta snapshots pending review
 *.snap.new

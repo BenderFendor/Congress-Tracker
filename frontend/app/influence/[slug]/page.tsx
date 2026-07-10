@@ -2,10 +2,13 @@
 
 import React, { useState, useEffect } from "react"
 import { useParams, useRouter } from "next/navigation"
+import { createLogger } from "@/lib/tracing"
 import { ArchivePage, ArchiveHero, ArchivePanel, ArchiveMetrics } from "@/components/ui/archive-ui"
 import { Badge } from "@/components/ui/badge"
 import { getInfluenceNetwork, type InfluenceNetwork } from "@/lib/services/influence"
 import { Network, Building2, DollarSign, ArrowLeft, Loader2, ShieldAlert, CheckCircle2 } from "lucide-react"
+
+const log = createLogger("InfluenceDetailPage")
 
 export default function InfluenceNetworkDetailPage() {
   const params = useParams()
@@ -26,7 +29,7 @@ export default function InfluenceNetworkDetailPage() {
           setNetwork(data)
         }
       } catch (err) {
-        console.error("Failed to load influence network detail:", err)
+        log.error("Failed to load influence network detail:", { error: String(err) })
       } finally {
         if (isMounted) setLoading(false)
       }

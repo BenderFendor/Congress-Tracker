@@ -1,15 +1,23 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import type { CSSProperties } from "react"
 import Link from "next/link"
-import { ArrowRight, FileText, Landmark, Network, TrendingUp, Users } from "lucide-react"
+import dynamic from "next/dynamic"
+import { ArrowRight, FileText, Landmark, Network, TrendingUp, Users, DollarSign } from "lucide-react"
 import { ArchiveHero, ArchiveMetrics, ArchivePage, ArchivePanel } from "@/components/ui/archive-ui"
+import { NetworkHeroVisual, ActivityItem, ProofRow } from "@/components/ui/mockup-visuals"
 import { getAllLegislators, type Legislator } from "@/lib/services/legislators"
 import { formatAmountRange, getRecentTrades, type StockTrade } from "@/lib/services/stocks"
 import { getRecentFilings, type LobbyingFiling } from "@/lib/services/lobbying"
 import { getRecentBills, type Bill } from "@/lib/services/bills"
 import { compactNumber, formatDate } from "@/lib/format"
 import { getSourceCoverage, type SourceCoverage } from "@/lib/services/sources"
+
+const CivicObservatory = dynamic(
+  () => import("@/components/ui/civic-observatory").then((module) => module.CivicObservatory),
+  { ssr: false },
+)
 
 function numericValue(value: unknown) {
   if (typeof value === "number") return Number.isFinite(value) ? value : 0
@@ -63,21 +71,34 @@ export default function HomePage() {
   )
   const lobbyingSpendLabel = totalLobbyingIncome > 0 ? `$${compactNumber(totalLobbyingIncome)} disclosed spend` : "Spend unavailable"
 
+  const sourceCounts = useMemo(() => {
+    const initial = { fresh: 0, stale: 0, failed: 0 }
+    return sourceCoverage?.sources.reduce((counts, source) => {
+      if (source.freshness === "fresh") counts.fresh += 1
+      else if (source.freshness === "stale") counts.stale += 1
+      else counts.failed += 1
+      return counts
+    }, initial) ?? initial
+  }, [sourceCoverage])
+
   const latestItems = [
     ...bills.slice(0, 3).map((bill) => ({
-      type: "Bill",
+      type: "Bill" as const,
+      icon: <FileText size={17} />,
       title: bill.title,
       meta: `${bill.id || "Bill"} updated ${formatDate(bill.date)}`,
       href: "/bills",
     })),
     ...trades.slice(0, 3).map((trade) => ({
-      type: "Trade",
+      type: "Trade" as const,
+      icon: <TrendingUp size={17} />,
       title: `${trade.member_name || "Member"} ${trade.tx_type || "filed"} ${trade.ticker || "trade"}`,
       meta: `${formatAmountRange(trade.amount_min, trade.amount_max)} on ${formatDate(trade.transaction_date || undefined)}`,
-      href: "/stocks",
+      href: "/portfolio",
     })),
     ...filings.slice(0, 3).map((filing) => ({
-      type: "Lobbying",
+      type: "Lobbying" as const,
+      icon: <DollarSign size={17} />,
       title: filing.registrant_name || "Lobbying filing",
       meta: `${filing.client_name || "Client not listed"} posted ${formatDate(filing.dt_posted || undefined)}`,
       href: "/lobbying",
@@ -90,42 +111,42 @@ export default function HomePage() {
         eyebrow={loading ? "Syncing public records" : sourceCoverage?.summary.successful ? "Fresh public records" : "Public records with coverage gaps"}
         title="Power. Policy."
         accent="Public Knowledge."
-        description="Real-time transparency into congressional activity, financial disclosures, legislation, and lobbying influence."
+        description="Trace legislation, campaign money, lobbying, and financial disclosures back to the public records that support them."
         mode="capitol"
         actions={
-          <>
+          <div className="home-hero-actions">
             <Link className="inline-flex items-center gap-2 rounded-md bg-accent px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-red-950/20 transition hover:-translate-y-0.5" href="/legislators">
-              Browse Legislators <ArrowRight size={16} />
+              Find a legislator <ArrowRight size={16} />
             </Link>
-            <Link className="inline-flex items-center gap-2 rounded-md border border-accent/40 px-5 py-3 text-sm font-semibold text-accent transition hover:-translate-y-0.5 hover:bg-accent/10" href="/stocks">
-              Explore Trades <ArrowRight size={16} />
+            <Link className="inline-flex items-center gap-2 rounded-md border border-border bg-card/70 px-5 py-3 text-sm font-semibold text-foreground transition hover:-translate-y-0.5 hover:border-accent" href="/search">
+              Search records <ArrowRight size={16} />
             </Link>
-          </>
+            <Link className="home-hero-tertiary" href="/portfolio">Browse financial disclosures</Link>
+            <ProofRow />
+          </div>
         }
         aside={
-          <div>
-            <div className="archive-panel-kicker">Archive status</div>
-            <div className="mt-3 grid gap-3">
-              <div className="flex items-center justify-between border-b border-border pb-3">
-                <span className="text-sm text-muted-foreground">Members loaded</span>
-                <span className="font-serif text-2xl">{loading ? "..." : legislators.length}</span>
+          <div className="home-hero-aside-content">
+            <div className="home-hero-aside-heading">
+              <div>
+                <div className="archive-panel-kicker">How the archive works</div>
+                <h2>Follow the evidence chain</h2>
               </div>
-              <div className="flex items-center justify-between border-b border-border pb-3">
-                <span className="text-sm text-muted-foreground">Disclosure rows loaded</span>
-                <span className="font-serif text-2xl">{loading ? "..." : trades.length}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">LDA filings loaded</span>
-                <span className="font-serif text-2xl">{loading ? "..." : filings.length}</span>
-              </div>
-              <div className="flex items-center justify-between border-t border-border pt-3">
-                <span className="text-sm text-muted-foreground">Fresh sources</span>
-                <span className="font-serif text-2xl">{loading ? "..." : sourceCoverage?.summary.successful ?? 0}</span>
-              </div>
+              <Link href="/influence" className="archive-link">Explore links <ArrowRight size={14} /></Link>
             </div>
+            <NetworkHeroVisual />
           </div>
         }
       />
+      <CivicObservatory />
+
+      <section className="home-snapshot-heading" aria-labelledby="archive-snapshot-title">
+        <div>
+          <div className="archive-panel-kicker">Current archive</div>
+          <h2 id="archive-snapshot-title">What you can investigate now</h2>
+        </div>
+        <p>Counts reflect records loaded from configured public sources, not estimates.</p>
+      </section>
 
       <ArchiveMetrics
         metrics={[
@@ -136,44 +157,81 @@ export default function HomePage() {
         ]}
       />
 
-      <div className="archive-content archive-grid-two mt-4">
+      <div className="archive-content home-story-grid mt-4">
         <ArchivePanel title="Recent public activity" kicker="Live feed">
-          <div className="archive-list">
+          <div>
             {latestItems.length === 0 ? (
               <div className="py-10 text-sm text-muted-foreground">No records loaded from the configured APIs.</div>
             ) : (
               latestItems.map((item, index) => (
-                <Link key={`${item.type}-${index}`} href={item.href} className="archive-row grid-cols-[auto_minmax(0,1fr)_auto]">
-                  <span className="archive-chip">{item.type}</span>
-                  <span>
-                    <span className="block truncate font-serif text-xl text-foreground">{item.title}</span>
-                    <span className="mt-1 block text-sm text-muted-foreground">{item.meta}</span>
-                  </span>
-                  <ArrowRight className="text-accent" size={17} />
-                </Link>
+                <ActivityItem
+                  key={`${item.type}-${index}`}
+                  icon={item.icon}
+                  badge={item.type}
+                  title={item.title}
+                  meta={item.meta}
+                  href={item.href}
+                />
               ))
             )}
           </div>
         </ArchivePanel>
 
         <ArchivePanel title="Influence network" kicker="Connections">
-          <div className="relative min-h-[18rem] overflow-hidden rounded-md border border-border bg-muted/35 p-5">
-            <div className="absolute inset-0 opacity-45" style={{ backgroundImage: "radial-gradient(circle, currentColor 1px, transparent 1px)", backgroundSize: "34px 34px" }} />
-            <div className="relative z-10 grid h-full place-items-center">
-              <div className="grid h-28 w-28 place-items-center rounded-full border border-accent/45 bg-card text-center shadow-2xl">
-                <Landmark className="mx-auto mb-2 text-accent" size={28} />
-                <span className="font-mono text-[10px] uppercase text-muted-foreground">Congress</span>
+            <div className="relative min-h-[12rem] overflow-hidden rounded-md border border-border bg-muted/35 p-5">
+              <div className="absolute inset-0 opacity-45" style={{ backgroundImage: "radial-gradient(circle, currentColor 1px, transparent 1px)", backgroundSize: "34px 34px" }} />
+              <div className="relative z-10 grid h-full place-items-center">
+                <div className="grid h-24 w-24 place-items-center rounded-full border border-accent/45 bg-card text-center shadow-2xl">
+                  <Landmark className="mx-auto mb-1 text-accent" size={24} />
+                  <span className="font-mono text-[10px] uppercase text-muted-foreground">Congress</span>
+                </div>
               </div>
+              <div className="relative z-10 mt-5 grid grid-cols-2 gap-3 text-sm text-muted-foreground">
+                <div className="flex justify-between border-t border-border pt-3"><span>Legislators</span><strong className="text-foreground">{legislators.length || 0}</strong></div>
+                <div className="flex justify-between border-t border-border pt-3"><span>Organizations</span><strong className="text-muted-foreground">Unavailable until entity crosswalks load</strong></div>
+                <div className="flex justify-between border-t border-border pt-3"><span>Bills</span><strong className="text-foreground">{bills.length || 0}</strong></div>
+                <div className="flex justify-between border-t border-border pt-3"><span>Trades</span><strong className="text-foreground">{trades.length || 0}</strong></div>
+                <div className="flex justify-between border-t border-border pt-3"><span>Filings</span><strong className="text-foreground">{filings.length || 0}</strong></div>
+              </div>
+              <Link href="/influence" className="archive-link mt-4 inline-flex">Open influence graph <ArrowRight size={14} /></Link>
             </div>
-            <div className="relative z-10 mt-5 grid grid-cols-2 gap-3 text-sm text-muted-foreground">
-              <div className="flex justify-between border-t border-border pt-3"><span>Legislators</span><strong className="text-foreground">{legislators.length || 0}</strong></div>
-              <div className="flex justify-between border-t border-border pt-3"><span>Organizations</span><strong className="text-muted-foreground">Unavailable until entity crosswalks load</strong></div>
-              <div className="flex justify-between border-t border-border pt-3"><span>Bills</span><strong className="text-foreground">{bills.length || 0}</strong></div>
-              <div className="flex justify-between border-t border-border pt-3"><span>Trades</span><strong className="text-foreground">{trades.length || 0}</strong></div>
-            </div>
-          </div>
         </ArchivePanel>
       </div>
+
+      <section className="home-coverage" aria-labelledby="coverage-title">
+        <div className="home-coverage-intro">
+          <div>
+            <div className="archive-panel-kicker">Coverage pulse</div>
+            <h2 id="coverage-title">Know what the archive can prove</h2>
+          </div>
+          <p>Source gaps stay visible. Missing records become unavailable labels or ranges, never false zeroes.</p>
+        </div>
+
+        <div className="home-coverage-summary" aria-label="Source coverage summary">
+          <div className="fresh"><strong>{sourceCounts.fresh}</strong><span>Fresh</span></div>
+          <div className="stale"><strong>{sourceCounts.stale}</strong><span>Stale</span></div>
+          <div className="failed"><strong>{sourceCounts.failed}</strong><span>Unavailable</span></div>
+        </div>
+
+        <details className="home-source-inventory" open>
+          <summary>
+            <span>Source inventory</span>
+            <span>{sourceCoverage?.sources.length ?? 0} monitored sources</span>
+          </summary>
+          <div className="home-source-grid">
+            {sourceCoverage ? sourceCoverage.sources.map((src, index) => (
+              <div
+                key={src.source}
+                className={`ct-source-row ${src.freshness}`}
+                style={{ "--source-index": index } as CSSProperties}
+              >
+                <span><i className={`ct-status-dot ${src.freshness === "fresh" ? "" : src.freshness === "stale" ? "warn" : "bad"}`} />{src.display_name || src.source}</span>
+                <b>{src.freshness === "fresh" ? "Fresh" : src.freshness === "stale" ? "Stale" : "Unavailable"}</b>
+              </div>
+            )) : <div className="text-sm text-muted-foreground">Source coverage loading...</div>}
+          </div>
+        </details>
+      </section>
 
       {sourceCoverage && sourceCoverage.summary.stale_or_missing > 0 && (
         <ArchivePanel title="Source coverage" kicker="Data quality">

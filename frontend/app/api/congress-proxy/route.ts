@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createLogger } from "@/lib/tracing"
 
 // Only available on the server
 const API_KEY = process.env.CONGRESS_GOV_API_KEY
   || process.env.CONGRESS_API_KEY
   || process.env.NEXT_PUBLIC_CONGRESS_GOV_API_KEY
   || process.env.NEXT_PUBLIC_CONGRESS_API_KEY
+
+const log = createLogger("CongressProxyApi")
 
 export async function GET(req: NextRequest) {
   const url = req.nextUrl.searchParams.get('url')
@@ -27,7 +30,7 @@ export async function GET(req: NextRequest) {
     if (API_KEY) {
       headers['X-Api-Key'] = API_KEY
     } else {
-      console.warn('Congress.gov API key not configured')
+      log.warn('Congress.gov API key not configured')
     }
   }
 

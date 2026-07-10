@@ -6,12 +6,12 @@
 
 use std::sync::Arc;
 use std::{
+    collections::HashMap,
     fs::File,
     io::{BufRead, BufReader},
     process::Command as ProcessCommand,
 };
 
-use capitoltrades_api::Query;
 use chrono::NaiveDate;
 use clap::{Parser, Subcommand};
 use intel_backend::{
@@ -29,7 +29,7 @@ use intel_backend::{
         Repository,
     },
     schema::{
-        self, SOURCE_CAPITOLTRADES, SOURCE_CONGRESS_GOV, SOURCE_LDA, SOURCE_MANUAL, SOURCE_OPENFEC,
+        self, SOURCE_CONGRESS_GOV, SOURCE_LDA, SOURCE_MANUAL, SOURCE_OPENFEC,
         SOURCE_RELATIONSHIP_DERIVATION, SOURCE_UNITEDSTATES, SOURCE_VOTEVIEW,
     },
 };
@@ -50,6 +50,13 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Refresh every broadly available member-profile evidence source.
+    ProfileEvidenceAll {
+        #[arg(long, default_value_t = 119)]
+        congress: u32,
+        #[arg(long, default_value_t = 2026)]
+        cycle: u32,
+    },
     /// Seed the database with influence network definitions
     InfluenceSeeds,
     /// Ingest members from unitedstates/congress-legislators
@@ -157,11 +164,6 @@ enum Command {
         #[arg(long)]
         filing_id: String,
     },
-    /// Ingest CapitolTrades
-    CapitolTrades {
-        #[arg(long, default_value = "50")]
-        limit: u32,
-    },
     /// Ingest Voteview data
     Voteview {
         #[arg(long)]
@@ -183,6 +185,7 @@ enum Command {
 
 #[tokio::main]
 async fn main() {
+    let _ = dotenvy::dotenv();
     tracing_subscriber::fmt::init();
 
     let cli = Cli::parse();
@@ -202,6 +205,9 @@ async fn main() {
     let repo = Repository::new(db, Arc::new(CacheLayer::new(300)));
 
     match &cli.command {
+        Command::ProfileEvidenceAll { congress, cycle } => {
+            cmd_profile_evidence_all(&repo, *congress, *cycle).await
+        }
         Command::InfluenceSeeds => cmd_influence_seeds(&repo).await,
         Command::Members {
             current_only,
@@ -251,7 +257,6 @@ async fn main() {
             bioguide_id,
             filing_id,
         } => cmd_house_ptr_url(&repo, url, output_path, bioguide_id, filing_id).await,
-        Command::CapitolTrades { limit } => cmd_capitol_trades(&repo, *limit).await,
         Command::Voteview {
             members,
             votes,
@@ -261,6 +266,149 @@ async fn main() {
         Command::RefreshRelationships => cmd_refresh_relationships(&repo).await,
         Command::AllSmoke => cmd_all_smoke(&repo).await,
     }
+}
+
+async fn cmd_profile_evidence_all(repo: &Repository, congress: u32, cycle: u32) {
+    info!(
+        congress,
+        cycle, "Starting deterministic all-member profile evidence refresh"
+    );
+    std::env::set_var("INGEST_CONTINUE_ON_ERROR", "1");
+    cmd_members(repo, true, 1_000).await;
+    cmd_congress_members(repo, 1_000).await;
+    cmd_voteview(repo, true, true, true).await;
+    cmd_congress_bills(repo, congress, 250).await;
+    cmd_member_legislation_all(repo, congress).await;
+    cmd_fec_candidates(repo, cycle, 1_000).await;
+    cmd_refresh_materialized_views(repo).await;
+    cmd_refresh_relationships(repo).await;
+    info!(
+        congress,
+        cycle, "All-member profile evidence refresh finished"
+    );
+}
+
+async fn cmd_member_legislation_all(repo: &Repository, congress: u32) {
+    let api_key = match std::env::var("CONGRESS_GOV_API_KEY") {
+        Ok(key) if !key.is_empty() => key,
+        _ => {
+            tracing::warn!("Skipping all-member legislation: CONGRESS_GOV_API_KEY is unavailable");
+            return;
+        }
+    };
+    let run_id = repo
+        .create_source_run(
+            SOURCE_CONGRESS_GOV,
+            "/v3/member/{bioguide}/sponsored-and-cosponsored-legislation",
+            serde_json::json!({ "congress": congress, "scope": "all_current_members" }),
+        )
+        .await
+        .expect("Failed to create all-member legislation source_run");
+    let member_ids: Vec<String> = sqlx::query_scalar(
+        "SELECT bioguide_id FROM members WHERE in_office = true ORDER BY bioguide_id",
+    )
+    .fetch_all(repo.pool())
+    .await
+    .unwrap_or_default();
+    let client = congress_api::Client::new(api_key);
+    let mut seen = 0i64;
+    let mut written = 0i64;
+
+    for bioguide_id in member_ids {
+        let sponsored = client.get_member_sponsored_legislation(&bioguide_id).await;
+        if let Ok(response) = sponsored {
+            for bill in response
+                .sponsored_legislation
+                .into_iter()
+                .filter(|bill| bill.congress == congress as i32)
+            {
+                seen += 1;
+                if ingest_member_legislation_item(repo, run_id, &bioguide_id, "sponsor", bill)
+                    .await
+                    .is_ok()
+                {
+                    written += 2;
+                }
+            }
+        }
+        let cosponsored = client
+            .get_member_cosponsored_legislation(&bioguide_id)
+            .await;
+        if let Ok(response) = cosponsored {
+            for bill in response
+                .cosponsored_legislation
+                .into_iter()
+                .filter(|bill| bill.congress == congress as i32)
+            {
+                seen += 1;
+                if ingest_member_legislation_item(repo, run_id, &bioguide_id, "cosponsor", bill)
+                    .await
+                    .is_ok()
+                {
+                    written += 2;
+                }
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(75)).await;
+    }
+
+    let status = if seen > 0 { "success" } else { "partial" };
+    repo.finish_source_run(run_id, status, seen, written, None)
+        .await
+        .expect("Failed to finish all-member legislation source_run");
+}
+
+async fn ingest_member_legislation_item(
+    repo: &Repository,
+    run_id: uuid::Uuid,
+    bioguide_id: &str,
+    sponsor_type: &str,
+    bill: congress_api::MemberSponsoredBill,
+) -> Result<(), sqlx::Error> {
+    let bill_number = bill.number.parse::<i32>().unwrap_or(0);
+    let bill_type = bill.bill_type.to_lowercase();
+    let bill_id = schema::build_bill_id(bill.congress, &bill_type, bill_number);
+    let introduced_date = bill
+        .introduced_date
+        .as_deref()
+        .and_then(|date| NaiveDate::parse_from_str(date, "%Y-%m-%d").ok());
+    let latest_action_date = bill
+        .latest_action
+        .as_ref()
+        .and_then(|action| action.action_date.as_deref())
+        .and_then(|date| NaiveDate::parse_from_str(date, "%Y-%m-%d").ok());
+    let latest_action_text = bill
+        .latest_action
+        .as_ref()
+        .and_then(|action| action.text.as_deref());
+    let policy_area = bill.policy_area.as_ref().map(|area| area.name.as_str());
+
+    repo.upsert_bill(BillUpsert {
+        congress: bill.congress,
+        bill_type: &bill_type,
+        bill_number,
+        bill_id: &bill_id,
+        title: &bill.title,
+        introduced_date,
+        origin_chamber: None,
+        policy_area,
+        latest_action_date,
+        latest_action_text,
+        status: latest_action_text.unwrap_or("introduced"),
+        url: None,
+        source_run_id: Some(run_id),
+    })
+    .await?;
+    repo.upsert_bill_sponsor(BillSponsorUpsert {
+        bill_id: &bill_id,
+        bioguide_id: Some(bioguide_id),
+        sponsor_type,
+        sponsorship_date: introduced_date,
+        is_original_cosponsor: false,
+        source_run_id: Some(run_id),
+    })
+    .await?;
+    Ok(())
 }
 
 async fn cmd_refresh_relationships(repo: &Repository) {
@@ -1419,11 +1567,10 @@ async fn try_congress_members(
 
         // Only update depiction_url, website_url, contact fields — don't overwrite
         // higher-confidence identifiers from unitedstates
-        let exists: Option<(String,)> =
-            sqlx::query_as("SELECT 1 FROM members WHERE bioguide_id = $1")
-                .bind(&member.bioguide_id)
-                .fetch_optional(repo.pool())
-                .await?;
+        let exists: Option<(i32,)> = sqlx::query_as("SELECT 1 FROM members WHERE bioguide_id = $1")
+            .bind(&member.bioguide_id)
+            .fetch_optional(repo.pool())
+            .await?;
 
         if exists.is_none() {
             let norm_party = normalize_party(&member.party);
@@ -1461,7 +1608,7 @@ async fn try_congress_members(
         } else {
             // Update live fields
             sqlx::query(
-                "UPDATE members SET depiction_url = COALESCE($1, depiction_url), source_run_id = $2 WHERE bioguide_id = $3",
+                "UPDATE members SET depiction_url = COALESCE($1, depiction_url), last_source_run_id = $2 WHERE bioguide_id = $3",
             )
             .bind(member.url.as_deref())
             .bind(run_id)
@@ -2185,115 +2332,6 @@ async fn try_lobbying_filings(
     Ok((seen, written))
 }
 
-// ── Capitol Trades ────────────────────────────────────────────────────────
-
-async fn cmd_capitol_trades(repo: &Repository, limit: u32) {
-    let run_id = repo
-        .create_source_run(
-            SOURCE_CAPITOLTRADES,
-            "/trades",
-            serde_json::json!({ "limit": limit }),
-        )
-        .await
-        .expect("Failed to create source_run");
-
-    let result = try_capitol_trades(repo, run_id, limit).await;
-    finish_api_run(repo, run_id, result).await;
-}
-
-async fn try_capitol_trades(
-    repo: &Repository,
-    run_id: uuid::Uuid,
-    limit: u32,
-) -> Result<(i64, i64), Box<dyn std::error::Error>> {
-    use tracing::warn;
-
-    let client = capitoltrades_api::Client::new();
-    client.prime_cookies().await?;
-
-    let mut seen = 0i64;
-    let mut written = 0i64;
-
-    let mut current_page = 1i64;
-    let mut total_pages = 1i64;
-
-    while current_page <= total_pages {
-        let trade_query = capitoltrades_api::TradeQuery::default()
-            .with_page(current_page)
-            .with_page_size(100);
-        let trade_resp = client.get_trades(&trade_query).await?;
-
-        total_pages = trade_resp.meta.paging.total_pages;
-        info!(
-            "CapitolTrades page {}/{} ({} items total)",
-            current_page, total_pages, trade_resp.meta.paging.total_items
-        );
-
-        for trade in &trade_resp.data {
-            seen += 1;
-
-            let trade_id = format!("ct-{}", trade.tx_id);
-
-            // Resolve bioguide_id by matching politician name against the members table.
-            let bioguide_id = repo
-                .find_bioguide_by_name(&trade.politician.first_name, &trade.politician.last_name)
-                .await?;
-            if bioguide_id.is_none() {
-                warn!(
-                    "No bioguide_id match for {} {} (CapitolTrades politician_id={})",
-                    trade.politician.first_name, trade.politician.last_name, trade.politician_id
-                );
-            }
-
-            let ticker = trade
-                .asset
-                .as_ref()
-                .and_then(|a| a.asset_ticker.as_deref())
-                .or(trade.issuer.issuer_ticker.as_deref());
-
-            let asset_name = Some(trade.issuer.issuer_name.as_str());
-
-            let amount_min = trade.size_range_low.map(|v| v as f64);
-            let amount_max = trade.size_range_high.map(|v| v as f64);
-            let tx_type_str = serde_json::to_string(&trade.tx_type)
-                .unwrap_or_else(|_| "unknown".to_string())
-                .trim_matches('"')
-                .to_lowercase();
-
-            repo.upsert_stock_trade(
-                &trade_id,
-                bioguide_id.as_deref(),
-                Some(&trade.politician_id),
-                ticker,
-                asset_name,
-                &tx_type_str,
-                amount_min,
-                amount_max,
-                None,
-                Some(trade.tx_date),
-                trade.filing_date,
-                trade.filing_url.as_deref(),
-                SOURCE_CAPITOLTRADES,
-                serde_json::to_value(trade)?,
-                Some(run_id),
-            )
-            .await?;
-            written += 1;
-
-            if limit > 0 && seen >= limit as i64 {
-                break;
-            }
-        }
-
-        if limit > 0 && seen >= limit as i64 {
-            break;
-        }
-        current_page += 1;
-    }
-
-    Ok((seen, written))
-}
-
 // ── Voteview Data ─────────────────────────────────────────────────────────
 
 async fn cmd_voteview(
@@ -2322,37 +2360,58 @@ async fn try_voteview(
     ingest_votes: bool,
     ingest_rollcalls: bool,
 ) -> Result<(i64, i64), Box<dyn std::error::Error>> {
+    const TARGET_CONGRESS: i32 = 119;
     let client = reqwest::Client::new();
     let mut seen = 0i64;
     let mut written = 0i64;
 
+    // Older importer versions used incorrect Voteview CSV indexes and could
+    // queue invalid ICPSR resolutions. Rebuild this source deterministically.
+    sqlx::query(
+        "DELETE FROM entity_resolution_queue WHERE source_scheme = $1 AND reason LIKE 'Voteview %'",
+    )
+    .bind(schema::SCHEME_ICPSR)
+    .execute(repo.pool())
+    .await?;
+    let identifier_rows: Vec<(String, String)> =
+        sqlx::query_as("SELECT value, bioguide_id FROM member_identifiers WHERE scheme = $1")
+            .bind(schema::SCHEME_ICPSR)
+            .fetch_all(repo.pool())
+            .await?;
+    let icpsr_to_bioguide: HashMap<String, String> = identifier_rows.into_iter().collect();
+
     // 1. Members CSV — load ICPSR crosswalk
     if ingest_members {
-        let url = "https://voteview.com/static/data/out/members/HSall_members.csv";
+        let url = "https://voteview.com/static/data/out/members/HS119_members.csv";
         let csv_text = client.get(url).send().await?.text().await?;
         let mut reader = csv::Reader::from_reader(csv_text.as_bytes());
 
         for result in reader.records() {
             let record = result?;
+            let congress: i32 = record
+                .get(0)
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(0);
+            if congress != TARGET_CONGRESS {
+                continue;
+            }
             seen += 1;
 
-            let icpsr: &str = record.get(0).unwrap_or("");
-            let chamber_code: &str = record.get(4).unwrap_or("");
+            let icpsr: &str = record.get(2).unwrap_or("");
+            let chamber_code: &str = record.get(1).unwrap_or("");
             let state_code: &str = record.get(5).unwrap_or("");
-            let district_code: &str = record.get(6).unwrap_or("");
-            let party_code: &str = record.get(9).unwrap_or("");
-            let nominate_dim1: Option<f64> = record.get(17).and_then(|v| v.parse().ok());
-            let nominate_dim2: Option<f64> = record.get(18).and_then(|v| v.parse().ok());
-            let bioname: &str = record.get(7).unwrap_or("");
+            let district_code: &str = record.get(4).unwrap_or("");
+            let party_code: &str = record.get(6).unwrap_or("");
+            let nominate_dim1: Option<f64> = record.get(13).and_then(|v| v.parse().ok());
+            let nominate_dim2: Option<f64> = record.get(14).and_then(|v| v.parse().ok());
+            let bioname: &str = record.get(9).unwrap_or("");
 
             if icpsr.is_empty() {
                 continue;
             }
 
             // Try to find by ICPSR
-            let bioguide_id = repo
-                .find_member_by_identifier(schema::SCHEME_ICPSR, icpsr)
-                .await?;
+            let bioguide_id = icpsr_to_bioguide.get(icpsr).cloned();
 
             if let Some(bg) = bioguide_id {
                 // Update nominate scores on the member
@@ -2392,7 +2451,7 @@ async fn try_voteview(
 
     // 2. Roll-call votes
     if ingest_rollcalls {
-        let url = "https://voteview.com/static/data/out/rollcalls/HSall_rollcalls.csv";
+        let url = "https://voteview.com/static/data/out/rollcalls/HS119_rollcalls.csv";
         let csv_text = client.get(url).send().await?.text().await?;
         let mut reader = csv::Reader::from_reader(csv_text.as_bytes());
 
@@ -2401,14 +2460,17 @@ async fn try_voteview(
             seen += 1;
 
             let congress: i32 = record.get(0).and_then(|v| v.parse().ok()).unwrap_or(0);
+            if congress != TARGET_CONGRESS {
+                continue;
+            }
             let chamber_code: &str = record.get(1).unwrap_or("");
             let roll_number: i32 = record.get(2).and_then(|v| v.parse().ok()).unwrap_or(0);
             let vote_date: Option<NaiveDate> = record
-                .get(4)
+                .get(3)
                 .and_then(|v| NaiveDate::parse_from_str(v, "%Y-%m-%d").ok());
-            let question: &str = record.get(5).unwrap_or("");
-            let description: &str = record.get(6).unwrap_or("");
-            let result_text: &str = record.get(9).unwrap_or("");
+            let question: &str = record.get(16).unwrap_or("");
+            let description: &str = record.get(15).unwrap_or("");
+            let result_text: &str = record.get(14).unwrap_or("");
 
             let chamber = normalize_chamber(chamber_code);
 
@@ -2435,7 +2497,7 @@ async fn try_voteview(
 
     // 3. Individual member votes
     if ingest_votes {
-        let url = "https://voteview.com/static/data/out/votes/HSall_votes.csv";
+        let url = "https://voteview.com/static/data/out/votes/HS119_votes.csv";
         let csv_text = client.get(url).send().await?.text().await?;
         let mut reader = csv::Reader::from_reader(csv_text.as_bytes());
 
@@ -2444,6 +2506,9 @@ async fn try_voteview(
             seen += 1;
 
             let congress: i32 = record.get(0).and_then(|v| v.parse().ok()).unwrap_or(0);
+            if congress != TARGET_CONGRESS {
+                continue;
+            }
             let chamber_code: &str = record.get(1).unwrap_or("");
             let roll_number: i32 = record.get(2).and_then(|v| v.parse().ok()).unwrap_or(0);
             let icpsr: &str = record.get(3).unwrap_or("");
@@ -2454,18 +2519,15 @@ async fn try_voteview(
             let vote_id = schema::build_vote_id(congress, &chamber, roll_number);
 
             let raw_cast = match position {
-                1 => "Yea",
-                2 => "Nay",
-                3 => "Not Voting",
-                4 => "Present",
-                5 => "Not Present",
+                1..=3 => "Yea",
+                4..=6 => "Nay",
+                7 => "Present",
+                8 | 9 => "Not Voting",
                 _ => "Unknown",
             };
             let cast_vote = normalize_vote_position(raw_cast);
 
-            let bioguide_id = repo
-                .find_member_by_identifier(schema::SCHEME_ICPSR, icpsr)
-                .await?;
+            let bioguide_id = icpsr_to_bioguide.get(icpsr).cloned();
 
             if let Some(bg) = &bioguide_id {
                 repo.upsert_member_vote(&vote_id, bg, &cast_vote, None, None, Some(run_id))
@@ -2652,11 +2714,7 @@ async fn cmd_all_smoke(repo: &Repository) {
         }
         Err(e) => {
             failures.push(format!("FEC committees smoke failed: {e}"));
-            let status = if fec_key == "DEMO_KEY" {
-                "rate_limited"
-            } else {
-                "failed"
-            };
+            let status = "failed";
             if let Err(err) = repo
                 .finish_source_run(run_id3, status, 0, 0, Some(&e.to_string()))
                 .await
@@ -2730,9 +2788,10 @@ async fn cmd_all_smoke(repo: &Repository) {
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
-/// Resolve the OpenFEC API key, defaulting to DEMO_KEY if not set.
+/// Resolve the OpenFEC API key, returning empty if not set. Callers must
+/// check the result and fail with a clear message if it's empty.
 fn resolve_fec_api_key() -> String {
-    std::env::var("OPENFEC_API_KEY").unwrap_or_else(|_| "DEMO_KEY".to_string())
+    std::env::var("OPENFEC_API_KEY").unwrap_or_default()
 }
 
 /// Finish a source run from a Result, printing errors and exiting on failure.
@@ -2759,7 +2818,9 @@ async fn finish_api_run(
             {
                 eprintln!("Failed to finish source_run {run_id}: {err}");
             }
-            std::process::exit(1);
+            if std::env::var("INGEST_CONTINUE_ON_ERROR").as_deref() != Ok("1") {
+                std::process::exit(1);
+            }
         }
     }
 }

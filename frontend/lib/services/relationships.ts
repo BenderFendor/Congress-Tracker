@@ -1,24 +1,24 @@
-import { BACKEND_URL } from "@/lib/constants";
 import type { ProvenanceSummary } from "./provenance";
+import { BACKEND_URL } from "@/lib/constants";
 
 export type RelationshipEvidence = {
-  evidence_id: string;
+  relationship_id: number;
   subject_key: string;
   object_key: string;
   relation_type: string;
   evidence_tier: "direct" | "derived" | "contextual";
   confidence: string;
-  source_url?: string;
-  source_record_id?: string;
-  amount_min?: number;
-  amount_max?: number;
+  source: string;
+  source_record_id?: string | null;
+  source_url?: string | null;
+  observed_at?: string | null;
+  amount_min?: number | null;
+  amount_max?: number | null;
   details?: Record<string, unknown>;
-  provenance?: ProvenanceSummary;
 };
-
 export type RelationshipsResponse = {
   relationships: RelationshipEvidence[];
-  total: number;
+  provenance?: Record<string, unknown>;
 };
 
 export async function getRelationships(filters: {

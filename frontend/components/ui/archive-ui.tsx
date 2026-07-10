@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from "react"
 import { useTheme } from "next-themes"
-import { ArrowRight, Landmark, Shield } from "lucide-react"
+import { AlertTriangle, ArrowRight, Database, ExternalLink } from "lucide-react"
 
 export function ArchivePage({ children }: { children: ReactNode }) {
   const { resolvedTheme } = useTheme()
@@ -15,7 +15,11 @@ export function ArchivePage({ children }: { children: ReactNode }) {
   const isDark = mounted && resolvedTheme === "dark"
 
   return (
-    <main className={`archive-page ${isDark ? "archive-page-dark" : "archive-page-light"}`}>
+    <main
+      id="main-content"
+      tabIndex={-1}
+      className={`archive-page ${isDark ? "archive-page-dark" : "archive-page-light"}`}
+    >
       {children}
     </main>
   )
@@ -50,16 +54,6 @@ export function ArchiveHero({
         <p>{description}</p>
         {actions ? <div className="archive-actions">{actions}</div> : null}
       </div>
-      <div className="archive-hero-art" aria-hidden="true">
-        <div className="archive-folder-stack">
-          <div className="archive-folder archive-folder-a" />
-          <div className="archive-folder archive-folder-b" />
-          <div className="archive-folder archive-folder-c" />
-        </div>
-        <div className="archive-seal">
-          <Landmark size={34} />
-        </div>
-      </div>
       {aside ? <div className="archive-hero-aside">{aside}</div> : null}
     </section>
   )
@@ -77,7 +71,7 @@ export function ArchiveMetrics({ metrics }: { metrics: ArchiveMetric[] }) {
     <section className="archive-metrics">
       {metrics.map((metric) => (
         <div className="archive-metric" key={metric.label}>
-          <div className="archive-metric-icon">{metric.icon ?? <Shield size={20} />}</div>
+          {metric.icon ? <div className="archive-metric-icon">{metric.icon}</div> : null}
           <div>
             <div className="archive-metric-label">{metric.label}</div>
             <div className="archive-metric-value">{metric.value}</div>
@@ -128,10 +122,80 @@ export function ArchiveSearch({
   children?: ReactNode
 }) {
   return (
-    <div className="archive-search-row">
-      <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />
+    // React 18's JSX types do not yet include the HTML search element.
+    // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role
+    <div className="archive-search-row" role="search">
+      <label className="sr-only" htmlFor="archive-search-input">{placeholder}</label>
+      <input
+        id="archive-search-input"
+        type="search"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+      />
       {children}
     </div>
+  )
+}
+
+type DataStateProps = {
+  title: string
+  description: string
+  kind?: "empty" | "error" | "setup"
+  action?: ReactNode
+}
+
+export function DataState({ title, description, kind = "empty", action }: DataStateProps) {
+  return (
+    <div className={`archive-data-state archive-data-state-${kind}`} role={kind === "error" ? "alert" : "status"}>
+      <div className="archive-data-state-icon" aria-hidden="true">
+        {kind === "error" ? <AlertTriangle size={18} /> : <Database size={18} />}
+      </div>
+      <div>
+        <h3>{title}</h3>
+        <p>{description}</p>
+        {action ? <div className="archive-data-state-action">{action}</div> : null}
+      </div>
+    </div>
+  )
+}
+
+type EvidenceSpineProps = {
+  identifier?: string | null
+  source: string
+  status: string
+  updated?: string | null
+  coverage?: string | null
+  sourceUrl?: string | null
+  children?: ReactNode
+}
+
+export function EvidenceSpine({
+  identifier,
+  source,
+  status,
+  updated,
+  coverage,
+  sourceUrl,
+  children,
+}: EvidenceSpineProps) {
+  return (
+    <aside className="archive-evidence-spine" aria-label="Evidence and provenance">
+      <div className="archive-panel-kicker">Evidence</div>
+      <dl>
+        {identifier ? <div><dt>Record</dt><dd>{identifier}</dd></div> : null}
+        <div><dt>Source</dt><dd>{source}</dd></div>
+        <div><dt>Status</dt><dd>{status}</dd></div>
+        {updated ? <div><dt>Updated</dt><dd>{updated}</dd></div> : null}
+        {coverage ? <div><dt>Coverage</dt><dd>{coverage}</dd></div> : null}
+      </dl>
+      {children}
+      {sourceUrl ? (
+        <a className="archive-link" href={sourceUrl} target="_blank" rel="noreferrer">
+          View source <ExternalLink size={14} />
+        </a>
+      ) : null}
+    </aside>
   )
 }
 

@@ -1,4 +1,8 @@
+import { createLogger } from "@/lib/tracing";
+
 import { BACKEND_URL } from "@/lib/constants";
+const log = createLogger("LobbyingService");
+
 
 export interface LobbyingFiling {
   filing_uuid: string;
@@ -137,14 +141,10 @@ export async function getLobbyingLobbyists(params: {
 }
 
 export async function getFilingDetail(uuid: string): Promise<LobbyingFiling | null> {
-  try {
-    const res = await fetch(`${BACKEND_URL}/api/lobbying/filings/${uuid}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
-  } catch (error) {
-    console.error('Failed to fetch filing detail:', error);
-    return null;
-  }
+  const res = await fetch(`${BACKEND_URL}/api/lobbying/filings/${encodeURIComponent(uuid)}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Lobbying filing detail request failed (${res.status})`);
+  return res.json();
 }
 
 export interface Contribution {
@@ -185,7 +185,7 @@ export async function getLobbyingFilings(params: {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch (error) {
-    console.error('Failed to fetch lobbying filings:', error);
+    log.error('Failed to fetch lobbying filings', { error: String(error) });
     return null;
   }
 }
@@ -209,13 +209,16 @@ export type BreakdownItem = {
 };
 
 export type FilingCardItem = {
+  filingUuid: string;
   registrantId?: number;
   registrantName: string;
+  clientName?: string;
+  filedAt?: string;
   jurisdiction: string;
   entityRole: string;
   filingCount: number;
   clientCount: number;
-  reportedAmount: number;
+  reportedAmount: number | null;
   reportedAmountLabel: string;
   topIssueAreas: string[];
   avatarText: string;
@@ -267,23 +270,22 @@ export async function fetchLobbyingFilings(
   q?: string,
   limit?: number,
   offset?: number
-): Promise<FilingsListResponse | null> {
-  try {
-    const params = new URLSearchParams();
-    if (year) params.set('year', String(year));
-    if (q) params.set('registrant', q);
-    if (limit) params.set('limit', String(limit));
-    if (offset) params.set('offset', String(offset));
-    const res = await fetch(`${BACKEND_URL}/api/lobbying/filings?${params}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json() as {
-      filings?: LobbyingFiling[];
-      total?: number;
-      limit?: number;
-      offset?: number;
-    };
-    const filings = Array.isArray(data.filings) ? data.filings : [];
-    const items: FilingCardItem[] = filings.map((filing) => {
+): Promise<FilingsListResponse> {
+  const params = new URLSearchParams();
+  if (year) params.set('year', String(year));
+  if (q) params.set('registrant', q);
+  if (limit) params.set('limit', String(limit));
+  if (offset) params.set('offset', String(offset));
+  const res = await fetch(`${BACKEND_URL}/api/lobbying/filings?${params}`);
+  if (!res.ok) throw new Error(`Lobbying filing request failed (${res.status})`);
+  const data = await res.json() as {
+    filings?: LobbyingFiling[];
+    total?: number;
+    limit?: number;
+    offset?: number;
+  };
+  const filings = Array.isArray(data.filings) ? data.filings : [];
+  const items: FilingCardItem[] = filings.map((filing) => {
       const name = filing.registrant_name || filing.client_name || "Unnamed filer";
       const initials = name
         .split(/\s+/)
@@ -292,26 +294,25 @@ export async function fetchLobbyingFilings(
         .map((part) => part[0]?.toUpperCase() ?? "")
         .join("");
       return {
+        filingUuid: filing.filing_uuid,
         registrantId: filing.registrant_id ?? undefined,
         registrantName: name,
+        clientName: filing.client_name ?? undefined,
+        filedAt: filing.dt_posted ?? undefined,
         jurisdiction: "Public filing",
         entityRole: "Registrant",
         filingCount: 1,
         clientCount: filing.client_name ? 1 : 0,
-        reportedAmount: filing.income ?? filing.expenses ?? 0,
-        reportedAmountLabel: filing.income != null ? "Reported Income" : "Reported Expenses",
+        reportedAmount: filing.income ?? filing.expenses,
+        reportedAmountLabel: filing.income != null ? "Reported income" : filing.expenses != null ? "Reported expenses" : "Amount not published",
         topIssueAreas: filing.issue_codes ?? [],
         avatarText: initials || "LD",
       };
-    });
-    const pageLimit = data.limit ?? limit ?? items.length;
-    const pageOffset = data.offset ?? offset ?? 0;
-    const total = data.total ?? items.length;
-    return { items, hasMore: pageOffset + pageLimit < total };
-  } catch (error) {
-    console.error('Failed to fetch lobbying filings:', error);
-    return null;
-  }
+  });
+  const pageLimit = data.limit ?? limit ?? items.length;
+  const pageOffset = data.offset ?? offset ?? 0;
+  const total = data.total ?? items.length;
+  return { items, hasMore: pageOffset + pageLimit < total };
 }
 
 export async function fetchInfluenceFlow(year?: number): Promise<InfluenceFlowResponse | null> {

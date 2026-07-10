@@ -43,7 +43,9 @@ pub fn parse_house_ptr_text(text: &str) -> Vec<ParsedPtrTransaction> {
         if transaction_type.is_empty() {
             continue;
         }
-        let asset_name = fields[1..transaction_type_index].join(" ");
+        let owner = owner_type(fields[0]);
+        let asset_start = usize::from(owner != "unknown");
+        let asset_name = fields[asset_start..transaction_type_index].join(" ");
         if asset_name.is_empty() {
             continue;
         }
@@ -52,7 +54,7 @@ pub fn parse_house_ptr_text(text: &str) -> Vec<ParsedPtrTransaction> {
             .filter_map(|offset| lines.get(index + offset))
             .find_map(|candidate| extract_ticker(candidate));
         transactions.push(ParsedPtrTransaction {
-            owner_type: owner_type(fields[0]),
+            owner_type: owner,
             asset_name: remove_ticker_suffix(&asset_name),
             ticker,
             transaction_type,
@@ -167,5 +169,21 @@ mod tests {
     #[test]
     fn ignores_unanchored_lines() {
         assert!(parse_house_ptr_text("Asset without dates (ABC) [ST]").is_empty());
+    }
+
+    #[test]
+    fn parses_current_house_rows_without_an_owner_code() {
+        let text = "Parkland, PA School District Municipal Bond [GS] P 02/20/2026 03/09/2026 $50,001 - $100,000";
+        let rows = parse_house_ptr_text(text);
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].owner_type, "unknown");
+        assert_eq!(
+            rows[0].asset_name,
+            "Parkland, PA School District Municipal Bond"
+        );
+        assert_eq!(rows[0].transaction_type, "purchase");
+        assert_eq!(rows[0].amount_min, Some(50001.0));
+        assert_eq!(rows[0].amount_max, Some(100000.0));
     }
 }

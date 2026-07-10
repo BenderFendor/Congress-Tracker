@@ -31,9 +31,9 @@ Manual commands:
 | check | `cd backend && cargo check` | `cd frontend && npx tsc --noEmit` |
 | lint | `cd backend && cargo fmt --check && cargo clippy --all-targets --all-features` | `cd frontend && pnpm lint` |
 | test | `cd backend && cargo test` | (none yet) |
-| run | `cargo run -p backend_server` | `pnpm dev` |
-| both | `./run_all.sh` | |
-
+| run | `cargo run -p intel_backend --bin intel_backend` | `pnpm dev` |
+| worker | `cargo run -p intel_worker --bin intel_worker` | Automatic House Clerk pipeline |
+| all | `./run_all.sh` | Backend + frontend + worker |
 ## Project structure
 
 ```
@@ -75,3 +75,11 @@ Frontend `.env.local` in `frontend/` needs:
 - [ ] No unused imports or dead code
 - [ ] `.env.example` updated if new env vars added
 - [ ] `docs/agent/learnings.md` updated if a reusable pattern was discovered
+
+## Ingestion ownership
+
+- Public-source ingestion must be deterministic, idempotent, and owned by the backend or `intel_worker` lifecycle.
+- Do not require operators or agents to run one-off ingest commands to make normal member pages complete.
+- Scheduled ingestion must cover all current members and the broadest source history supported by provider limits.
+- Use `source_runs`, advisory locks, bounded retries, and explicit partial-coverage states. Never replace failed ingestion with fabricated data or factual zeroes.
+- Manual ingest subcommands may remain as debugging tools, but production freshness and recovery must not depend on them.

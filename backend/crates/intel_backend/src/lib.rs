@@ -9,6 +9,7 @@ pub mod provenance;
 pub mod repository;
 pub mod routes;
 pub mod schema;
+pub mod tracing;
 
 pub use cache::CacheLayer;
 pub use config::Config;

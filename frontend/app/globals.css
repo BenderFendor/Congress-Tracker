@@ -25,7 +25,11 @@
   --input: #FFFFFF;
   --ring: #0B1D3A;
   
-  --radius: 0.25rem;              /* Subtle rounding */
+  --radius: 0.75rem;
+  --motion-fast: 120ms;
+  --motion-control: 180ms;
+  --motion-panel: 240ms;
+  --motion-data: 480ms;
 }
 
 /* Light mode is default. We can keep dark empty or just map it to the same for now */
@@ -91,6 +95,11 @@
       radial-gradient(circle at 86% 12%, rgba(11, 24, 48, 0.08), transparent 34rem),
       linear-gradient(180deg, #fffdf8 0%, #f8f4ec 48%, #f4eee4 100%);
   }
+
+  :focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--accent) 72%, white);
+    outline-offset: 3px;
+  }
 }
 
 @layer utilities {
@@ -120,6 +129,23 @@
 }
 
 @layer components {
+  .skip-link {
+    position: fixed;
+    left: 0.75rem;
+    top: -5rem;
+    z-index: 100;
+    border-radius: 0.65rem;
+    background: var(--primary);
+    color: var(--primary-foreground);
+    padding: 0.75rem 1rem;
+    font-weight: 700;
+    transition: top var(--motion-control) ease;
+  }
+
+  .skip-link:focus {
+    top: 0.75rem;
+  }
+
   .archive-page {
     min-height: 100svh;
     color: var(--foreground);
@@ -158,12 +184,12 @@
   .archive-hero {
     position: relative;
     display: grid;
-    grid-template-columns: minmax(0, 1.15fr) minmax(18rem, 0.85fr);
-    gap: clamp(1.25rem, 3vw, 3rem);
+    grid-template-columns: minmax(0, 1fr);
+    gap: clamp(1rem, 2vw, 2rem);
     align-items: center;
-    width: min(100% - 2rem, 116rem);
+    width: min(100% - 2rem, 106rem);
     margin: 0 auto;
-    padding: clamp(2rem, 4vw, 4.5rem) clamp(1.25rem, 3vw, 3.5rem);
+    padding: clamp(1.5rem, 3vw, 2.75rem) clamp(1rem, 2vw, 2rem);
     border-bottom: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
     overflow: hidden;
   }
@@ -179,7 +205,7 @@
   }
 
   .archive-hero:has(.archive-hero-aside) {
-    grid-template-columns: minmax(0, 1fr) minmax(18rem, 28rem) minmax(16rem, 22rem);
+    grid-template-columns: minmax(0, 1.15fr) minmax(22rem, 31rem);
   }
 
   .archive-page-dark .archive-hero::before {
@@ -189,7 +215,6 @@
   }
 
   .archive-hero-copy,
-  .archive-hero-art,
   .archive-hero-aside {
     position: relative;
     z-index: 1;
@@ -207,11 +232,12 @@
   }
 
   .archive-hero h1 {
-    margin-top: 0.9rem;
+    max-width: 62rem;
+    margin-top: 0.65rem;
     font-family: var(--font-playfair), Georgia, serif;
-    font-size: clamp(3rem, 5.3vw, 6.4rem);
-    line-height: 0.95;
-    letter-spacing: 0;
+    font-size: clamp(2.5rem, 4.5vw, 4.8rem);
+    line-height: 0.98;
+    letter-spacing: -0.035em;
     color: var(--primary);
   }
 
@@ -221,95 +247,22 @@
 
   .archive-hero h1 span {
     color: var(--accent);
+    font-style: normal;
   }
 
   .archive-hero p {
     max-width: 42rem;
-    margin-top: 1.4rem;
+    margin-top: 0.85rem;
     color: var(--muted-foreground);
-    font-size: clamp(1rem, 1.4vw, 1.35rem);
-    line-height: 1.65;
+    font-size: clamp(0.95rem, 1.1vw, 1.08rem);
+    line-height: 1.6;
   }
 
   .archive-actions {
     display: flex;
     flex-wrap: wrap;
     gap: 0.9rem;
-    margin-top: 2rem;
-  }
-
-  .archive-hero-art {
-    min-height: 15rem;
-    display: grid;
-    place-items: center;
-  }
-
-  .archive-folder-stack {
-    position: relative;
-    width: min(100%, 31rem);
-    height: 18rem;
-    perspective: 900px;
-  }
-
-  .archive-folder {
-    position: absolute;
-    inset: 2rem 0 0 0;
-    border: 1px solid rgba(177, 145, 108, 0.55);
-    border-radius: 1.1rem 1.1rem 0.55rem 0.55rem;
-    background:
-      linear-gradient(135deg, rgba(255, 255, 255, 0.78), rgba(221, 196, 163, 0.52)),
-      repeating-linear-gradient(0deg, rgba(97, 75, 52, 0.06) 0 1px, transparent 1px 7px);
-    box-shadow: 0 2rem 5rem rgba(44, 30, 16, 0.16);
-    transform-origin: bottom center;
-  }
-
-  .archive-folder::before {
-    content: "";
-    position: absolute;
-    top: -1.2rem;
-    left: 3rem;
-    width: 9rem;
-    height: 1.3rem;
-    border: 1px solid rgba(177, 145, 108, 0.42);
-    border-bottom: 0;
-    border-radius: 0.6rem 0.6rem 0 0;
-    background: rgba(224, 201, 170, 0.75);
-  }
-
-  .archive-folder-a { transform: rotateX(0deg) rotateZ(-2deg) translateX(-1.2rem); }
-  .archive-folder-b { transform: rotateX(0deg) rotateZ(2deg) translate(1.2rem, 1.4rem); opacity: 0.8; }
-  .archive-folder-c { transform: rotateX(0deg) rotateZ(0deg) translate(0, 2.7rem); opacity: 0.92; }
-
-  .archive-seal {
-    position: absolute;
-    width: 7.2rem;
-    height: 7.2rem;
-    display: grid;
-    place-items: center;
-    border-radius: 999px;
-    color: var(--accent);
-    border: 1px solid rgba(201, 72, 61, 0.34);
-    background: radial-gradient(circle, rgba(255,255,255,0.92), rgba(223, 200, 174, 0.64));
-    box-shadow: 0 1rem 3rem rgba(93, 58, 32, 0.2);
-    animation: sealFloat 6s ease-in-out infinite;
-  }
-
-  .archive-page-dark .archive-folder {
-    background:
-      linear-gradient(135deg, rgba(22, 30, 43, 0.92), rgba(98, 70, 67, 0.36)),
-      repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.05) 0 1px, transparent 1px 7px);
-    border-color: rgba(240, 111, 99, 0.24);
-    box-shadow: 0 2rem 5rem rgba(0, 0, 0, 0.38);
-  }
-
-  .archive-page-dark .archive-folder::before {
-    background: rgba(30, 39, 55, 0.92);
-    border-color: rgba(240, 111, 99, 0.24);
-  }
-
-  .archive-page-dark .archive-seal {
-    background: radial-gradient(circle, rgba(20, 29, 43, 0.95), rgba(9, 13, 20, 0.7));
-    color: #f06f63;
+    margin-top: 1.25rem;
   }
 
   .archive-hero-aside,
@@ -328,7 +281,7 @@
   }
 
   .archive-hero-aside {
-    padding: 1.5rem;
+    padding: 1.25rem;
     border-radius: 0.6rem;
   }
 
@@ -336,7 +289,7 @@
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     width: min(100% - 2rem, 106rem);
-    margin: 1.8rem auto;
+    margin: 0 auto 1rem;
     border-radius: 0.45rem;
     overflow: hidden;
   }
@@ -345,7 +298,7 @@
     display: flex;
     align-items: center;
     gap: 1rem;
-    padding: 1.35rem clamp(1rem, 2vw, 2rem);
+    padding: 1rem clamp(0.9rem, 1.5vw, 1.5rem);
     border-right: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
   }
 
@@ -479,11 +432,11 @@
     border-top: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
     background: transparent;
     border-radius: 0;
-    transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+    transition: transform var(--motion-control) ease, border-color var(--motion-control) ease;
   }
 
   .archive-row:hover {
-    transform: translateY(-2px);
+    transform: translateX(0.2rem);
     border-color: color-mix(in srgb, var(--accent) 52%, var(--border));
     box-shadow: none;
   }
@@ -502,20 +455,81 @@
     font-size: 0.68rem;
     text-transform: uppercase;
   }
-}
 
-@keyframes sealFloat {
-  0%, 100% { transform: translate(7.5rem, 5.3rem) rotate(-5deg); }
-  50% { transform: translate(7.5rem, 4.6rem) rotate(3deg); }
+  .archive-data-state {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.85rem;
+    align-items: start;
+    border-top: 1px solid var(--border);
+    padding: 1.25rem 0;
+    color: var(--muted-foreground);
+  }
+
+  .archive-data-state-icon {
+    display: grid;
+    width: 2.25rem;
+    height: 2.25rem;
+    place-items: center;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--accent) 9%, transparent);
+    color: var(--accent);
+  }
+
+  .archive-data-state h3 {
+    color: var(--foreground);
+    font-size: 0.95rem;
+    font-weight: 700;
+  }
+
+  .archive-data-state p {
+    margin-top: 0.25rem;
+    max-width: 50rem;
+    font-size: 0.82rem;
+    line-height: 1.6;
+  }
+
+  .archive-data-state-error .archive-data-state-icon {
+    background: color-mix(in srgb, var(--destructive) 10%, transparent);
+    color: var(--destructive);
+  }
+
+  .archive-data-state-action {
+    margin-top: 0.75rem;
+  }
+
+  .archive-evidence-spine {
+    display: grid;
+    gap: 1rem;
+    border-left: 2px solid color-mix(in srgb, var(--accent) 55%, var(--border));
+    padding: 0.5rem 0 0.5rem 1rem;
+  }
+
+  .archive-evidence-spine dl {
+    display: grid;
+    gap: 0.65rem;
+  }
+
+  .archive-evidence-spine dl div {
+    display: grid;
+    grid-template-columns: 5.5rem minmax(0, 1fr);
+    gap: 0.75rem;
+    font-size: 0.75rem;
+  }
+
+  .archive-evidence-spine dt {
+    color: var(--muted-foreground);
+  }
+
+  .archive-evidence-spine dd {
+    color: var(--foreground);
+    font-weight: 650;
+  }
 }
 
 @media (max-width: 1180px) {
   .archive-hero {
     grid-template-columns: 1fr;
-  }
-
-  .archive-hero-art {
-    min-height: 14rem;
   }
 
   .archive-metrics {
@@ -530,21 +544,46 @@
 @media (max-width: 720px) {
   .archive-hero {
     width: 100%;
-    padding: 2rem 1rem;
+    padding: 1.1rem 1rem;
   }
 
   .archive-metrics {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .archive-metric {
-    border-right: 0;
+    gap: 0.65rem;
+    padding: 0.8rem;
     border-bottom: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  }
+
+  .archive-metric:nth-child(odd) {
+    border-right: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  }
+
+  .archive-metric-icon {
+    width: 2.35rem;
+    height: 2.35rem;
+  }
+
+  .archive-metric-detail {
+    display: none;
   }
 
   .archive-search-row {
     position: static;
     flex-direction: column;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
   }
 }
 

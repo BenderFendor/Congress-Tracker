@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
+import { createLogger } from "@/lib/tracing"
 import { ArrowLeft, FileText, AlertTriangle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { getBillIntel, type BillIntel } from "@/lib/services/bills"
@@ -38,6 +39,8 @@ function parseBillId(rawId: string): { congress: number; billType: string; billN
   return null
 }
 
+const log = createLogger("BillPage")
+
 export default function BillDetailPage() {
   const params = useParams<{ id: string }>()
   const router = useRouter()
@@ -61,7 +64,7 @@ export default function BillDetailPage() {
         const result = await getBillIntel(parsed.congress, parsed.billType, parsed.billNumber)
         setData(result)
       } catch (err) {
-        console.error("Error loading bill intelligence:", err)
+        log.error("Error loading bill intelligence", { error: String(err) })
       } finally {
         setLoading(false)
       }

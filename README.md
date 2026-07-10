@@ -18,7 +18,8 @@ The app must not present mock data as real data. Missing source keys or empty in
 - Congress.gov API: bills, sponsors, actions, official source URLs
 - OpenFEC API: candidates, committees, campaign finance entities
 - Senate LDA API: lobbying filings, clients, registrants, issue codes
-- CapitolTrades adapter: stock-trade ingestion boundary; no fake prices or trades
+- House Clerk financial disclosures: official PTR index and PDFs ingested by `intel_worker`
+- CapitolTrades adapter: legacy/manual compatibility boundary; the canonical portfolio path uses official disclosure rows
 
 ## Canonical API
 
@@ -69,7 +70,7 @@ cargo run -p intel_backend --bin ingest -- refresh-materialized-views
 
 `organization-manifest` imports canonical organization records plus identifiers such as SEC CIK, FEC committee ID, or LDA client/registrant ID. Identifier values are source-scoped evidence and are never treated as proof of a member relationship by themselves.
 
-`house-ptr-url` downloads an official PDF and passes it to `house-ptr`. `house-ptr` hashes the PDF, runs `pdftotext -layout`, parses anchored transaction rows, and stores range-aware transactions with the original filing URL. It intentionally rejects unanchored rows rather than guessing. Run `refresh-relationships` after importing documents to connect disclosure tickers to canonical organizations.
+`intel_worker` is the canonical continuous PTR path. It discovers the Clerk TSV index, queues supported periodic transaction reports, stores immutable PDF versions, parses range-aware transactions, resolves members, and refreshes the materialized trade view. The manual `house-ptr-url` command remains useful for a single known filing. Both paths keep the official filing URL and reject unanchored rows instead of guessing.
 
 4. Start the backend:
 
@@ -112,7 +113,7 @@ Browser verification artifacts can be stored under `reports/verification/`.
 
 ## Known Limits
 
-- Official House and Senate financial disclosure/PTR parsing still needs dedicated source ingestion.
+- The automated worker currently ingests House periodic transaction reports. Annual disclosure sections, scanned-document OCR, and Senate eFD ingestion remain explicit gaps.
 - Member vote and sponsorship pages read only canonical relational records; missing rows are shown as unavailable rather than inferred from search.
 - Stocks and portfolio pages must stay empty or caveated until real disclosure rows exist.
 - Voteview and Wikidata are registered as sources but are not required for the core smoke dataset.

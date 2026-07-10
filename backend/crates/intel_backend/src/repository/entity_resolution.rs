@@ -47,7 +47,7 @@ impl Repository {
         let rows: Vec<QueueRow> = if let Some(st) = status {
             sqlx::query_as::<_, QueueRow>(
                 r#"SELECT id, entity_type, source_scheme, source_value,
-                          candidate_bioguide_id, confidence_score, reason, status
+                          candidate_bioguide_id, confidence_score::double precision, reason, status
                    FROM entity_resolution_queue
                    WHERE status = $1
                    ORDER BY confidence_score DESC, id ASC
@@ -60,7 +60,7 @@ impl Repository {
         } else {
             sqlx::query_as::<_, QueueRow>(
                 r#"SELECT id, entity_type, source_scheme, source_value,
-                          candidate_bioguide_id, confidence_score, reason, status
+                          candidate_bioguide_id, confidence_score::double precision, reason, status
                    FROM entity_resolution_queue
                    ORDER BY status ASC, confidence_score DESC, id ASC
                    LIMIT $1"#,

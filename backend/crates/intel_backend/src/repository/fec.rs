@@ -4,6 +4,7 @@ use crate::models::{
 };
 use crate::repository::Repository;
 use chrono::NaiveDate;
+use tracing::Instrument;
 
 pub struct FecCandidateUpsert<'a> {
     pub candidate_id: &'a str,
@@ -309,7 +310,7 @@ impl Repository {
         })
         .collect();
 
-        let has_run = self.has_successful_fec_run().await?;
+        let has_run = self.has_successful_fec_run(bioguide_id, cycle).await?;
 
         let provenance = ProvenanceSummary {
             sources: vec![ProvenanceSource {
@@ -356,15 +357,24 @@ impl Repository {
     }
 
     /// Check whether a successful openfec source run exists.
-    pub async fn has_successful_fec_run(&self) -> Result<bool, sqlx::Error> {
-        let row: Option<(i64,)> = sqlx::query_as(
-            "SELECT COUNT(*)::bigint FROM source_runs
-             WHERE source LIKE '%openfec%' AND status = 'success' AND rows_written > 0",
+    pub async fn has_successful_fec_run(
+        &self,
+        bioguide_id: &str,
+        cycle: i32,
+    ) -> Result<bool, sqlx::Error> {
+        let row: (bool,) = sqlx::query_as(
+            "SELECT EXISTS(
+               SELECT 1 FROM fec_transactions
+               WHERE bioguide_id = $1 AND cycle = $2
+             )",
         )
+        .bind(bioguide_id)
+        .bind(cycle)
         .fetch_optional(self.pool())
-        .await?;
+        .await?
+        .unwrap_or((false,));
 
-        Ok(row.map(|(c,)| c > 0).unwrap_or(false))
+        Ok(row.0)
     }
 
     /// Search FEC committees (PACs) by name query.
@@ -392,6 +402,134 @@ impl Repository {
                 state: r.state,
             })
             .collect())
+    }
+
+    /// Fetch member funding from OpenFEC API live when database has no data.
+    /// Returns None if the member has no FEC candidate_id or the API call fails.
+    pub async fn auto_ingest_member_funding(
+        &self,
+        bioguide_id: &str,
+        cycle: i32,
+        api_key: &str,
+    ) -> Result<Option<MemberFunding>, Box<dyn std::error::Error + Send + Sync>> {
+        let span = tracing::info_span!("auto_ingest_member_funding", bioguide_id = %bioguide_id, cycle = %cycle);
+        async {
+            // 1. Look up FEC candidate_id
+            let fec_id = match self.get_member_identifier(bioguide_id, "fec").await? {
+                Some(id) => {
+                    tracing::info!(bioguide_id=%bioguide_id, fec_id=%id, "found FEC candidate_id");
+                    id
+                }
+                None => {
+                    tracing::warn!(bioguide_id=%bioguide_id, "no FEC candidate_id found");
+                    return Ok(None);
+                }
+            };
+
+            if api_key.is_empty() {
+                return Err("OpenFEC API key is required. Set OPENFEC_API_KEY. Get a key at https://api.data.gov/signup/".into());
+            }
+            let client = openfec_api::Client::new(api_key.to_string());
+
+            // 3. Fetch candidate totals
+            let totals_query = openfec_api::query::CandidateTotalQuery::default()
+                .with_candidate_id(fec_id.clone())
+                .with_cycle(cycle as u32);
+            tracing::info!(fec_id=%fec_id, cycle=cycle, "fetching candidate totals from OpenFEC");
+            let totals_resp = client.get_candidate_totals(&totals_query).await?;
+            tracing::info!(fec_id=%fec_id, totals_count=totals_resp.data.len(), "received candidate totals");
+
+            let Some(totals) = totals_resp.data.first() else {
+                tracing::warn!(fec_id=%fec_id, cycle, "OpenFEC returned no candidate totals");
+                return Ok(None);
+            };
+            let direct_receipts = totals.receipts.unwrap_or(0.0);
+            let pac_receipts = totals
+                .other_political_committee_contributions
+                .unwrap_or(0.0);
+            let individual_receipts = totals.individual_itemized_contributions.unwrap_or(0.0)
+                + totals.individual_unitemized_contributions.unwrap_or(0.0);
+
+            let mut warnings = vec![
+                "Contributor and committee rankings require the canonical paginated FEC transaction ingest; candidate totals alone do not support a complete ranking.".to_string(),
+                "Independent expenditure totals are unavailable in the candidate totals response and are not inferred as factual zeroes.".to_string(),
+            ];
+            if totals.receipts.is_none() {
+                warnings.push("OpenFEC did not publish total receipts for this candidate and cycle.".to_string());
+            }
+
+            let provenance = ProvenanceSummary {
+                sources: vec![ProvenanceSource {
+                    source: "openfec".to_string(),
+                    status: "live_totals".to_string(),
+                    fetched_at: Some(chrono::Utc::now().to_rfc3339()),
+                    confidence: Some("verified".to_string()),
+                }],
+                warnings,
+            };
+
+            Ok(Some(MemberFunding {
+                bioguide_id: bioguide_id.to_string(),
+                cycle,
+                direct_receipts,
+                pac_receipts,
+                individual_receipts,
+                independent_expenditures_supporting: 0.0,
+                independent_expenditures_opposing: 0.0,
+                top_donors: Vec::new(),
+                top_committees: Vec::new(),
+                influence_networks: Vec::new(),
+                has_successful_fec_run: true,
+                provenance,
+            }))
+        }.instrument(span).await
+    }
+
+    /// Get cached funding data if still fresh (within max_age_hours).
+    pub async fn get_cached_funding(
+        &self,
+        bioguide_id: &str,
+        cycle: i32,
+        max_age_hours: i32,
+    ) -> Result<Option<MemberFunding>, sqlx::Error> {
+        let row: Option<(serde_json::Value,)> = sqlx::query_as(
+            "SELECT data FROM funding_cache
+             WHERE bioguide_id = $1
+               AND cycle = $2
+               AND fetched_at > now() - ($3 || ' hours')::interval
+               AND data #>> '{provenance,sources,0,status}' = 'live_totals'",
+        )
+        .bind(bioguide_id)
+        .bind(cycle)
+        .bind(max_age_hours.to_string())
+        .fetch_optional(self.pool())
+        .await?;
+        match row {
+            Some((v,)) => Ok(serde_json::from_value(v).ok()),
+            None => Ok(None),
+        }
+    }
+
+    /// Upsert funding data into the persistent cache.
+    pub async fn save_funding_cache(
+        &self,
+        bioguide_id: &str,
+        cycle: i32,
+        funding: &MemberFunding,
+    ) -> Result<(), sqlx::Error> {
+        let data = serde_json::to_value(funding)
+            .map_err(|e| sqlx::Error::Protocol(format!("json encode: {e}")))?;
+        sqlx::query(
+            "INSERT INTO funding_cache (bioguide_id, cycle, data, fetched_at)
+             VALUES ($1, $2, $3, now())
+             ON CONFLICT (bioguide_id, cycle) DO UPDATE SET data = $3, fetched_at = now()",
+        )
+        .bind(bioguide_id)
+        .bind(cycle)
+        .bind(&data)
+        .execute(self.pool())
+        .await?;
+        Ok(())
     }
 }
 
@@ -437,4 +575,47 @@ struct PacRow {
     committee_type: Option<String>,
     party: Option<String>,
     state: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL, OPENFEC_API_KEY, and live OpenFEC access"]
+    async fn live_auto_ingest_returns_official_totals_without_partial_rankings() {
+        // This test requires DATABASE_URL and network access
+        let db_url = std::env::var("DATABASE_URL").unwrap_or_default();
+        if db_url.is_empty() {
+            eprintln!("Skipping: DATABASE_URL not set");
+            return;
+        }
+        let db = crate::db::Db::connect(&db_url).await.expect("db connect");
+        let cache = std::sync::Arc::new(crate::cache::CacheLayer::new(60));
+        let repo = crate::repository::Repository::new(db, cache);
+
+        let api_key = std::env::var("OPENFEC_API_KEY").unwrap_or_default();
+        if api_key.is_empty() {
+            eprintln!("SKIP: OPENFEC_API_KEY not set. Get a key at https://api.data.gov/signup/");
+            return;
+        }
+        let result = repo
+            .auto_ingest_member_funding("A000370", 2026, &api_key)
+            .await;
+        match result {
+            Ok(Some(funding)) => {
+                assert!(funding.direct_receipts > 0.0, "Should have receipts");
+                assert!(funding.pac_receipts > 0.0, "Should have PAC receipts");
+                assert!(
+                    funding.individual_receipts > 0.0,
+                    "Should have individual receipts"
+                );
+                assert!(funding.top_donors.is_empty());
+                assert!(funding.top_committees.is_empty());
+                assert!(funding.provenance.warnings.iter().any(|warning| {
+                    warning.contains("canonical paginated FEC transaction ingest")
+                }));
+            }
+            Ok(None) => panic!("auto_ingest returned None"),
+            Err(e) => panic!("auto_ingest failed: {}", e),
+        }
+    }
 }

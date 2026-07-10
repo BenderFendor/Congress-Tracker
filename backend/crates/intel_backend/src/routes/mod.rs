@@ -14,16 +14,59 @@ pub mod organizations;
 pub mod portfolio;
 pub mod search;
 pub mod sources;
+pub mod system;
 pub mod trades;
 
 use crate::cache::CacheLayer;
 use crate::repository::Repository;
+use axum::body::Body;
+use axum::http::{HeaderName, HeaderValue, Request};
+use axum::middleware::Next;
 use axum::Router;
+use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
-use tower_http::trace::TraceLayer;
+use tower_http::trace::{DefaultOnFailure, DefaultOnRequest, DefaultOnResponse, TraceLayer};
+use tracing::Instrument;
+use uuid::Uuid;
 
-pub fn build_router(repo: Repository, cache: Arc<CacheLayer>) -> Router {
+static REQUEST_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Middleware that ensures every request has an x-request-id header.
+/// If the client provides one, it's used; otherwise a UUIDv4 is generated.
+async fn correlation_id_middleware(
+    mut request: Request<Body>,
+    next: Next,
+) -> axum::response::Response {
+    let request_id = request
+        .headers()
+        .get("x-request-id")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| {
+            let count = REQUEST_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            format!(
+                "{}-{}",
+                Uuid::new_v4()
+                    .to_string()
+                    .split('-')
+                    .next()
+                    .unwrap_or("req"),
+                count
+            )
+        });
+
+    request.headers_mut().insert(
+        HeaderName::from_static("x-request-id"),
+        HeaderValue::from_str(&request_id).unwrap(),
+    );
+
+    let span = tracing::info_span!("request", request_id = %request_id);
+    let response = next.run(request).instrument(span).await;
+    response
+}
+
+pub fn build_router(repo: Repository, cache: Arc<CacheLayer>, openfec_api_key: String) -> Router {
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
@@ -32,6 +75,14 @@ pub fn build_router(repo: Repository, cache: Arc<CacheLayer>) -> Router {
     Router::new()
         // Health
         .route("/api/health", axum::routing::get(health::health_check))
+        .route(
+            "/api/system/disclosure-coverage",
+            axum::routing::get(system::coverage),
+        )
+        .route(
+            "/api/system/worker-health",
+            axum::routing::get(system::worker_health),
+        )
         .route("/api/home/summary", axum::routing::get(home::summary))
         .route("/api/sources/status", axum::routing::get(sources::status))
         .route(
@@ -171,13 +222,41 @@ pub fn build_router(repo: Repository, cache: Arc<CacheLayer>) -> Router {
             axum::routing::get(admin::get_resolution_queue),
         )
         // Layers
-        .layer(TraceLayer::new_for_http())
+        .layer(
+            TraceLayer::new_for_http()
+                .on_request(DefaultOnRequest::new().level(tracing::Level::INFO))
+                .on_response(DefaultOnResponse::new().level(tracing::Level::INFO))
+                .on_failure(DefaultOnFailure::new().level(tracing::Level::WARN))
+                .make_span_with(|request: &Request<_>| {
+                    let method = request.method().to_string();
+                    let uri = request.uri().path().to_string();
+                    let request_id = request
+                        .headers()
+                        .get("x-request-id")
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or("unknown");
+                    tracing::info_span!(
+                        "http_request",
+                        method = %method,
+                        uri = %uri,
+                        request_id = %request_id,
+                        status = tracing::field::Empty,
+                        latency_ms = tracing::field::Empty,
+                    )
+                }),
+        )
+        .layer(axum::middleware::from_fn(correlation_id_middleware))
         .layer(cors)
-        .with_state(Arc::new(AppState { repo, cache }))
+        .with_state(Arc::new(AppState {
+            repo,
+            cache,
+            openfec_api_key,
+        }))
 }
 
 #[derive(Clone)]
 pub struct AppState {
     pub repo: Repository,
     pub cache: Arc<CacheLayer>,
+    pub openfec_api_key: String,
 }

@@ -1,8 +1,9 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
-import { Building2, Landmark, Search, Info, ChevronDown, Check } from "lucide-react"
-import { ArchivePage } from "@/components/ui/archive-ui"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { Building2, Search, ChevronDown, Check, X, Scale, LoaderCircle, ArrowUpDown } from "lucide-react"
+import { ArchivePage, DataState } from "@/components/ui/archive-ui"
+import { CompactMasthead } from "@/components/ui/mockup-visuals"
 import { getAllLegislators, type Legislator } from "@/lib/services/legislators"
 import { LegislatorCard } from "@/components/ui/legislator-card"
 
@@ -16,7 +17,10 @@ export default function LegislatorsPage() {
   const [selectedChamber, setSelectedChamber] = useState("all")
   const [selectedState, setSelectedState] = useState("all")
   const [matchOnly, setMatchOnly] = useState(false)
+  const [sortBy, setSortBy] = useState("name")
   const [displayCount, setDisplayCount] = useState(12)
+  const [compareIds, setCompareIds] = useState<string[]>([])
+  const loadMoreRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     async function loadData() {
@@ -59,46 +63,75 @@ export default function LegislatorsPage() {
     })
   }, [members, searchTerm, selectedParty, selectedChamber, selectedState, matchOnly])
 
-  const visibleMembers = filteredMembers.slice(0, displayCount)
+  const sortedMembers = useMemo(() => {
+    return [...filteredMembers].sort((a, b) => {
+      if (sortBy === "state") {
+        return a.state.localeCompare(b.state) || a.chamber.localeCompare(b.chamber) || String(a.district).localeCompare(String(b.district), undefined, { numeric: true }) || a.name.localeCompare(b.name)
+      }
+      if (sortBy === "party") return a.party.localeCompare(b.party) || a.name.localeCompare(b.name)
+      if (sortBy === "chamber") return a.chamber.localeCompare(b.chamber) || a.name.localeCompare(b.name)
+      if (sortBy === "age-asc" || sortBy === "age-desc") {
+        const aAge = a.age ?? null
+        const bAge = b.age ?? null
+        if (aAge == null && bAge == null) return a.name.localeCompare(b.name)
+        if (aAge == null) return 1
+        if (bAge == null) return -1
+        return (sortBy === "age-asc" ? aAge - bAge : bAge - aAge) || a.name.localeCompare(b.name)
+      }
+      return a.name.localeCompare(b.name)
+    })
+  }, [filteredMembers, sortBy])
+  const visibleMembers = sortedMembers.slice(0, displayCount)
   const senateCount = members.filter((member) => member.chamber.toLowerCase() === "senate").length
   const houseCount = members.filter((member) => member.chamber.toLowerCase() === "house").length
   const matchedTradeCount = members.filter((member) => member.trade_summary?.matched).length
+  const ageSummary = useMemo(() => {
+    const ages = members.map((member) => member.age).filter((age): age is number => age != null && Number.isFinite(age)).sort((a, b) => a - b)
+    if (ages.length === 0) return { average: null, median: null, measured: 0 }
+    const middle = Math.floor(ages.length / 2)
+    const median = ages.length % 2 === 0 ? (ages[middle - 1] + ages[middle]) / 2 : ages[middle]
+    return {
+      average: ages.reduce((sum, age) => sum + age, 0) / ages.length,
+      median,
+      measured: ages.length,
+    }
+  }, [members])
+  const comparisonMembers = compareIds
+    .map((id) => members.find((member) => member.id === id))
+    .filter((member): member is Legislator => Boolean(member))
+
+  useEffect(() => {
+    const sentinel = loadMoreRef.current
+    if (!sentinel || displayCount >= filteredMembers.length) return
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) setDisplayCount((count) => Math.min(count + 12, filteredMembers.length))
+      },
+      { rootMargin: "500px 0px" },
+    )
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [displayCount, filteredMembers.length])
+
+  function toggleComparison(memberId: string) {
+    setCompareIds((current) =>
+      current.includes(memberId)
+        ? current.filter((id) => id !== memberId)
+        : current.length < 4
+          ? [...current, memberId]
+          : current,
+    )
+  }
 
   return (
     <ArchivePage>
-      {/* Subtle Grid Background */}
-      <div className="fixed inset-0 pointer-events-none z-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]" />
-
-      {/* Hero Section */}
-      <section className="relative z-10 px-6 pt-16 pb-12 md:px-12 lg:pt-24 lg:pb-16">
-        <div className="mx-auto max-w-[106rem]">
-          <div className="flex flex-col items-start justify-between gap-8 lg:flex-row lg:items-center">
-            <div className="max-w-3xl animate-stagger-item delay-1">
-              <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-accent/10 px-3 py-1 text-[10px] font-bold tracking-widest uppercase text-accent">
-                Directory
-              </div>
-              <h1 className="font-serif text-5xl leading-tight text-foreground md:text-7xl lg:text-8xl">
-                Legislator <span className="italic text-accent">Index.</span>
-              </h1>
-              <p className="mt-6 text-lg leading-relaxed text-muted-foreground md:text-xl lg:max-w-2xl">
-                Browse current members, district context, and public-disclosure coverage. Missing source rows are shown as coverage gaps.
-              </p>
-            </div>
-            
-            {/* Decorative Seal */}
-            <div className="relative hidden lg:block animate-scale-in delay-3">
-              <div className="flex h-48 w-48 items-center justify-center rounded-full border border-border bg-card/50 p-4 shadow-xl backdrop-blur-sm">
-                <div className="flex h-full w-full flex-col items-center justify-center rounded-full border-2 border-dashed border-accent/20 p-2">
-                  <Landmark className="h-12 w-12 text-accent" />
-                  <span className="mt-2 text-center text-[8px] font-bold tracking-widest uppercase text-accent">
-                    United States<br/>Congress
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
+      <CompactMasthead
+        eyebrow="Canonical congressional directory"
+        title="Legislator"
+        accent="index."
+        description="Filter current members by chamber, party, state, and verified disclosure matches. Missing source rows remain visible as coverage gaps."
+      />
 
       {/* Filter Section */}
       <section className="sticky top-[4.5rem] z-30 border-y border-border bg-background/80 px-6 py-4 backdrop-blur-md">
@@ -108,10 +141,11 @@ export default function LegislatorsPage() {
             <div className="relative flex-1 md:max-w-md">
               <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <input
-                type="text"
+                type="search"
+                aria-label="Search legislators"
                 placeholder="Search legislators..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => { setSearchTerm(e.target.value); setDisplayCount(12) }}
                 className="h-10 w-full rounded-full border border-border bg-muted/30 pl-10 pr-4 text-sm focus:border-accent focus:bg-card focus:outline-none transition-all"
               />
             </div>
@@ -120,8 +154,9 @@ export default function LegislatorsPage() {
             <div className="flex flex-wrap items-center gap-2">
               <div className="group relative">
                 <select
+                  aria-label="Filter by party"
                   value={selectedParty}
-                  onChange={(e) => setSelectedParty(e.target.value)}
+                  onChange={(e) => { setSelectedParty(e.target.value); setDisplayCount(12) }}
                   className="h-9 appearance-none rounded-full border border-border bg-card px-4 pr-10 text-xs font-semibold text-foreground hover:border-accent focus:outline-none transition-all cursor-pointer"
                 >
                   <option value="all">All Parties</option>
@@ -133,9 +168,28 @@ export default function LegislatorsPage() {
               </div>
 
               <div className="group relative">
+                <ArrowUpDown className="pointer-events-none absolute left-3 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
                 <select
+                  aria-label="Sort legislators"
+                  value={sortBy}
+                  onChange={(e) => { setSortBy(e.target.value); setDisplayCount(12) }}
+                  className="h-9 cursor-pointer appearance-none rounded-full border border-border bg-card pl-8 pr-9 text-xs font-semibold text-foreground transition-all hover:border-accent focus:outline-none"
+                >
+                  <option value="name">Name A–Z</option>
+                  <option value="state">State and district</option>
+                  <option value="party">Party</option>
+                  <option value="chamber">Chamber</option>
+                  <option value="age-asc">Age · youngest first</option>
+                  <option value="age-desc">Age · oldest first</option>
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
+              </div>
+
+              <div className="group relative">
+                <select
+                  aria-label="Filter by chamber"
                   value={selectedChamber}
-                  onChange={(e) => setSelectedChamber(e.target.value)}
+                  onChange={(e) => { setSelectedChamber(e.target.value); setDisplayCount(12) }}
                   className="h-9 appearance-none rounded-full border border-border bg-card px-4 pr-10 text-xs font-semibold text-foreground hover:border-accent focus:outline-none transition-all cursor-pointer"
                 >
                   <option value="all">Both Chambers</option>
@@ -147,8 +201,9 @@ export default function LegislatorsPage() {
 
               <div className="group relative">
                 <select
+                  aria-label="Filter by state"
                   value={selectedState}
-                  onChange={(e) => setSelectedState(e.target.value)}
+                  onChange={(e) => { setSelectedState(e.target.value); setDisplayCount(12) }}
                   className="h-9 appearance-none rounded-full border border-border bg-card px-4 pr-10 text-xs font-semibold text-foreground hover:border-accent focus:outline-none transition-all cursor-pointer"
                 >
                   <option value="all">All States</option>
@@ -163,7 +218,7 @@ export default function LegislatorsPage() {
 
               {/* Trade Match Toggle */}
               <button
-                onClick={() => setMatchOnly(!matchOnly)}
+                onClick={() => { setMatchOnly(!matchOnly); setDisplayCount(12) }}
                 className={`flex h-9 items-center gap-2 rounded-full border px-4 text-xs font-semibold transition-all ${
                   matchOnly 
                     ? "border-accent bg-accent/5 text-accent shadow-sm" 
@@ -181,10 +236,19 @@ export default function LegislatorsPage() {
       {/* Main Content & Sidebar */}
       <section className="relative z-10 px-6 py-12 md:px-12">
         <div className="mx-auto max-w-[106rem]">
-          <div className="grid grid-cols-1 gap-12 lg:grid-cols-12">
-            
-            {/* Left Column: List */}
-            <div className="lg:col-span-8">
+          <div>
+            <section className="member-directory-summary" aria-label="Directory summary">
+              <div className="member-summary-label"><Building2 size={14} /><span>Directory summary</span></div>
+              <div><strong>{members.length || "0"}</strong><span>Members</span></div>
+              <div><strong>{houseCount}</strong><span>House</span></div>
+              <div><strong>{senateCount}</strong><span>Senate</span></div>
+              <div><strong>{ageSummary.average == null ? "—" : ageSummary.average.toFixed(1)}</strong><span>Average age</span></div>
+              <div><strong>{ageSummary.median == null ? "—" : ageSummary.median.toFixed(1)}</strong><span>Median age</span></div>
+              <div><strong className="text-accent">{matchedTradeCount}</strong><span>Matched trades</span></div>
+              <p>Age measured for {ageSummary.measured} members · sorting applies to the full directory before cards are progressively displayed.</p>
+            </section>
+
+            <div>
               {loading ? (
                 <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
                   {[...Array(6)].map((_, i) => (
@@ -192,13 +256,11 @@ export default function LegislatorsPage() {
                   ))}
                 </div>
               ) : error ? (
-                <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border py-24 text-center">
-                  <div className="mb-4 rounded-full bg-red-50 p-4 text-red-500">
-                    <Info className="h-8 w-8" />
-                  </div>
-                  <h3 className="text-xl font-semibold">Data unavailable</h3>
-                  <p className="mt-2 text-muted-foreground">{error}</p>
-                </div>
+                <DataState
+                  kind="error"
+                  title="Legislator directory unavailable"
+                  description={`${error}. No empty directory is shown because an API failure is not a zero-member result.`}
+                />
               ) : (
                 <>
                   <div className="mb-8 flex items-center justify-between">
@@ -208,69 +270,67 @@ export default function LegislatorsPage() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                  {comparisonMembers.length > 0 ? (
+                    <section className="member-compare-tray" aria-label="Member comparison">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <div className="archive-panel-kicker flex items-center gap-2"><Scale size={14} /> Comparison desk · {comparisonMembers.length} of 4</div>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {comparisonMembers.map((member) => (
+                              <button
+                                key={member.id}
+                                type="button"
+                                onClick={() => toggleComparison(member.id)}
+                                className="member-compare-chip"
+                                aria-label={`Remove ${member.name} from comparison`}
+                              >
+                                {member.name} <X size={12} />
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <button type="button" className="member-compare-clear" onClick={() => setCompareIds([])}>
+                          Clear comparison
+                        </button>
+                      </div>
+                      {comparisonMembers.length >= 2 ? (
+                        <div className="mt-4 overflow-x-auto">
+                          <table className="w-full min-w-[36rem] text-left text-sm">
+                            <thead><tr className="border-b border-border text-xs text-muted-foreground"><th className="py-2">Member</th><th>Party</th><th>State</th><th>Chamber</th><th>Disclosure match</th></tr></thead>
+                            <tbody>{comparisonMembers.map((member) => (
+                              <tr key={member.id} className="border-b border-border/70"><th className="py-3 font-semibold">{member.name}</th><td>{member.party}</td><td>{member.state}</td><td>{member.chamber}</td><td>{member.trade_summary?.matched ? "Matched" : "Not linked"}</td></tr>
+                            ))}</tbody>
+                          </table>
+                        </div>
+                      ) : null}
+                    </section>
+                  ) : null}
+
+                  <div className="member-directory-grid">
                     {visibleMembers.map((member) => (
-                      <LegislatorCard key={member.id} member={member} />
+                      <div key={member.id} className="relative">
+                        <label className={`member-compare-toggle ${compareIds.includes(member.id) ? "selected" : ""}`}>
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 accent-[var(--accent)]"
+                            checked={compareIds.includes(member.id)}
+                            onChange={() => toggleComparison(member.id)}
+                            disabled={!compareIds.includes(member.id) && compareIds.length >= 4}
+                          />
+                          {compareIds.includes(member.id) ? <Check size={13} /> : <Scale size={13} />}
+                          {compareIds.includes(member.id) ? "Added" : "Compare"}
+                        </label>
+                        <LegislatorCard member={member} />
+                      </div>
                     ))}
                   </div>
 
-                  {displayCount < filteredMembers.length && (
-                    <div className="mt-16 flex justify-center">
-                      <button 
-                        onClick={() => setDisplayCount(prev => prev + 12)}
-                        className="group flex items-center gap-2 rounded-full border border-border bg-card px-8 py-3 text-sm font-bold transition-all hover:border-accent hover:text-accent hover:shadow-lg active:scale-95"
-                      >
-                        Load More Members
-                        <ChevronDown className="h-4 w-4 transition-transform group-hover:translate-y-0.5" />
-                      </button>
-                    </div>
-                  )}
+                  <div ref={loadMoreRef} className="member-load-sentinel" aria-live="polite">
+                    {displayCount < filteredMembers.length ? <><LoaderCircle className="animate-spin" size={15} /> Loading more members</> : `All ${filteredMembers.length} matching members loaded`}
+                  </div>
                 </>
               )}
             </div>
-
-            {/* Right Column: Sidebar */}
-            <aside className="lg:col-span-4">
-              <div className="sticky top-40 space-y-8 animate-stagger-item delay-2">
-                
-                {/* Directory Summary Card */}
-                <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-                  <div className="border-b border-border bg-muted/20 px-6 py-4">
-                    <h4 className="flex items-center gap-2 text-[10px] font-bold tracking-widest uppercase text-muted-foreground">
-                      <Building2 className="h-3 w-3" />
-                      Directory Summary
-                    </h4>
-                  </div>
-                  <div className="p-6">
-                    <div className="grid grid-cols-2 gap-y-8 gap-x-4">
-                      <div className="space-y-1">
-                        <div className="font-serif text-5xl font-bold">{members.length || "0"}</div>
-                        <div className="text-[10px] font-bold tracking-wider uppercase text-muted-foreground">Members</div>
-                      </div>
-                      <div className="space-y-1">
-                        <div className="font-serif text-5xl font-bold">{senateCount}</div>
-                        <div className="text-[10px] font-bold tracking-wider uppercase text-muted-foreground">Senate</div>
-                      </div>
-                      <div className="space-y-1">
-                        <div className="font-serif text-5xl font-bold">{houseCount}</div>
-                        <div className="text-[10px] font-bold tracking-wider uppercase text-muted-foreground">House</div>
-                      </div>
-                      <div className="space-y-1">
-                        <div className="font-serif text-5xl font-bold text-accent">{matchedTradeCount}</div>
-                        <div className="text-[10px] font-bold tracking-wider uppercase text-accent">Matched Trades</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="border-l-2 border-accent pl-5 text-sm leading-6 text-muted-foreground">
-                  <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-accent">Coverage note</p>
-                  <p className="mt-2">Member records use stable bioguide IDs. Financial disclosure metrics appear only after an official filing is ingested and linked.</p>
-                </div>
-
-              </div>
-            </aside>
-
           </div>
         </div>
       </section>

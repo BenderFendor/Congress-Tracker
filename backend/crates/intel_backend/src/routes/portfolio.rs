@@ -301,13 +301,40 @@ pub async fn sectors(
 
 /// GET /api/intel/portfolio/pulse
 ///
-/// Returns a status message indicating that CapitolTrades ingestion is needed.
-pub async fn pulse() -> Result<Json<PulseResponse>, AppError> {
+/// Returns live aggregate counts from the database.
+pub async fn pulse(State(state): State<Arc<AppState>>) -> Result<Json<PulseResponse>, AppError> {
+    let member_count: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM members WHERE current_chamber IS NOT NULL")
+            .fetch_one(state.repo.pool())
+            .await
+            .map_err(|error| AppError::Internal(format!("database error: {error}")))?;
+    let committee_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM committees")
+        .fetch_one(state.repo.pool())
+        .await
+        .map_err(|error| AppError::Internal(format!("database error: {error}")))?;
+    let trade_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM stock_trades")
+        .fetch_one(state.repo.pool())
+        .await
+        .map_err(|error| AppError::Internal(format!("database error: {error}")))?;
+    let (status, message) = if trade_count.0 > 0 {
+        (
+            "house_disclosures_seeded".to_string(),
+            format!(
+                "{} trade rows from House PTR disclosure records",
+                trade_count.0
+            ),
+        )
+    } else {
+        (
+            "data_pending".to_string(),
+            "House PTR seed pending — disclosure documents needed for stock trade rows".to_string(),
+        )
+    };
     Ok(Json(PulseResponse {
-        status: "data_pending".to_string(),
-        message: "CapitolTrades ingestion needed for stock trade data".to_string(),
-        total_members_tracked: 0,
-        total_committees: 0,
+        status,
+        message,
+        total_members_tracked: member_count.0,
+        total_committees: committee_count.0,
     }))
 }
 

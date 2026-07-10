@@ -1,68 +1,6 @@
 use crate::repository::Repository;
-use chrono::NaiveDate;
 
 impl Repository {
-    /// Insert or update a stock trade row.
-    #[allow(clippy::too_many_arguments)]
-    pub async fn upsert_stock_trade(
-        &self,
-        trade_id: &str,
-        bioguide_id: Option<&str>,
-        politician_id: Option<&str>,
-        ticker: Option<&str>,
-        asset_name: Option<&str>,
-        tx_type: &str,
-        amount_min: Option<f64>,
-        amount_max: Option<f64>,
-        estimated_value: Option<f64>,
-        transaction_date: Option<NaiveDate>,
-        disclosure_date: Option<NaiveDate>,
-        filing_url: Option<&str>,
-        source: &str,
-        raw_json: serde_json::Value,
-        source_run_id: Option<uuid::Uuid>,
-    ) -> Result<(), sqlx::Error> {
-        sqlx::query(
-            r#"INSERT INTO stock_trades
-               (trade_id, bioguide_id, politician_id, ticker, asset_name,
-                tx_type, amount_min, amount_max, estimated_value,
-                transaction_date, disclosure_date, filing_url,
-                source, raw_json, source_run_id)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-               ON CONFLICT (trade_id) DO UPDATE SET
-                 bioguide_id      = COALESCE(EXCLUDED.bioguide_id, stock_trades.bioguide_id),
-                 ticker           = COALESCE(EXCLUDED.ticker, stock_trades.ticker),
-                 asset_name       = COALESCE(EXCLUDED.asset_name, stock_trades.asset_name),
-                 tx_type          = EXCLUDED.tx_type,
-                 amount_min       = COALESCE(EXCLUDED.amount_min, stock_trades.amount_min),
-                 amount_max       = COALESCE(EXCLUDED.amount_max, stock_trades.amount_max),
-                 estimated_value  = COALESCE(EXCLUDED.estimated_value, stock_trades.estimated_value),
-                 transaction_date = COALESCE(EXCLUDED.transaction_date, stock_trades.transaction_date),
-                 disclosure_date  = COALESCE(EXCLUDED.disclosure_date, stock_trades.disclosure_date),
-                 filing_url       = COALESCE(EXCLUDED.filing_url, stock_trades.filing_url),
-                 raw_json         = EXCLUDED.raw_json"#,
-        )
-        .bind(trade_id)
-        .bind(bioguide_id)
-        .bind(politician_id)
-        .bind(ticker)
-        .bind(asset_name)
-        .bind(tx_type)
-        .bind(amount_min)
-        .bind(amount_max)
-        .bind(estimated_value)
-        .bind(transaction_date)
-        .bind(disclosure_date)
-        .bind(filing_url)
-        .bind(source)
-        .bind(raw_json)
-        .bind(source_run_id)
-        .execute(self.pool())
-        .await?;
-
-        Ok(())
-    }
-
     /// Get stock trades for a member, ordered by transaction date descending.
     pub async fn get_member_trades(
         &self,
@@ -93,8 +31,9 @@ impl Repository {
         sqlx::query_as::<_, StockTradeRow>(
             r#"SELECT
                  st.trade_id, st.bioguide_id, st.politician_id, st.ticker,
-                 st.asset_name, st.tx_type, st.amount_min, st.amount_max,
-                 st.estimated_value, st.transaction_date, st.disclosure_date,
+                 st.asset_name, st.tx_type,
+                 st.amount_min::float8, st.amount_max::float8,
+                 st.estimated_value::float8, st.transaction_date, st.disclosure_date,
                  st.filing_url, st.source,
                  st.sector, st.industry, st.disclosure_lag_days, st.late_filing,
                  st.committee_names, st.committee_conflicts,
@@ -130,8 +69,9 @@ impl Repository {
         sqlx::query_as::<_, StockTradeRow>(
             r#"SELECT
                  st.trade_id, st.bioguide_id, st.politician_id, st.ticker,
-                 st.asset_name, st.tx_type, st.amount_min, st.amount_max,
-                 st.estimated_value, st.transaction_date, st.disclosure_date,
+                 st.asset_name, st.tx_type,
+                 st.amount_min::float8, st.amount_max::float8,
+                 st.estimated_value::float8, st.transaction_date, st.disclosure_date,
                  st.filing_url, st.source,
                  st.sector, st.industry, st.disclosure_lag_days, st.late_filing,
                  st.committee_names, st.committee_conflicts,

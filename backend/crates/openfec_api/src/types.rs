@@ -97,7 +97,7 @@ pub struct Receipt {
     pub contributor_state: Option<String>,
     #[serde(default)]
     pub contribution_date: Option<String>,
-    #[serde(default)]
+    #[serde(default, alias = "contribution_receipt_amount")]
     pub contribution_amount: Option<f64>,
     #[serde(default)]
     pub contribution_type: Option<String>,

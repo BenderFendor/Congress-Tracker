@@ -2,8 +2,11 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
+import { createLogger } from "@/lib/tracing"
 import { Search, MapPin, Users, Filter, ExternalLink, Building } from "lucide-react"
 import { getAllCandidates, FECandidate, getCommittees, FECCommittee } from "@/lib/services/fec"
+
+const log = createLogger("CandidatesPage")
 
 export default function CandidatesPage() {
     const [candidates, setCandidates] = useState<FECandidate[]>([])
@@ -25,7 +28,7 @@ export default function CandidatesPage() {
                 setCandidates(candidatesData);
                 setCommittees(committeesData);
             } catch (error) {
-                console.error("Failed to load data", error);
+                log.error("Failed to load data", { error: String(error) })
             } finally {
                 setLoading(false);
             }

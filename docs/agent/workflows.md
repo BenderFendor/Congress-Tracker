@@ -30,6 +30,14 @@ cargo run -p intel_backend --bin ingest -- all-smoke
 
 This runs, in order: `members --current-only --limit 25`, `influence-seeds`, `fec-committees --q "AMERICAN ISRAEL" --limit 10`, `congress-bills --congress 119 --limit 10`, and `refresh-materialized-views`.
 
+## Automatic profile evidence ingestion
+
+`intel_worker` owns normal profile freshness. On startup and every six hours by default it runs the idempotent `profile-evidence-all` pipeline under a PostgreSQL advisory lock. The pipeline refreshes all current members, Congress.gov member and bill coverage, Voteview ideology and roll calls, FEC candidates, materialized views, and derived relationships. Voteview is the canonical vote source because the current Congress.gov v3 API does not expose the legacy `/vote` resource.
+
+Set `PROFILE_EVIDENCE_REFRESH_SECONDS` to change the interval. Manual ingest subcommands are diagnostics only and are not required for normal server operation.
+
+OpenFEC contributor rankings still require complete pagination across every authorized committee. Until that scheduler is implemented, candidate totals remain labeled `Totals only`; the UI must not promote partial receipts into a complete donor ranking.
+
 ## Start Backend
 
 Start the new intelligence backend:

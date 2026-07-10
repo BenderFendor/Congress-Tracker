@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Menu, Shield, X } from "lucide-react"
+import { Menu, Search, X } from "lucide-react"
 import { useState } from "react"
 import { ThemeToggle } from "@/components/theme-toggle"
 
@@ -22,7 +22,6 @@ export function Navbar() {
         { href: "/bills", label: "Bills" },
         { href: "/influence", label: "Influence" },
         { href: "/committees", label: "Committees" },
-        { href: "/stocks", label: "Stocks" },
         { href: "/portfolio", label: "Portfolio" },
         { href: "/lobbying", label: "Lobbying" },
         { href: "/elections", label: "Elections" },
@@ -30,30 +29,33 @@ export function Navbar() {
     ]
 
     return (
-        <header className="sticky top-0 z-50 border-b border-border/80 bg-card/78 px-5 py-4 shadow-[0_1px_30px_rgba(21,19,16,0.05)] backdrop-blur-xl transition-all duration-300 md:px-10">
-            <div className="mx-auto flex w-full max-w-[116rem] items-center justify-between">
-            <Link href="/" className="flex items-center gap-3 group">
-                <div className="grid h-10 w-10 place-items-center rounded-full border border-accent/35 bg-card text-primary shadow-sm transition-transform duration-500 ease-in-out group-hover:scale-105 dark:text-foreground">
-                    <Shield size={17} strokeWidth={2} />
-                </div>
-                <h1 className="font-serif text-2xl tracking-tight text-primary dark:text-foreground">
+        <header className="civic-header">
+            <div className="civic-header-inner">
+            <Link href="/" className="civic-brand group" aria-label="CongressTracker home">
+                <svg className="civic-seal" viewBox="0 0 44 44" aria-hidden="true">
+                    <circle cx="22" cy="22" r="20" />
+                    <path d="M13 28h18M15 25h14M17 25v-8m4 8v-8m6 8v-8M15 17h14l-7-5-7 5Z" />
+                    <path className="civic-seal-orbit" d="M7 22a15 15 0 0 0 30 0" />
+                </svg>
+                <span className="font-serif text-2xl tracking-tight text-primary dark:text-foreground">
                     Congress<span className="italic text-accent">Tracker</span>
-                </h1>
+                </span>
             </Link>
-            <nav className="hidden items-center gap-6 xl:flex">
+            <nav aria-label="Primary navigation" className="civic-nav hidden xl:flex">
                 {navLinks.map((link) => (
                     <Link
                         key={link.href}
                         href={link.href}
-                        className={`relative py-2 text-[13px] font-medium tracking-wide transition-colors ${isActive(link.href) ? "text-accent after:absolute after:bottom-0 after:left-0 after:h-px after:w-full after:bg-accent" : "text-muted-foreground hover:text-primary dark:hover:text-foreground"
+                        className={`civic-nav-link ${isActive(link.href) ? "active" : ""
                             }`}
                     >
                         {link.label}
                     </Link>
                 ))}
+                <Link href="/search" className="civic-search" aria-label="Search records"><Search size={15} /></Link>
                 <ThemeToggle />
             </nav>
-            <div className="xl:hidden flex items-center gap-2">
+            <div className="flex items-center gap-2 xl:hidden">
                 <ThemeToggle />
                 <button
                     type="button"
@@ -67,7 +69,7 @@ export function Navbar() {
             </div>
             </div>
             {menuOpen ? (
-                <nav aria-label="Mobile navigation" className="mx-auto mt-4 grid w-full max-w-[116rem] grid-cols-2 gap-x-5 border-t border-border/70 pt-4 sm:grid-cols-3">
+                <nav aria-label="Mobile navigation" className="civic-mobile-nav">
                     {navLinks.map((link) => (
                         <Link
                             key={link.href}

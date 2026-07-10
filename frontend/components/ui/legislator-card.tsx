@@ -1,6 +1,6 @@
 "use client"
 
-import { MapPin, Landmark, Calendar, TrendingUp, DollarSign, BarChart3, DatabaseZap } from "lucide-react"
+import { MapPin, Landmark, Calendar, TrendingUp, DollarSign, BarChart3, DatabaseZap, CakeSlice, History } from "lucide-react"
 import { useState } from "react"
 import { Legislator } from "@/lib/services/legislators"
 import Link from "next/link"
@@ -17,6 +17,16 @@ function compactCurrency(value: number | null | undefined) {
   return `$${value}`
 }
 
+function completedServiceYears(startDate: string | null | undefined) {
+  if (!startDate) return null
+  const start = new Date(`${startDate}T00:00:00`)
+  if (Number.isNaN(start.getTime())) return null
+  const today = new Date()
+  let years = today.getFullYear() - start.getFullYear()
+  if (today.getMonth() < start.getMonth() || (today.getMonth() === start.getMonth() && today.getDate() < start.getDate())) years -= 1
+  return Math.max(years, 0)
+}
+
 export function LegislatorCard({ member }: LegislatorCardProps) {
   const [imageFailed, setImageFailed] = useState(false)
   const tradeStats = member.trade_summary?.stats
@@ -26,6 +36,8 @@ export function LegislatorCard({ member }: LegislatorCardProps) {
   const isRepublican = party.toLowerCase().includes("republican")
   const hasTradeData = Boolean(tradeStats && (tradeStats.count_trades > 0 || tradeStats.volume > 0 || tradeStats.count_issuers > 0))
   const portrait = member.avatar || member.depiction_url || (member.id ? `https://bioguide.congress.gov/bioguide/photo/${member.id[0]}/${member.id}.jpg` : "")
+  const roleLabel = member.chamber.toLowerCase() === "senate" ? "Senator" : member.chamber.toLowerCase() === "house" ? "Representative" : member.chamber
+  const serviceYears = member.years_in_office == null ? completedServiceYears(member.service_start) : Math.floor(member.years_in_office)
   
   const initials = member.name
     .split(" ")
@@ -40,7 +52,7 @@ export function LegislatorCard({ member }: LegislatorCardProps) {
       className="group relative flex flex-col overflow-hidden border border-border bg-card transition-all duration-300 hover:-translate-y-1 hover:border-accent/60 hover:shadow-xl hover:shadow-primary/5"
     >
       {/* Left: Avatar Section */}
-      <div className="relative h-56 w-full shrink-0 overflow-hidden bg-[#f4ece1]">
+      <div className="member-portrait relative aspect-[4/5] w-full shrink-0 overflow-hidden bg-[#f4ece1]">
         {portrait && !imageFailed ? (
           <Image
             src={portrait}
@@ -49,11 +61,11 @@ export function LegislatorCard({ member }: LegislatorCardProps) {
             width={320}
             height={420}
             unoptimized
-            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+            className="member-portrait-image"
           />
         ) : (
-          <div className="flex h-full w-full items-center justify-center text-[#8a7a63]">
-            <span className="font-serif text-4xl font-bold opacity-50">{initials}</span>
+          <div className="member-portrait-fallback flex h-full w-full items-center justify-center text-[#8a7a63]">
+            <span className="font-serif text-5xl font-bold opacity-50">{initials}</span>
           </div>
         )}
         
@@ -70,7 +82,7 @@ export function LegislatorCard({ member }: LegislatorCardProps) {
       </div>
 
       {/* Right: Content Section */}
-      <div className="flex flex-1 flex-col p-5">
+      <div className="flex flex-1 flex-col p-4">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
@@ -86,8 +98,13 @@ export function LegislatorCard({ member }: LegislatorCardProps) {
               </span>
               <span className="flex items-center gap-1">
                 <Landmark className="h-3.5 w-3.5 text-accent" />
-                {member.chamber}
+                {roleLabel}
               </span>
+            </div>
+            <div className="member-glance-row">
+              <span className="member-role-chip"><Landmark size={12} />{roleLabel}</span>
+              {member.age != null ? <span><CakeSlice size={12} />Age {member.age}</span> : null}
+              {serviceYears != null ? <span><History size={12} />{serviceYears} {serviceYears === 1 ? "year" : "years"} in office</span> : null}
             </div>
           </div>
 
@@ -144,7 +161,7 @@ export function LegislatorCard({ member }: LegislatorCardProps) {
         <div className="mt-auto pt-4">
           <div className="flex items-center border-t border-border/50 pt-3 text-[10px] text-muted-foreground">
             <Calendar className="h-3 w-3 mr-1" />
-            {member.chamber} &middot; {member.state}
+            {roleLabel} &middot; {member.state}
           </div>
         </div>
       </div>

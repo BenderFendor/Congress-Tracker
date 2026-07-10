@@ -1,5 +1,35 @@
 import { BACKEND_URL } from "@/lib/constants";
 
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface CommitteeConflict {
+  ticker: string;
+  sector: string;
+  industry: string;
+  committee: string;
+  severity: "CLEAN" | "ADJACENT" | "DIRECT OVERLAP";
+  description: string;
+}
+
+export type SourceTier = "primary" | "secondary" | "enrichment";
+
+export function getSourceTier(source: string): SourceTier {
+  if ([
+    "house_clerk",
+    "house_clerk_index",
+    "house_disclosures",
+    "senate_efd",
+    "senate_disclosures",
+    "congress_gov",
+    "openfec",
+    "lda",
+  ].includes(source)) return "primary";
+  if (source === "capitoltrades") return "secondary";
+  return "enrichment";
+}
+
 // Matches StockTradeRow from the Rust backend
 export interface StockTrade {
   trade_id: string;
@@ -19,7 +49,15 @@ export interface StockTrade {
   chamber: string;
   state: string;
   party: string;
-  district: string | null;
+  // evidence fields from enrichment
+  sector: string;
+  industry: string;
+  disclosure_lag_days: number | null;
+  late_filing: boolean;
+  committee_names: string[];
+  committee_conflicts: CommitteeConflict[];
+  conflict_flag_count: number;
+  highest_conflict_severity: string;
 }
 
 export interface TradesResponse {
@@ -29,6 +67,10 @@ export interface TradesResponse {
   offset: number;
   tickers: string[];
 }
+
+// ---------------------------------------------------------------------------
+// API
+// ---------------------------------------------------------------------------
 
 export async function getIntelTrades(
   limit = 100,
@@ -75,6 +117,10 @@ export async function getTradesByPoliticianId(politicianId: string): Promise<Sto
   return data.trades.filter(t => t.politician_id === politicianId);
 }
 
+// ---------------------------------------------------------------------------
+// Formatting
+// ---------------------------------------------------------------------------
+
 export function formatAmountRange(
   amountMin: number | null,
   amountMax: number | null,
@@ -82,10 +128,10 @@ export function formatAmountRange(
   if (amountMin == null && amountMax == null) return "Not disclosed";
   if (amountMin != null && amountMax != null) {
     if (amountMin === amountMax) return formatDollar(amountMin);
-    return `${formatDollar(amountMin)} – ${formatDollar(amountMax)}`;
+    return `${formatDollar(amountMin)} \u2013 ${formatDollar(amountMax)}`;
   }
-  if (amountMin != null) return `≥ ${formatDollar(amountMin)}`;
-  return amountMax == null ? "Not disclosed" : `≤ ${formatDollar(amountMax)}`;
+  if (amountMin != null) return `\u2265 ${formatDollar(amountMin)}`;
+  return amountMax == null ? "Not disclosed" : `\u2264 ${formatDollar(amountMax)}`;
 }
 
 function formatDollar(value: number): string {

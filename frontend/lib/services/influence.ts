@@ -46,38 +46,34 @@ export type InfluenceNetworkFinancials = {
 };
 
 export async function getInfluenceNetworks(): Promise<InfluenceNetworkSummary[]> {
-  try {
-    const res = await fetch(`${BACKEND_URL}/api/influence/networks`);
-    if (!res.ok) return [];
-    const data = await res.json();
-    return Array.isArray(data) ? data : data.networks ?? [];
-  } catch {
-    return [];
-  }
+  const res = await fetch(`${BACKEND_URL}/api/influence/networks`);
+  if (!res.ok) throw new Error(`Influence network request failed (${res.status})`);
+  const data = await res.json();
+  return Array.isArray(data) ? data : data.networks ?? [];
 }
 
 export async function getInfluenceNetwork(slug: string): Promise<InfluenceNetwork | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
     const res = await fetch(`${BACKEND_URL}/api/influence/networks/${slug}`, { signal: controller.signal });
-    clearTimeout(timeout);
-    if (!res.ok) return null;
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`Influence network detail request failed (${res.status})`);
     return res.json();
-  } catch {
-    return null;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
 export async function getInfluenceNetworkFinancials(slug: string, cycle = 2026): Promise<InfluenceNetworkFinancials | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
     const res = await fetch(`${BACKEND_URL}/api/influence/networks/${encodeURIComponent(slug)}/financials?cycle=${cycle}`, { signal: controller.signal });
-    clearTimeout(timeout);
-    if (!res.ok) return null;
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`Influence financial request failed (${res.status})`);
     return res.json();
-  } catch {
-    return null;
+  } finally {
+    clearTimeout(timeout);
   }
 }

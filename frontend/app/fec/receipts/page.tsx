@@ -4,6 +4,9 @@ import { useState, useEffect } from "react"
 import { Search, Calendar, DollarSign, User, Filter } from "lucide-react"
 import { getAllReceipts, FECReceipt } from "@/lib/services/fec"
 import { useSearchParams } from "next/navigation"
+import { createLogger } from "@/lib/tracing"
+
+const log = createLogger("FecReceiptsPage")
 
 export default function ReceiptsPage() {
     const searchParams = useSearchParams();
@@ -20,7 +23,7 @@ export default function ReceiptsPage() {
                 const data = await getAllReceipts(committeeId || undefined);
                 setReceipts(data);
             } catch (error) {
-                console.error("Failed to load receipts", error);
+                log.error("Failed to load receipts", { error: String(error) })
             } finally {
                 setLoading(false);
             }

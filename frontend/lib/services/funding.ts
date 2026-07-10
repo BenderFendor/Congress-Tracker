@@ -4,44 +4,37 @@ import type { ProvenanceSummary } from "./provenance";
 export type MemberFunding = {
   bioguide_id: string;
   cycle: number;
-  total_receipts: number;
-  pac_contributions: number;
-  individual_contributions: number;
+  direct_receipts: number;
+  pac_receipts: number;
+  individual_receipts: number;
   independent_expenditures_supporting: number;
   independent_expenditures_opposing: number;
-  top_contributors: Array<{
-    name: string;
-    committee_id?: string;
-    total: number;
-    pac_contributions: number;
-    individual_contributions: number;
+  top_donors: Array<{
+    contributor_name: string;
+    amount: number;
+    count: number;
   }>;
   top_committees: Array<{
     committee_id: string;
-    name: string;
-    total: number;
-    transaction_count: number;
+    committee_name: string;
+    amount: number;
   }>;
   influence_networks: Array<{
     network_slug: string;
     display_name: string;
-    total_amount: number;
-    direct_pac_amount: number;
-    independent_expenditure_support_amount: number;
-    independent_expenditure_oppose_amount: number;
+    direct_pac: number;
+    independent_supporting: number;
+    independent_opposing: number;
+    confidence: string;
   }>;
   has_successful_fec_run?: boolean;
-  data_quality: "complete" | "partial" | "missing_crosswalk";
   provenance?: ProvenanceSummary;
 };
 
 export async function getMemberFunding(bioguideId: string, cycle?: number): Promise<MemberFunding | null> {
-  const url = `${BACKEND_URL}/api/members/${bioguideId}/funding${cycle ? `?cycle=${cycle}` : ""}`;
-  try {
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    return res.json();
-  } catch {
-    return null;
-  }
+  const url = `${BACKEND_URL}/api/members/${encodeURIComponent(bioguideId)}/funding${cycle ? `?cycle=${cycle}` : ""}`;
+  const res = await fetch(url);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Funding request failed (${res.status})`);
+  return res.json();
 }

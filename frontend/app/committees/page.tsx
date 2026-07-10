@@ -1,150 +1,225 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { ArrowRight } from "lucide-react"
-import { getCommittees, type Committee } from "@/lib/services/committees"
+import { createLogger } from "@/lib/tracing"
+import { ArrowRight, Landmark, X } from "lucide-react"
+import { BACKEND_URL } from "@/lib/constants"
+import { type Committee } from "@/lib/services/committees"
 import {
   ArchivePage,
-  ArchiveHero,
   ArchivePanel,
-  ArchiveMetrics,
   ArchiveSearch,
+  DataState,
+  EvidenceSpine,
 } from "@/components/ui/archive-ui"
+import {
+  CompactMasthead,
+  CommitteeOrbitVisual,
+} from "@/components/ui/mockup-visuals"
 import { Button } from "@/components/ui/button"
+
+const log = createLogger("CommitteesPage")
+
+function isCommittee(value: unknown): value is Committee {
+  if (typeof value !== "object" || value === null) return false
+  const committee = value as Record<string, unknown>
+  return typeof committee.committee_id === "string" &&
+    typeof committee.chamber === "string" &&
+    typeof committee.name === "string"
+}
 
 export default function CommitteesListPage() {
   const [committees, setCommittees] = useState<Committee[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
-  const [chamberFilter, setChamberFilter] = useState<string>("")
+  const [chamberFilter, setChamberFilter] = useState<"" | "house" | "senate" | "joint">("")
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    let cancelled = false
     async function fetchAll() {
       setLoading(true)
+      setError(null)
       try {
-        const data = await getCommittees(chamberFilter || undefined)
-        setCommittees(data)
+        const response = await fetch(`${BACKEND_URL}/api/committees`)
+        if (!response.ok) throw new Error(`Committee request failed (${response.status})`)
+        const data: unknown = await response.json()
+        if (!Array.isArray(data) || !data.every(isCommittee)) {
+          throw new Error("Committee response did not match the expected record list")
+        }
+        if (!cancelled) setCommittees(data)
       } catch (err) {
-        console.error("Failed to fetch committees:", err)
+        log.error("Failed to fetch committees:", { error: String(err) })
+        if (!cancelled) setError(err instanceof Error ? err.message : "Unable to load committees")
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     }
     fetchAll()
-  }, [chamberFilter])
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
-  const filtered = committees.filter((c) => {
-    if (!search.trim()) return true
-    const q = search.toLowerCase()
-    return (
-      c.name.toLowerCase().includes(q) ||
-      (c.jurisdiction && c.jurisdiction.toLowerCase().includes(q)) ||
-      c.committee_id.toLowerCase().includes(q)
-    )
-  })
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return committees.filter((committee) => {
+      const matchesChamber = !chamberFilter || committee.chamber.toLowerCase() === chamberFilter
+      const matchesSearch = !q || committee.name.toLowerCase().includes(q) ||
+        Boolean(committee.jurisdiction?.toLowerCase().includes(q)) ||
+        committee.committee_id.toLowerCase().includes(q)
+      return matchesChamber && matchesSearch
+    })
+  }, [chamberFilter, committees, search])
 
   const houseCount = committees.filter((c) => c.chamber.toLowerCase() === "house").length
   const senateCount = committees.filter((c) => c.chamber.toLowerCase() === "senate").length
   const jointCount = committees.filter((c) => c.chamber.toLowerCase() === "joint").length
 
-  const metrics = [
-    { label: "Total Committees", value: committees.length },
-    { label: "House", value: houseCount },
-    { label: "Senate", value: senateCount },
-    { label: "Joint", value: jointCount },
-  ]
+  const provenanceSources = committees.flatMap((committee) => committee.provenance?.sources ?? [])
+  const latestSource = provenanceSources
+    .filter((source) => source.fetched_at)
+    .sort((a, b) => String(b.fetched_at).localeCompare(String(a.fetched_at)))[0]
+  const activeFilterCount = Number(Boolean(search.trim())) + Number(Boolean(chamberFilter))
+
+  function clearFilters() {
+    setSearch("")
+    setChamberFilter("")
+  }
 
   return (
     <ArchivePage>
-      <ArchiveHero
-        eyebrow="Congressional Infrastructure"
+      <CompactMasthead
+        eyebrow="Congressional infrastructure"
         title="Committees &"
-        accent="Jurisdictions"
-        description="Official House, Senate, and Joint congressional committees governing legislative policy and oversight."
-        mode="capitol"
+        accent="jurisdictions."
+        description="Find a committee by chamber, identifier, or jurisdiction, then open its roster and referred legislation."
+        visual={<CommitteeOrbitVisual items={['Finance','Foreign Affairs','Judiciary','Agriculture','Oversight']} />}
       />
 
-      <ArchiveMetrics metrics={metrics} />
-
-      <div className="my-8">
+      <div className="mt-4">
         <ArchiveSearch
           value={search}
           onChange={setSearch}
           placeholder="Search committees by name, identifier, or policy jurisdiction..."
         >
-          <div className="flex gap-2">
+          <fieldset className="flex flex-wrap gap-2">
+            <legend className="sr-only">Filter committees by chamber</legend>
             <Button
               variant={chamberFilter === "" ? "default" : "outline"}
               size="sm"
+              aria-pressed={chamberFilter === ""}
               onClick={() => setChamberFilter("")}
             >
               All Chambers
             </Button>
             <Button
-              variant={chamberFilter === "House" ? "default" : "outline"}
+              variant={chamberFilter === "house" ? "default" : "outline"}
               size="sm"
-              onClick={() => setChamberFilter("House")}
+              aria-pressed={chamberFilter === "house"}
+              onClick={() => setChamberFilter("house")}
             >
               House
             </Button>
             <Button
-              variant={chamberFilter === "Senate" ? "default" : "outline"}
+              variant={chamberFilter === "senate" ? "default" : "outline"}
               size="sm"
-              onClick={() => setChamberFilter("Senate")}
+              aria-pressed={chamberFilter === "senate"}
+              onClick={() => setChamberFilter("senate")}
             >
               Senate
             </Button>
             <Button
-              variant={chamberFilter === "Joint" ? "default" : "outline"}
+              variant={chamberFilter === "joint" ? "default" : "outline"}
               size="sm"
-              onClick={() => setChamberFilter("Joint")}
+              aria-pressed={chamberFilter === "joint"}
+              onClick={() => setChamberFilter("joint")}
             >
               Joint
             </Button>
-          </div>
+          </fieldset>
         </ArchiveSearch>
       </div>
 
-      <ArchivePanel title="Congressional Directory" kicker="Rosters">
-        {loading ? (
-          <div className="p-12 text-center text-muted-foreground">Loading committees...</div>
-        ) : filtered.length === 0 ? (
-          <div className="p-12 text-center text-muted-foreground">No matching congressional committees found.</div>
-        ) : (
-          <div className="divide-y divide-border border-t border-border">
-            {filtered.map((c) => (
-              <Link
-                key={c.committee_id}
-                href={`/committees/${c.committee_id}`}
-                className="block p-6 hover:bg-muted/30 transition-colors"
-              >
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs uppercase px-2 py-0.5 bg-muted text-muted-foreground rounded">
-                        {c.chamber}
-                      </span>
-                      <span className="font-mono text-xs text-accent uppercase font-semibold">
-                        {c.committee_id}
-                      </span>
+      <div className="mx-auto -mt-3 mb-4 flex w-[calc(100%-2rem)] max-w-[106rem] flex-wrap items-center gap-2 text-xs text-muted-foreground" aria-live="polite">
+        <strong className="text-foreground">{filtered.length} results</strong>
+        {chamberFilter ? <span className="archive-chip">Chamber: {chamberFilter}</span> : null}
+        {search.trim() ? <span className="archive-chip">Query: {search.trim()}</span> : null}
+        {activeFilterCount > 0 ? (
+          <button className="ml-auto inline-flex min-h-10 items-center gap-1 px-2 font-semibold text-accent" onClick={clearFilters}>
+            <X size={14} /> Clear {activeFilterCount} filter{activeFilterCount === 1 ? "" : "s"}
+          </button>
+        ) : null}
+      </div>
+
+      <div className="archive-content archive-grid-two">
+        <ArchivePanel title="Congressional directory" kicker="Jurisdiction and rosters" action={<span className="font-mono text-xs text-muted-foreground">{filtered.length} shown</span>}>
+          {loading ? (
+            <output className="block p-12 text-center text-muted-foreground">Loading committees...</output>
+          ) : error ? (
+            <DataState kind="error" title="Committee directory unavailable" description={`${error}. An API failure is not shown as an empty committee list.`} />
+          ) : filtered.length === 0 ? (
+            <DataState title="No committees match these filters" description="Clear the search or choose another chamber to return to the loaded committee directory." action={<Button variant="outline" size="sm" onClick={clearFilters}>Clear filters</Button>} />
+          ) : (
+            <div className="divide-y divide-border border-t border-border">
+              {filtered.map((committee) => (
+                <Link
+                  key={committee.committee_id}
+                  href={`/committees/${committee.committee_id}`}
+                  className="block px-2 py-4 transition-colors hover:bg-muted/30 sm:px-4"
+                >
+                  <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
+                    <div className="min-w-0 space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="archive-chip">{committee.chamber}</span>
+                        <span className="font-mono text-xs font-semibold uppercase text-accent">
+                          {committee.committee_id}
+                        </span>
+                      </div>
+                      <h3 className="text-lg font-bold text-foreground">{committee.name}</h3>
+                      {committee.jurisdiction ? (
+                        <p className="line-clamp-2 max-w-3xl text-sm text-muted-foreground">
+                          {committee.jurisdiction}
+                        </p>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">Jurisdiction summary not available in this response.</p>
+                      )}
                     </div>
-                    <h3 className="text-lg font-bold text-foreground">{c.name}</h3>
-                    {c.jurisdiction && (
-                      <p className="text-sm text-muted-foreground line-clamp-2 max-w-3xl">
-                        {c.jurisdiction}
-                      </p>
-                    )}
+                    <div className="flex min-h-11 shrink-0 items-center text-sm font-medium text-primary">
+                      View roster <ArrowRight className="ml-1 h-4 w-4" />
+                    </div>
                   </div>
-                  <div className="flex items-center text-sm font-medium text-primary shrink-0">
-                    View Roster <ArrowRight className="h-4 w-4 ml-1" />
-                  </div>
-                </div>
-              </Link>
-            ))}
-          </div>
-        )}
-      </ArchivePanel>
+                </Link>
+              ))}
+            </div>
+          )}
+        </ArchivePanel>
+
+        <div className="grid content-start gap-4 lg:sticky lg:top-36 lg:self-start">
+          <ArchivePanel title="Directory evidence" kicker="Provenance">
+            <EvidenceSpine
+              source={latestSource?.source || "CongressTracker committee API"}
+              status={error ? "API request failed" : loading ? "Loading" : latestSource?.status || "Response loaded"}
+              updated={latestSource?.fetched_at}
+              coverage={loading ? "Pending" : `${committees.length} committees loaded; ${filtered.length} match the current view`}
+            >
+              <p className="text-sm leading-6 text-muted-foreground">
+                Chamber counts describe the complete loaded response. Search and chamber filters run locally so the totals do not change meaning.
+              </p>
+            </EvidenceSpine>
+          </ArchivePanel>
+
+          <ArchivePanel title="Chamber coverage" kicker="Current response">
+            <dl className="grid grid-cols-2 gap-4 text-sm">
+              <div><dt className="archive-metric-label">All</dt><dd className="mt-1 font-mono text-xl text-foreground"><Landmark className="mr-1 inline" size={16} />{committees.length}</dd></div>
+              <div><dt className="archive-metric-label">House</dt><dd className="mt-1 font-mono text-xl text-foreground">{houseCount}</dd></div>
+              <div><dt className="archive-metric-label">Senate</dt><dd className="mt-1 font-mono text-xl text-foreground">{senateCount}</dd></div>
+              <div><dt className="archive-metric-label">Joint</dt><dd className="mt-1 font-mono text-xl text-foreground">{jointCount}</dd></div>
+            </dl>
+          </ArchivePanel>
+        </div>
+      </div>
     </ArchivePage>
   )
 }

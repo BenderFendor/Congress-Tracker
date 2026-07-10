@@ -81,3 +81,19 @@ Future agents should:
 - Treat source-run completion as part of ingest correctness; do not ignore finish errors.
 - Expect Senate LDA fields such as `client_government_entity` and `registrant_different_address` to vary by row.
 - Do not use `history.pushState` alone as proof that a Next route rendered.
+# 2026-07-10 — Profile evidence ingestion belongs to the worker lifecycle
+
+Context:
+- Member profiles silently depended on manual source commands and exposed empty ideology, vote, bill, funding, and disclosure sections.
+
+What worked:
+- Use one scheduled aggregate command under a PostgreSQL advisory lock, keep each source represented in `source_runs`, and run the aggregate outside the worker's main select loop.
+- Use Voteview's Congress-specific CSVs and load ICPSR crosswalks once per run.
+
+What failed:
+- Voteview all-history files plus per-vote identifier queries were too slow for routine refreshes.
+- Hard-coded CSV indexes had drifted from Voteview's published headers.
+
+Future agents should:
+- Treat published CSV headers as contracts and test representative rows.
+- Keep ingestion idempotent, bounded, failure-isolated, and automatic; manual commands are diagnostics only.

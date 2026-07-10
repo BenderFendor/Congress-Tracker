@@ -1,0 +1,30 @@
+[Unit]
+Description=Congress Tracker — House Clerk Disclosure Worker
+Documentation=https://github.com/congress-tracker
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=congress_tracker
+WorkingDirectory=/home/congress_tracker/classwork/congress-tracker/backend
+EnvironmentFile=/home/congress_tracker/classwork/congress-tracker/.env
+Environment=WORKER_STORAGE_DIR=/var/lib/congress-tracker/disclosures
+ExecStart=/home/congress_tracker/.cargo/bin/cargo run -p intel_worker --bin intel_worker --release
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=intel_worker
+
+# Security hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+StateDirectory=congress-tracker
+ReadWritePaths=/home/congress_tracker/classwork/congress-tracker/backend/target /var/lib/congress-tracker
+ReadOnlyPaths=/home/congress_tracker/classwork/congress-tracker
+
+[Install]
+WantedBy=multi-user.target

@@ -3,14 +3,19 @@
 /* oxlint-disable jsx-a11y/prefer-tag-over-role -- composite disclosure headers contain nested controls. */
 
 import React, { useState, useEffect, useMemo, useRef } from "react"
-import { ArchivePage, ArchiveHero, ArchivePanel, ArchiveMetrics, ArchiveSearch } from "@/components/ui/archive-ui"
+import { createLogger } from "@/lib/tracing"
+import { ArchivePage, ArchivePanel, ArchiveMetrics, ArchiveSearch, DataState, EvidenceSpine } from "@/components/ui/archive-ui"
+import { CompactMasthead } from "@/components/ui/mockup-visuals"
 import { Badge } from "@/components/ui/badge"
 import { getInfluenceNetworks, getInfluenceNetwork, getInfluenceNetworkFinancials, type InfluenceNetworkSummary, type InfluenceNetwork, type InfluenceNetworkFinancials } from "@/lib/services/influence"
 import { Network, Building2, DollarSign, Info, ChevronDown, ChevronUp, Filter, Loader2, ShieldAlert, CheckCircle2 } from "lucide-react"
 
+const log = createLogger("InfluencePage")
+
 export default function InfluenceWorkbenchPage() {
   const [networks, setNetworks] = useState<InfluenceNetworkSummary[]>([])
   const [loading, setLoading] = useState<boolean>(true)
+  const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState<string>("")
   const [selectedCategory, setSelectedCategory] = useState<string>("all")
   const [selectedCycle, setSelectedCycle] = useState<string>("2026")
@@ -20,12 +25,14 @@ export default function InfluenceWorkbenchPage() {
   const [networkDetails, setNetworkDetails] = useState<Record<string, InfluenceNetwork>>({})
   const [detailLoading, setDetailLoading] = useState<Record<string, boolean>>({})
   const [financials, setFinancials] = useState<Record<string, InfluenceNetworkFinancials | null>>({})
+  const [financialErrors, setFinancialErrors] = useState<Record<string, string>>({})
   const requestedDetails = useRef(new Set<string>())
 
   useEffect(() => {
     let isMounted = true
     async function loadNetworks() {
       setLoading(true)
+      setError(null)
       try {
         const data = await getInfluenceNetworks()
         if (isMounted) {
@@ -37,7 +44,8 @@ export default function InfluenceWorkbenchPage() {
           }
         }
       } catch (err) {
-        console.error("Failed to fetch influence networks:", err)
+        log.error("Failed to fetch influence networks:", { error: String(err) })
+        if (isMounted) setError(err instanceof Error ? err.message : "Influence network request failed")
       } finally {
         if (isMounted) setLoading(false)
       }
@@ -59,7 +67,7 @@ export default function InfluenceWorkbenchPage() {
           setNetworkDetails(prev => ({ ...prev, [expandedSlug]: detail }))
         }
       })
-      .catch(err => console.error(`Failed to fetch details for ${expandedSlug}:`, err))
+      .catch(err => log.error("Failed to fetch details for " + expandedSlug, { error: String(err) }))
       .finally(() => {
         if (!cancelled) setDetailLoading(prev => ({ ...prev, [expandedSlug]: false }))
       })
@@ -68,9 +76,19 @@ export default function InfluenceWorkbenchPage() {
 
   useEffect(() => {
     if (!expandedSlug || financials[expandedSlug] !== undefined) return
-    getInfluenceNetworkFinancials(expandedSlug, Number(selectedCycle)).then((data) => {
-      setFinancials((prev) => ({ ...prev, [expandedSlug]: data }))
-    })
+    getInfluenceNetworkFinancials(expandedSlug, Number(selectedCycle))
+      .then((data) => {
+        setFinancials((prev) => ({ ...prev, [expandedSlug]: data }))
+        setFinancialErrors((prev) => {
+          const next = { ...prev }
+          delete next[expandedSlug]
+          return next
+        })
+      })
+      .catch((err) => {
+        log.error("Failed to fetch influence financials", { slug: expandedSlug, error: String(err) })
+        setFinancialErrors((prev) => ({ ...prev, [expandedSlug]: err instanceof Error ? err.message : "Financial aggregate request failed" }))
+      })
   }, [expandedSlug, selectedCycle, financials])
 
   const handleToggleExpand = (slug: string) => {
@@ -136,15 +154,33 @@ export default function InfluenceWorkbenchPage() {
 
   return (
     <ArchivePage>
-      <ArchiveHero
-        eyebrow="Political Intelligence Workbench"
-        title="Influence Networks"
-        accent="Tracker"
-        description="Track and analyze campaign finance networks, political action committees (PACs), super PACs, and independent expenditure coalitions across congressional elections."
-        mode="network"
+      <CompactMasthead
+        eyebrow="Political intelligence workbench"
+        title="Influence networks"
+        accent="tracker."
+        description="Trace named political networks to their public FEC committees, direct contributions, independent spending, source citations, and match confidence."
       />
+      <div className="ct-graph-stage" style={{ margin: "0 auto 2rem", maxWidth: "106rem", width: "min(100% - 2rem, 106rem)" }}>
+        <svg viewBox="0 0 850 620" preserveAspectRatio="xMidYMid meet" aria-label="Influence network graph" role="img">
+          <path className="ct-graph-line hot" d="M420 305L205 160M420 305L670 150M420 305L705 405M420 305L175 450" />
+          <path className="ct-graph-line" d="M205 160L95 285M205 160L300 70M670 150L760 260M670 150L555 60M705 405L610 535M705 405L810 500M175 450L65 510M175 450L295 550" />
+          <g className="ct-graph-node main" transform="translate(420 305)"><circle r={54} /><text textAnchor="middle" dominantBaseline="middle">Congress</text></g>
+          <g className="ct-graph-node hot" transform="translate(205 160)"><circle r={39} /><text textAnchor="middle" dominantBaseline="middle">PACs</text></g>
+          <g className="ct-graph-node hot" transform="translate(670 150)"><circle r={43} /><text textAnchor="middle" dominantBaseline="middle">Lobbyists</text></g>
+          <g className="ct-graph-node" transform="translate(705 405)"><circle r={40} /><text textAnchor="middle" dominantBaseline="middle">Companies</text></g>
+          <g className="ct-graph-node" transform="translate(175 450)"><circle r={39} /><text textAnchor="middle" dominantBaseline="middle">Committees</text></g>
+          <g className="ct-graph-node" transform="translate(95 285)"><circle r={30} /><text textAnchor="middle" dominantBaseline="middle">Donors</text></g>
+          <g className="ct-graph-node" transform="translate(300 70)"><circle r={29} /><text textAnchor="middle" dominantBaseline="middle">527s</text></g>
+          <g className="ct-graph-node" transform="translate(760 260)"><circle r={30} /><text textAnchor="middle" dominantBaseline="middle">Issues</text></g>
+          <g className="ct-graph-node" transform="translate(555 60)"><circle r={30} /><text textAnchor="middle" dominantBaseline="middle">Clients</text></g>
+          <g className="ct-graph-node" transform="translate(610 535)"><circle r={30} /><text textAnchor="middle" dominantBaseline="middle">Trades</text></g>
+          <g className="ct-graph-node" transform="translate(810 500)"><circle r={30} /><text textAnchor="middle" dominantBaseline="middle">Contracts</text></g>
+          <g className="ct-graph-node" transform="translate(65 510)"><circle r={29} /><text textAnchor="middle" dominantBaseline="middle">Bills</text></g>
+          <g className="ct-graph-node" transform="translate(295 550)"><circle r={29} /><text textAnchor="middle" dominantBaseline="middle">Votes</text></g>
+        </svg>
+      </div>
 
-      <ArchiveMetrics metrics={metrics} />
+      {error && <DataState kind="error" title="Influence networks unavailable" description={`${error}. The workbench is not presenting an API failure as an empty network.`} />}
 
       {/* Filter and Search Bar */}
       <section className="mb-8">
@@ -186,7 +222,6 @@ export default function InfluenceWorkbenchPage() {
               <option value="2026">2026 Cycle</option>
               <option value="2024">2024 Cycle</option>
               <option value="2022">2022 Cycle</option>
-              <option value="all">All Cycles</option>
             </select>
 
           </div>
@@ -200,7 +235,7 @@ export default function InfluenceWorkbenchPage() {
             <Loader2 className="animate-spin text-primary" size={28} />
             <p className="text-sm font-medium">Loading verified influence networks...</p>
           </div>
-        ) : filteredNetworks.length === 0 ? (
+        ) : error ? null : filteredNetworks.length === 0 ? (
           <div className="p-8 text-center border border-dashed border-border rounded-xl bg-card/50 my-4">
             <Info className="mx-auto mb-2 text-muted-foreground" size={28} />
             <h3 className="text-base font-semibold text-foreground mb-1">No Matching Influence Networks</h3>
@@ -354,7 +389,9 @@ export default function InfluenceWorkbenchPage() {
                           </div>
 
                           <ArchivePanel title="Financial and relationship evidence" kicker={`${selectedCycle} OpenFEC aggregates`}>
-                            {networkFinancials ? (
+                            {financialErrors[net.network_slug] ? (
+                              <DataState kind="error" title="Financial evidence unavailable" description={financialErrors[net.network_slug]} />
+                            ) : networkFinancials ? (
                               <div className="grid gap-3 p-6 sm:grid-cols-4">
                                 {[["Direct contributions", networkFinancials.total_direct_contributions], ["Independent support", networkFinancials.total_independent_supporting], ["Independent oppose", networkFinancials.total_independent_opposing], ["Total tracked", networkFinancials.total_all]].map(([label, value]) => <div key={String(label)} className="border border-border p-3"><div className="text-[10px] uppercase text-muted-foreground">{label}</div><div className="mt-1 font-mono text-lg">{Number(value).toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 })}</div></div>)}
                               </div>
@@ -370,6 +407,14 @@ export default function InfluenceWorkbenchPage() {
           </div>
         )}
       </ArchivePanel>
+
+      <ArchiveMetrics metrics={metrics} />
+      <EvidenceSpine
+        identifier={expandedSlug || "Influence network directory"}
+        source="OpenFEC committees and independent expenditure records"
+        status={error ? "Request failed" : loading ? "Loading" : "Loaded"}
+        coverage={`${networks.length} configured networks; individual relationships retain their confidence and source citation`}
+      />
     </ArchivePage>
   )
 }

@@ -5,10 +5,11 @@
   "scripts": {
     "build": "next build",
     "dev": "next dev",
+    "test": "node --test scripts/*.test.mjs",
     "lint": "next lint --max-warnings=0",
     "lint:ox": "oxlint . --config .oxlintrc.json --deny-warnings --nextjs-plugin --react-plugin --jsx-a11y-plugin",
     "typecheck": "tsc --noEmit",
-    "verify": "pnpm typecheck && pnpm lint && pnpm lint:ox && pnpm build",
+    "verify": "pnpm test && pnpm typecheck && pnpm lint && pnpm lint:ox && pnpm build",
     "start": "next start"
   },
   "dependencies": {
@@ -17,19 +18,28 @@
     "@vercel/analytics": "latest",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "d3": "^7.9.0",
     "lucide-react": "^0.454.0",
     "next": "14.2.16",
     "next-themes": "latest",
     "react": "^18",
     "react-dom": "^18",
     "recharts": "latest",
-    "tailwind-merge": "^2.5.5"
+    "tailwind-merge": "^2.5.5",
+    "three": "^0.185.1",
+    "topojson-client": "^3.1.0",
+    "us-atlas": "^3.0.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.9",
+    "@types/d3": "^7.4.3",
+    "@types/geojson": "^7946.0.16",
     "@types/node": "^22",
     "@types/react": "^18",
     "@types/react-dom": "^18",
+    "@types/three": "^0.185.1",
+    "@types/topojson-client": "^3.1.5",
+    "@types/topojson-specification": "^1.0.5",
     "eslint": "^8.57.1",
     "eslint-config-next": "14.2.16",
     "oxlint": "^1.73.0",

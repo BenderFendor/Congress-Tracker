@@ -55,6 +55,8 @@ pub struct MemberProfile {
     pub birthplace: Option<String>,
     pub nominate_dim1: Option<f64>,
     pub nominate_dim2: Option<f64>,
+    pub biography_summary: Option<String>,
+    pub biography_full: Option<String>,
     pub committees: Vec<CommitteeAssignment>,
     pub social_accounts: Vec<SocialAccount>,
     pub provenance: ProvenanceSummary,

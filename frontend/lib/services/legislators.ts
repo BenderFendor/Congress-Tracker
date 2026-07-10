@@ -1,6 +1,10 @@
 import { getTradesByPoliticianId, StockTrade } from "./stocks";
+import { createLogger } from "@/lib/tracing";
+
 import { BACKEND_URL } from "@/lib/constants";
 import type { ProvenanceSummary } from "./provenance";
+const log = createLogger("LegislatorsService");
+
 
 export type LegislatorTradeSummary = {
     politician_id: string;
@@ -86,6 +90,8 @@ export type Legislator = {
         }>;
     } | null;
     matchConfidence?: string;
+    biography_summary?: string | null;
+    biography_full?: string | null;
     provenance?: ProvenanceSummary;
 };
 
@@ -129,9 +135,9 @@ function mapLegislator(raw: Record<string, unknown>, recentTrades: StockTrade[] 
         website_url: raw.website_url as string | null | undefined,
         office_address: raw.office_address as string | null | undefined,
         phone: raw.phone as string | null | undefined,
-        years_in_office: raw.years_in_office as number | null | undefined,
+        years_in_office: raw.years_in_office == null ? null : Number(raw.years_in_office),
         birthday: raw.birthday as string | null | undefined,
-        age: raw.age as number | null | undefined,
+        age: raw.age == null ? null : Number(raw.age),
         gender: raw.gender as string | null | undefined,
         service_start: raw.service_start as string | null | undefined,
         current_term_end: raw.current_term_end as string | null | undefined,
@@ -149,6 +155,8 @@ function mapLegislator(raw: Record<string, unknown>, recentTrades: StockTrade[] 
         committees: raw.committees as Array<string | { committee_id?: string; name?: string; chamber?: string; rank?: number; title?: string; congress?: number }> | undefined,
         topDonors: raw.topDonors as Array<{ name: string; amount: number; industry?: string }> | undefined,
         recentBills: raw.recentBills as Array<{ id?: string; title: string; status?: string; date: string }> | undefined,
+        biography_summary: raw.biography_summary as string | null | undefined,
+        biography_full: raw.biography_full as string | null | undefined,
         matchConfidence: raw.matchConfidence as string | undefined,
         provenance: raw.provenance as ProvenanceSummary | undefined,
         vote_summary: raw.vote_summary as Legislator['vote_summary'] | undefined,
@@ -169,7 +177,7 @@ export async function getLegislator(id: string): Promise<Legislator | null> {
         const recentTrades = tradeId ? await getTradesByPoliticianId(String(tradeId)) : [];
         return mapLegislator(memberData, recentTrades);
     } catch (error) {
-        console.error("Error fetching legislator:", error);
+        log.error("Error fetching legislator", { error: String(error) });
         throw error;
     }
 }
@@ -190,7 +198,7 @@ export async function getAllLegislators(chamber?: string): Promise<Legislator[]>
         const members = Array.isArray(data) ? data : (data.data || data.members || []);
         return members.map((item: Record<string, unknown>) => mapLegislator(item));
     } catch (error) {
-        console.error("Error fetching legislators:", error);
+        log.error("Error fetching legislators", { error: String(error) });
         throw error;
     }
 }

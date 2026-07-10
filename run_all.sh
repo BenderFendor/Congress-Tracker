@@ -1,14 +1,24 @@
 #!/bin/bash
 
+set -uo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PIDS=()
+
 # Function to kill all child processes on exit
 cleanup() {
+    trap - EXIT INT TERM
     echo "Stopping all services..."
-    # Kill all child processes in the current process group
-    kill 0
+    if [ "${#PIDS[@]}" -gt 0 ]; then
+        kill "${PIDS[@]}" 2>/dev/null || true
+        wait "${PIDS[@]}" 2>/dev/null || true
+    fi
 }
 
-# Trap SIGINT (Ctrl+C) and call cleanup
-trap cleanup SIGINT EXIT
+# Stop every process started by this launcher on exit or interruption.
+trap cleanup EXIT INT TERM
+
+cd "$ROOT_DIR"
 
 echo "Loading environment from .env..."
 set -a
@@ -38,7 +48,6 @@ for port in 4020 3000; do
 done
 
 echo "Starting Backend..."
-cd backend
 # Check if cargo is installed
 if ! command -v cargo &> /dev/null; then
     echo "Error: cargo is not installed."
@@ -46,12 +55,11 @@ if ! command -v cargo &> /dev/null; then
 fi
 
 # Build and run the canonical Postgres-backed backend.
-cargo run -p intel_backend --bin intel_backend &
+(cd backend && cargo run -p intel_backend --bin intel_backend) &
 BACKEND_PID=$!
-cd ..
+PIDS+=("$BACKEND_PID")
 
 echo "Starting Frontend..."
-cd frontend
 # Check if pnpm is installed, fallback to npm
 if command -v pnpm &> /dev/null; then
     PNPM_CMD="pnpm"
@@ -60,15 +68,20 @@ else
     PNPM_CMD="npm"
 fi
 
-$PNPM_CMD install
-PORT=3000 NEXT_PUBLIC_BACKEND_URL="${NEXT_PUBLIC_BACKEND_URL:-http://localhost:4020}" $PNPM_CMD run dev &
+(cd frontend && "$PNPM_CMD" install && env PORT=3000 NEXT_PUBLIC_BACKEND_URL="${NEXT_PUBLIC_BACKEND_URL:-http://localhost:4020}" "$PNPM_CMD" run dev) &
 FRONTEND_PID=$!
-cd ..
+PIDS+=("$FRONTEND_PID")
+
+echo "Starting Worker..."
+(cd backend && cargo run -p intel_worker --bin intel_worker) &
+WORKER_PID=$!
+PIDS+=("$WORKER_PID")
 
 echo "Services started. Press Ctrl+C to stop."
 
-# Wait for any process to exit
-wait -n
+# Wait for any process to exit, then stop the remaining services.
+wait -n "${PIDS[@]}"
+STATUS=$?
 
-# If one exits, kill the other and exit
 cleanup
+exit "$STATUS"

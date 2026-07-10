@@ -13,37 +13,10 @@ export interface PortfolioSummary {
     avg_ideology_score: number;
 }
 
-export interface FeaturedMember {
-    name: string;
-    party: string;
-    state: string;
-    chamber: string;
-    total_trades: number;
-    volume: number;
-    buy_count: number;
-    sell_count: number;
-    image_url: string | null;
-}
-
-export interface HoldingInfo {
-    ticker: string;
-    name: string;
-    trades: number;
-    percentage: number;
-}
-
 export interface SectorWeight {
     sector: string;
     weight: number;
     committee_count: number;
-}
-
-export interface FeaturedPortfolio {
-    member: FeaturedMember;
-    trade_count: number;
-    estimated_return_pct: number;
-    top_holdings: HoldingInfo[];
-    asset_allocation: SectorWeight[];
 }
 
 export interface MemberRank {
@@ -83,10 +56,6 @@ export async function fetchPortfolioSummary(): Promise<PortfolioSummary> {
     const res = await fetch(`${BACKEND_URL}/api/intel/portfolio/summary`);
     if (!res.ok) throw new Error("Failed to fetch portfolio summary");
     return res.json();
-}
-
-export async function fetchFeaturedPortfolio(): Promise<FeaturedPortfolio> {
-    throw new Error("Featured brokerage-style portfolio endpoint is not implemented. Congressional disclosure aggregation must use official disclosure rows.");
 }
 
 export async function fetchTopMembers(): Promise<TopMembersResponse> {

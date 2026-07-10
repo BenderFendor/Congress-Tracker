@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
+import { createLogger } from "@/lib/tracing"
 import { ArrowLeft, ExternalLink, AlertTriangle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { getCommittee, type Committee } from "@/lib/services/committees"
@@ -13,6 +14,8 @@ import {
   ArchivePanel,
   ArchiveMetrics,
 } from "@/components/ui/archive-ui"
+
+const log = createLogger("CommitteeDetailPage")
 
 export default function CommitteeDetailPage() {
   const params = useParams<{ id: string }>()
@@ -32,7 +35,7 @@ export default function CommitteeDetailPage() {
         const data = await getCommittee(id)
         setCommittee(data)
       } catch (err) {
-        console.error("Error loading committee details:", err)
+        log.error("Error loading committee details:", { error: String(err) })
       } finally {
         setLoading(false)
       }

@@ -1,8 +1,9 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { Calendar, ChevronDown, ChevronUp, FileText, Filter, Landmark } from "lucide-react"
-import { ArchiveHero, ArchiveMetrics, ArchivePage, ArchivePanel, ArchiveSearch } from "@/components/ui/archive-ui"
+import { Calendar, ChevronDown, ChevronUp, ExternalLink, FileText, Landmark, X } from "lucide-react"
+import { ArchivePage, ArchivePanel, ArchiveSearch, DataState, EvidenceSpine } from "@/components/ui/archive-ui"
+import { BillFlowVisual, CompactMasthead } from "@/components/ui/mockup-visuals"
 
 type CongressBill = {
   id: string
@@ -23,6 +24,14 @@ type BillDetail = {
   text_versions?: Array<{ url: string }>
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null
+}
+
+function normalizeBillIdentifier(value: string): string {
+  return value.toLowerCase().replace(/[.\s-]/g, "")
+}
+
 export default function BillsPage() {
   const [bills, setBills] = useState<CongressBill[]>([])
   const [loading, setLoading] = useState(true)
@@ -32,14 +41,23 @@ export default function BillsPage() {
   const [sortBy, setSortBy] = useState("recent")
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [details, setDetails] = useState<Record<string, BillDetail | null>>({})
+  const [detailErrors, setDetailErrors] = useState<Record<string, string>>({})
+  const [detailLoading, setDetailLoading] = useState<Record<string, boolean>>({})
+  const [selectedBillKey, setSelectedBillKey] = useState<string | null>(null)
+  const [visibleCount, setVisibleCount] = useState(40)
 
   useEffect(() => {
+    let cancelled = false
     async function fetchBills() {
       try {
         const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4020"}/api/bills?limit=100`)
         if (!response.ok) throw new Error(`Failed to fetch bills: ${response.statusText}`)
-        const data = await response.json()
-        setBills((data.bills || []).map((bill: Record<string, unknown>) => ({
+        const data: unknown = await response.json()
+        if (!isRecord(data) || !Array.isArray(data.bills) || !data.bills.every(isRecord)) {
+          throw new Error("Bill response did not match the expected record list")
+        }
+        if (cancelled) return
+        setBills(data.bills.map((bill) => ({
           id: String(bill.bill_id || ""),
           congress: Number(bill.congress || 0),
           latestAction: bill.latest_action_text ? { actionDate: String(bill.latest_action_date || ""), text: String(bill.latest_action_text) } : null,
@@ -51,20 +69,25 @@ export default function BillsPage() {
           url: String(bill.url || ""),
         })))
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Unable to load bills")
+        if (!cancelled) setError(err instanceof Error ? err.message : "Unable to load bills")
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     }
 
     fetchBills()
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   const filteredBills = useMemo(() => {
     return bills
       .filter((bill) => {
-        const search = searchTerm.toLowerCase()
-        const matchesSearch = bill.title?.toLowerCase().includes(search) || bill.number?.toLowerCase().includes(search)
+        const search = searchTerm.trim().toLowerCase()
+        const identifier = `${bill.type}.${bill.number}`
+        const matchesSearch = bill.title?.toLowerCase().includes(search) ||
+          normalizeBillIdentifier(identifier).includes(normalizeBillIdentifier(search))
         const chamber = bill.originChamber?.toLowerCase()
         const matchesChamber = selectedChamber === "all" || chamber === selectedChamber
         return matchesSearch && matchesChamber
@@ -80,82 +103,105 @@ export default function BillsPage() {
   const houseBills = bills.filter((bill) => bill.originChamber === "House").length
   const senateBills = bills.filter((bill) => bill.originChamber === "Senate").length
   const recentActions = bills.filter((bill) => bill.latestAction?.actionDate).length
+  const activeFilterCount = Number(Boolean(searchTerm.trim())) + Number(selectedChamber !== "all") + Number(sortBy !== "recent")
+
+  function billKey(bill: CongressBill) {
+    return bill.id || bill.url || `${bill.type}-${bill.number}-${bill.congress}`
+  }
 
   async function toggleBill(bill: CongressBill) {
-    const key = bill.id || bill.url || `${bill.type}-${bill.number}`
+    const key = billKey(bill)
+    setSelectedBillKey(key)
     setExpanded((current) => ({ ...current, [key]: !current[key] }))
-    if (details[key] || !bill.id) return
+    if (details[key] || detailLoading[key] || !bill.id) return
 
-    const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4020"}/api/bills/${encodeURIComponent(bill.id)}`)
-    if (!response.ok) {
-      setDetails((current) => ({ ...current, [key]: null }))
-      return
+    setDetailLoading((current) => ({ ...current, [key]: true }))
+    setDetailErrors((current) => {
+      const next = { ...current }
+      delete next[key]
+      return next
+    })
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4020"}/api/bills/${encodeURIComponent(bill.id)}`)
+      if (!response.ok) throw new Error(`Bill detail request failed (${response.status})`)
+      const data = await response.json()
+      setDetails((current) => ({ ...current, [key]: data || null }))
+    } catch (detailError) {
+      setDetailErrors((current) => ({
+        ...current,
+        [key]: detailError instanceof Error ? detailError.message : "Bill details are unavailable",
+      }))
+    } finally {
+      setDetailLoading((current) => ({ ...current, [key]: false }))
     }
-    const data = await response.json()
-    setDetails((current) => ({ ...current, [key]: data || null }))
   }
+
+  function clearFilters() {
+    setSearchTerm("")
+    setSelectedChamber("all")
+    setSortBy("recent")
+    setVisibleCount(40)
+  }
+
+  const selectedBill = selectedBillKey
+    ? bills.find((bill) => billKey(bill) === selectedBillKey) ?? null
+    : null
 
   return (
     <ArchivePage>
-      <ArchiveHero
-        eyebrow="Bills"
+      <CompactMasthead
+        eyebrow="Legislative intelligence"
         title="Legislative"
-        accent="Stream."
-        description="Real-time visibility into proposed legislation, chamber origin, latest actions, sponsors, committees, and bill text availability."
-        mode="files"
-        aside={
-          <div>
-            <div className="archive-panel-kicker">Bills overview</div>
-            <div className="mt-5 grid place-items-center">
-              <div className="grid h-36 w-36 place-items-center rounded-full border-[18px] border-accent/75 bg-card text-center">
-                <span className="font-serif text-3xl">{bills.length || "..."}</span>
-                <span className="-mt-8 text-xs text-muted-foreground">Total bills</span>
-              </div>
-            </div>
-          </div>
+        accent="stream."
+        description="Search official bill records, inspect their latest actions, and open source-linked sponsor, committee, and text details."
+        visual={
+          <BillFlowVisual
+            steps={["Filed", "Committee", "House", "Senate", "Enacted"]}
+            activeStep={1}
+          />
         }
       />
 
-      <ArchiveSearch value={searchTerm} onChange={setSearchTerm} placeholder="Search bills, keywords, sponsors, or topics">
-        <select value={selectedChamber} onChange={(event) => setSelectedChamber(event.target.value)}>
+      <ArchiveSearch value={searchTerm} onChange={(value) => { setSearchTerm(value); setVisibleCount(40) }} placeholder="Search bill titles or identifiers">
+        <select aria-label="Filter bills by chamber" value={selectedChamber} onChange={(event) => { setSelectedChamber(event.target.value); setVisibleCount(40) }}>
           <option value="all">All Chambers</option>
           <option value="house">House</option>
           <option value="senate">Senate</option>
         </select>
-        <select value={sortBy} onChange={(event) => setSortBy(event.target.value)}>
+        <select aria-label="Sort bills" value={sortBy} onChange={(event) => { setSortBy(event.target.value); setVisibleCount(40) }}>
           <option value="recent">Most Recent</option>
           <option value="title">Title A-Z</option>
         </select>
-        <button className="inline-flex h-[3.2rem] items-center gap-2 border border-border bg-card px-4 text-sm font-semibold text-accent">
-          <Filter size={15} /> More Filters
-        </button>
       </ArchiveSearch>
 
-      <ArchiveMetrics
-        metrics={[
-          { label: "Loaded bills", value: loading ? "..." : bills.length, detail: "Congress.gov feed", icon: <FileText size={20} /> },
-          { label: "House origin", value: houseBills, detail: "Introduced in House", icon: <Landmark size={20} /> },
-          { label: "Senate origin", value: senateBills, detail: "Introduced in Senate", icon: <Landmark size={20} /> },
-          { label: "Latest actions", value: recentActions, detail: "With action dates", icon: <Calendar size={20} /> },
-        ]}
-      />
+      <div className="mx-auto -mt-3 mb-4 flex w-[calc(100%-2rem)] max-w-[106rem] flex-wrap items-center gap-2 text-xs text-muted-foreground" aria-live="polite">
+        <strong className="text-foreground">{filteredBills.length} results</strong>
+        {selectedChamber !== "all" ? <span className="archive-chip">Chamber: {selectedChamber}</span> : null}
+        {sortBy !== "recent" ? <span className="archive-chip">Sort: title</span> : null}
+        {searchTerm.trim() ? <span className="archive-chip">Query: {searchTerm.trim()}</span> : null}
+        {activeFilterCount > 0 ? (
+          <button className="ml-auto inline-flex min-h-10 items-center gap-1 px-2 font-semibold text-accent" onClick={clearFilters}>
+            <X size={14} /> Clear {activeFilterCount} filter{activeFilterCount === 1 ? "" : "s"}
+          </button>
+        ) : null}
+      </div>
 
       <div className="archive-content archive-grid-two">
-        <ArchivePanel title="Bill results" kicker="Legislative journey">
+        <ArchivePanel title="Bill results" kicker="Legislative records" action={<span className="font-mono text-xs text-muted-foreground">Showing {Math.min(visibleCount, filteredBills.length)} of {filteredBills.length}</span>}>
           {loading ? (
             <div className="h-12 w-12 animate-spin rounded-full border-4 border-accent border-t-transparent" />
           ) : error ? (
-            <p className="py-10 text-sm text-red-500">{error}</p>
+            <DataState kind="error" title="Bill stream unavailable" description={`${error}. The page is not treating this request failure as an empty legislative record.`} />
           ) : filteredBills.length === 0 ? (
-            <p className="py-10 text-sm text-muted-foreground">No bills match the current filters.</p>
+            <DataState title="No bills match these filters" description="Clear the search or change the chamber filter to return to the loaded legislative stream." />
           ) : (
             <div className="archive-list">
-              {filteredBills.slice(0, 40).map((bill, index) => {
-                const key = bill.url || `${bill.type}-${bill.number}-${index}`
+              {filteredBills.slice(0, visibleCount).map((bill) => {
+                const key = billKey(bill)
                 const isExpanded = expanded[key]
                 const detail = details[key]
                 return (
-                  <div key={key} className="archive-row">
+                  <article key={key} className={`archive-row ${selectedBillKey === key ? "border-accent/60 bg-accent/5" : ""}`}>
                     <div className="grid gap-4 md:grid-cols-[7rem_minmax(0,1fr)_auto] md:items-center">
                       <div>
                         <div className="font-mono text-lg font-bold text-accent">{bill.type}.{bill.number}</div>
@@ -169,38 +215,62 @@ export default function BillsPage() {
                           <span>Action {bill.latestAction?.actionDate || "N/A"}</span>
                         </div>
                       </div>
-                      <button onClick={() => toggleBill(bill)} className="inline-flex items-center gap-2 border border-border px-4 py-2 text-sm font-semibold text-foreground hover:border-accent hover:text-accent">
+                      <button aria-expanded={Boolean(isExpanded)} aria-controls={`bill-detail-${key}`} onClick={() => toggleBill(bill)} className="inline-flex min-h-11 items-center justify-center gap-2 border border-border px-4 py-2 text-sm font-semibold text-foreground hover:border-accent hover:text-accent">
                         Details {isExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
                       </button>
                     </div>
                     {isExpanded ? (
-                      <div className="mt-4 grid gap-3 border-t border-border pt-4 text-sm text-muted-foreground md:grid-cols-4">
-                        <div><span className="archive-metric-label">Sponsors</span><strong className="mt-1 block text-foreground">{detail?.sponsors?.length ?? "Loading"}</strong></div>
-                        <div><span className="archive-metric-label">Actions</span><strong className="mt-1 block text-foreground">{detail?.actions?.length ?? "Loading"}</strong></div>
-                        <div><span className="archive-metric-label">Committees</span><strong className="mt-1 block text-foreground">{detail?.committees?.length ?? "N/A"}</strong></div>
-                        <div><span className="archive-metric-label">Text versions</span><strong className="mt-1 block text-foreground">{detail?.text_versions?.length ?? "Loading"}</strong></div>
-                      </div>
+                      detailErrors[key] ? (
+                        <div id={`bill-detail-${key}`}><DataState kind="error" title="Bill details unavailable" description={detailErrors[key]} /></div>
+                      ) : detailLoading[key] ? (
+                        <output id={`bill-detail-${key}`} className="mt-4 block border-t border-border pt-4 text-sm text-muted-foreground">Loading source-linked bill details...</output>
+                      ) : (
+                        <div id={`bill-detail-${key}`} className="mt-4 grid gap-4 border-t border-border pt-4 text-sm text-muted-foreground sm:grid-cols-2 lg:grid-cols-4">
+                          <div><span className="archive-metric-label">Sponsor</span><strong className="mt-1 block text-foreground">{detail?.sponsors?.[0]?.name || "Not listed"}</strong></div>
+                          <div><span className="archive-metric-label">Actions</span><strong className="mt-1 block text-foreground">{detail?.actions?.length ?? 0}</strong></div>
+                          <div><span className="archive-metric-label">Committees</span><strong className="mt-1 block text-foreground">{detail?.committees?.map((committee) => committee.name).join(", ") || "Not listed"}</strong></div>
+                          <div><span className="archive-metric-label">Text versions</span><strong className="mt-1 block text-foreground">{detail?.text_versions?.length ?? 0}</strong></div>
+                        </div>
+                      )
                     ) : null}
-                  </div>
+                  </article>
                 )
               })}
+              {visibleCount < filteredBills.length ? (
+                <button className="min-h-11 border border-border px-4 py-3 text-sm font-semibold text-foreground hover:border-accent hover:text-accent" onClick={() => setVisibleCount((count) => count + 40)}>
+                  Show 40 more bills
+                </button>
+              ) : null}
             </div>
           )}
         </ArchivePanel>
 
-        <ArchivePanel title="Trending topics" kicker="From loaded titles">
-          <div className="space-y-4">
-            {["Health", "Security", "Tax", "Technology", "Energy"].map((topic) => {
-              const count = bills.filter((bill) => bill.title.toLowerCase().includes(topic.toLowerCase())).length
-              return (
-                <div key={topic}>
-                  <div className="mb-1 flex justify-between text-sm"><span>{topic}</span><span>{count}</span></div>
-                  <div className="h-2 rounded-full bg-muted"><div className="h-full rounded-full bg-accent" style={{ width: `${Math.max(8, (count / Math.max(1, bills.length)) * 100)}%` }} /></div>
-                </div>
-              )
-            })}
-          </div>
-        </ArchivePanel>
+        <div className="grid content-start gap-4 lg:sticky lg:top-36 lg:self-start">
+          <ArchivePanel title={selectedBill ? `${selectedBill.type}.${selectedBill.number}` : "Bill evidence"} kicker={selectedBill ? "Selected record" : "Provenance"}>
+            <EvidenceSpine
+              identifier={selectedBill?.id}
+              source="Congress.gov via CongressTracker API"
+              status={error ? "API request failed" : loading ? "Loading" : selectedBill ? "Record selected" : "Stream loaded"}
+              updated={selectedBill?.updateDate}
+              coverage={selectedBill ? (details[billKey(selectedBill)] ? "Details loaded" : "Summary record loaded") : `${bills.length} records in the current response`}
+              sourceUrl={selectedBill?.url}
+            >
+              <p className="text-sm leading-6 text-muted-foreground">
+                Counts describe the current API response. Open a bill to inspect the fields available for that record.
+              </p>
+            </EvidenceSpine>
+          </ArchivePanel>
+
+          <ArchivePanel title="Stream coverage" kicker="Current response">
+            <dl className="grid grid-cols-2 gap-4 text-sm">
+              <div><dt className="archive-metric-label">Loaded</dt><dd className="mt-1 font-mono text-xl text-foreground"><FileText className="mr-1 inline" size={16} />{bills.length}</dd></div>
+              <div><dt className="archive-metric-label">Dated actions</dt><dd className="mt-1 font-mono text-xl text-foreground"><Calendar className="mr-1 inline" size={16} />{recentActions}</dd></div>
+              <div><dt className="archive-metric-label">House</dt><dd className="mt-1 font-mono text-xl text-foreground"><Landmark className="mr-1 inline" size={16} />{houseBills}</dd></div>
+              <div><dt className="archive-metric-label">Senate</dt><dd className="mt-1 font-mono text-xl text-foreground"><Landmark className="mr-1 inline" size={16} />{senateBills}</dd></div>
+            </dl>
+            {selectedBill?.url ? <a className="archive-link mt-5" href={selectedBill.url} target="_blank" rel="noreferrer">Open official record <ExternalLink size={14} /></a> : null}
+          </ArchivePanel>
+        </div>
       </div>
     </ArchivePage>
   )

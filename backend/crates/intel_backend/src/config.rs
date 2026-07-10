@@ -8,7 +8,7 @@ pub struct Config {
     pub intel_cache_ttl_seconds: u64,
     /// Congress.gov API key. May be empty for unauthenticated access.
     pub congress_gov_api_key: String,
-    /// OpenFEC API key. May be empty (DEMO_KEY used at runtime).
+    /// OpenFEC API key. Required only for live funding fallback; empty disables that fallback.
     pub openfec_api_key: String,
     /// Base URL for the LDA lobbying disclosure API.
     pub lda_api_base_url: String,
@@ -28,7 +28,7 @@ impl Config {
     /// - `PORT` — default `4020`
     /// - `INTEL_CACHE_TTL_SECONDS` — default `300`
     /// - `CONGRESS_GOV_API_KEY` — default `""`
-    /// - `OPENFEC_API_KEY` — default `""`
+    /// - `OPENFEC_API_KEY` — default `""` (live funding fallback unavailable when empty)
     /// - `LDA_API_BASE_URL` — default `"https://lda.gov/api"`
     /// - `SENATE_LDA_API_KEY` — default `""`
     pub fn from_env() -> Self {

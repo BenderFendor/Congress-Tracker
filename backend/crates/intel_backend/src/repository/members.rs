@@ -146,7 +146,8 @@ impl Repository {
                     current_party, current_state, current_district, current_chamber, in_office,
                     depiction_url, website_url, contact_form, office_address, phone,
                     years_in_office, hometown, birthplace, education, prior_employment,
-                    nominate_dim1, nominate_dim2
+                    nominate_dim1::double precision AS nominate_dim1,
+                    nominate_dim2::double precision AS nominate_dim2
              FROM members
              WHERE bioguide_id = $1",
         )
@@ -326,6 +327,8 @@ impl Repository {
             birthplace: row.birthplace,
             nominate_dim1: row.nominate_dim1,
             nominate_dim2: row.nominate_dim2,
+            biography_summary: None,
+            biography_full: None,
             committees,
             social_accounts,
             provenance,
@@ -365,7 +368,8 @@ impl Repository {
                     current_party, current_state, current_district, current_chamber, in_office,
                     depiction_url, website_url, contact_form, office_address, phone,
                     years_in_office, hometown, birthplace, education, prior_employment,
-                    nominate_dim1, nominate_dim2
+                    nominate_dim1::double precision AS nominate_dim1,
+                    nominate_dim2::double precision AS nominate_dim2
              FROM members
              WHERE to_tsvector('english', official_full_name || ' ' || COALESCE(first_name, '') || ' ' || COALESCE(last_name, ''))
                    @@ to_tsquery('english', $1)
@@ -393,7 +397,8 @@ impl Repository {
                     current_party, current_state, current_district, current_chamber, in_office,
                     depiction_url, website_url, contact_form, office_address, phone,
                     years_in_office, hometown, birthplace, education, prior_employment,
-                    nominate_dim1, nominate_dim2
+                    nominate_dim1::double precision AS nominate_dim1,
+                    nominate_dim2::double precision AS nominate_dim2
              FROM members
              WHERE official_full_name ILIKE $1
                 OR first_name ILIKE $1
@@ -422,7 +427,8 @@ impl Repository {
                     current_party, current_state, current_district, current_chamber, in_office,
                     depiction_url, website_url, contact_form, office_address, phone,
                     years_in_office, hometown, birthplace, education, prior_employment,
-                    nominate_dim1, nominate_dim2
+                    nominate_dim1::double precision AS nominate_dim1,
+                    nominate_dim2::double precision AS nominate_dim2
              FROM members
              WHERE ($1::text IS NULL OR current_chamber = $1)
                AND ($2::text IS NULL OR current_state = $2)
@@ -633,6 +639,102 @@ impl Repository {
 
         Ok(row.map(|r| r.0))
     }
+
+    /// Get a member's identifier value for a given scheme.
+    pub async fn get_member_identifier(
+        &self,
+        bioguide_id: &str,
+        scheme: &str,
+    ) -> Result<Option<String>, sqlx::Error> {
+        let row: Option<(String,)> = sqlx::query_as(
+            "SELECT value FROM member_identifiers WHERE bioguide_id = $1 AND scheme = $2 LIMIT 1",
+        )
+        .bind(bioguide_id)
+        .bind(scheme)
+        .fetch_optional(self.pool())
+        .await?;
+        Ok(row.map(|r| r.0))
+    }
+
+    /// Fetch a Wikidata entity description (English).
+    /// Uses wikidata_id like "Q4733597".
+    /// Returns the short description (e.g. "American politician").
+    pub async fn fetch_wikidata_bio(
+        &self,
+        wikidata_id: &str,
+    ) -> Result<Option<String>, Box<dyn std::error::Error>> {
+        let url = format!(
+            "https://www.wikidata.org/wiki/Special:EntityData/{}.json",
+            wikidata_id
+        );
+        let client = reqwest::Client::builder()
+            .user_agent("CongressTracker/0.1 (mailto:dev@example.com)")
+            .timeout(std::time::Duration::from_secs(10))
+            .build()?;
+        let resp = client.get(&url).send().await?;
+        if !resp.status().is_success() {
+            return Ok(None);
+        }
+        let body: serde_json::Value = resp.json().await?;
+        // Navigate: entities -> {id} -> descriptions -> en -> value
+        let description = body
+            .get("entities")
+            .and_then(|e| e.get(wikidata_id))
+            .and_then(|e| e.get("descriptions"))
+            .and_then(|d| d.get("en"))
+            .and_then(|v| v.get("value"))
+            .and_then(|v| v.as_str());
+
+        Ok(description.map(|s| s.to_string()))
+    }
+
+    /// Fetch the English Wikipedia extract for a member given their Wikidata ID.
+    /// Uses the Wikipedia REST API after resolving the page title from Wikidata.
+    /// Returns a paragraph-length summary.
+    pub async fn fetch_wikipedia_extract(
+        &self,
+        wikidata_id: &str,
+    ) -> Result<Option<String>, Box<dyn std::error::Error>> {
+        // First, resolve the English Wikipedia page title from Wikidata
+        let wikidata_url = format!(
+            "https://www.wikidata.org/wiki/Special:EntityData/{}.json",
+            wikidata_id
+        );
+        let client = reqwest::Client::builder()
+            .user_agent("CongressTracker/0.1 (mailto:dev@example.com)")
+            .timeout(std::time::Duration::from_secs(15))
+            .build()?;
+        let wd_resp = client.get(&wikidata_url).send().await?;
+        if !wd_resp.status().is_success() {
+            return Ok(None);
+        }
+        let wd_body: serde_json::Value = wd_resp.json().await?;
+        let en_title = wd_body
+            .get("entities")
+            .and_then(|e| e.get(wikidata_id))
+            .and_then(|e| e.get("sitelinks"))
+            .and_then(|s| s.get("enwiki"))
+            .and_then(|s| s.get("title"))
+            .and_then(|t| t.as_str());
+
+        let Some(title) = en_title else {
+            return Ok(None);
+        };
+
+        // Now fetch the Wikipedia summary
+        let wiki_url = format!(
+            "https://en.wikipedia.org/api/rest_v1/page/summary/{}",
+            title.replace(' ', "_")
+        );
+        let resp = client.get(&wiki_url).send().await?;
+        if !resp.status().is_success() {
+            return Ok(None);
+        }
+        let body: serde_json::Value = resp.json().await?;
+        let extract = body.get("extract").and_then(|v| v.as_str());
+
+        Ok(extract.map(|s| s.to_string()))
+    }
 }
 
 // ── Private row types for SQLx decoding ─────────────────────────────────
@@ -699,4 +801,63 @@ struct CommRow {
     rank: Option<i32>,
     title: Option<String>,
     congress: i32,
+}
+
+#[cfg(test)]
+mod tests {
+    /// Test that the Wikidata API returns a description for a known legislator.
+    /// Alma Adams (A000370) has wikidata_id Q4733597.
+    /// This is a contract test against the live Wikidata API.
+    #[tokio::test]
+    #[ignore = "requires live Wikidata access"]
+    async fn test_wikidata_biography_fetch() {
+        // Given: A000370 has wikidata Q4733597 in member_identifiers
+        let wikidata_id = "Q4733597";
+        let url = format!(
+            "https://www.wikidata.org/wiki/Special:EntityData/{}.json",
+            wikidata_id
+        );
+
+        // When: fetching the Wikidata entity data
+        let client = reqwest::Client::builder()
+            .user_agent("CongressTracker/0.1 (mailto:dev@example.com)")
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .expect("failed to build reqwest client");
+        let resp = client
+            .get(&url)
+            .send()
+            .await
+            .expect("failed to reach Wikidata API");
+        assert!(
+            resp.status().is_success(),
+            "Wikidata API returned {}",
+            resp.status()
+        );
+
+        let body: serde_json::Value = resp.json().await.expect("failed to parse Wikidata JSON");
+
+        // Navigate: entities -> Q4733597 -> descriptions -> en -> value
+        let description = body
+            .get("entities")
+            .and_then(|e| e.get(wikidata_id))
+            .and_then(|e| e.get("descriptions"))
+            .and_then(|d| d.get("en"))
+            .and_then(|v| v.get("value"))
+            .and_then(|v| v.as_str());
+
+        // Then: returns a non-empty biography string
+        let bio = description.expect("description should exist for Q4733597");
+        assert!(!bio.is_empty(), "description should not be empty");
+
+        // Assert: bio contains "politician" or "representative" or "congress"
+        let lower = bio.to_lowercase();
+        assert!(
+            lower.contains("politician")
+                || lower.contains("representative")
+                || lower.contains("congress"),
+            "expected bio to contain 'politician', 'representative', or 'congress', got: {}",
+            bio
+        );
+    }
 }

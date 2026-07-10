@@ -1,5 +1,6 @@
 "use client"
 
+import { createLogger } from "@/lib/tracing"
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import Image from "next/image"
@@ -13,10 +14,11 @@ import {
 } from "lucide-react"
 import { getLegislator, getMemberLegislation, Legislator } from "@/lib/services/legislators"
 import { getMemberFunding, MemberFunding } from "@/lib/services/funding"
+import { classifyFundingCoverage } from "@/lib/funding-coverage.mjs"
 import { ProvenanceSummary } from "@/lib/services/provenance"
 import { getMemberVotes, Vote } from "@/lib/services/voting"
 import { formatAmountRange } from "@/lib/services/stocks"
-import { ArchivePage, ArchivePanel } from "@/components/ui/archive-ui"
+import { ArchivePage, ArchivePanel, EvidenceSpine } from "@/components/ui/archive-ui"
 import { getMemberDisclosures, getRelationships, MemberDisclosures, RelationshipEvidence } from "@/lib/services/relationships"
 
 function ProvenanceBadge({ provenance }: { provenance?: ProvenanceSummary }) {
@@ -49,20 +51,51 @@ interface BillRow {
   date?: string;
 }
 
+function completedServiceYears(startDate: string | null | undefined) {
+  if (!startDate) return null
+  const start = new Date(`${startDate}T00:00:00`)
+  if (Number.isNaN(start.getTime())) return null
+  const today = new Date()
+  let years = today.getFullYear() - start.getFullYear()
+  if (today.getMonth() < start.getMonth() || (today.getMonth() === start.getMonth() && today.getDate() < start.getDate())) years -= 1
+  return Math.max(years, 0)
+}
+
+function humanizeRelationshipType(value: string) {
+  return value.split("_").map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ")
+}
+
+function externalIdentifierUrl(scheme: string, value: string) {
+  const routes: Record<string, (id: string) => string> = {
+    wikidata: (id) => `https://www.wikidata.org/wiki/${encodeURIComponent(id)}`,
+    fec: (id) => `https://www.fec.gov/data/candidate/${encodeURIComponent(id)}/`,
+    govtrack: (id) => `https://www.govtrack.us/congress/members/${encodeURIComponent(id)}`,
+    votesmart: (id) => `https://justfacts.votesmart.org/candidate/biography/${encodeURIComponent(id)}`,
+    ballotpedia: (id) => `https://ballotpedia.org/${encodeURIComponent(id.replaceAll(" ", "_"))}`,
+    opensecrets: (id) => `https://www.opensecrets.org/members-of-congress/summary?cid=${encodeURIComponent(id)}`,
+  }
+  return routes[scheme.toLowerCase()]?.(value) ?? null
+}
+
+const log = createLogger("LegislatorPage")
+
 export default function LegislatorProfilePage({ params }: { params: { id: string } }) {
   const [activeTab, setActiveTab] = useState("overview")
   const [legislator, setLegislator] = useState<Legislator | null>(null)
   const [funding, setFunding] = useState<MemberFunding | null>(null)
+  const [fundingError, setFundingError] = useState<string | null>(null)
   const [votes, setVotes] = useState<Vote[]>([])
   const [sponsoredBills, setSponsoredBills] = useState<BillRow[]>([])
   const [cosponsoredBills, setCosponsoredBills] = useState<BillRow[]>([])
   const [relationships, setRelationships] = useState<RelationshipEvidence[]>([])
   const [disclosures, setDisclosures] = useState<MemberDisclosures | null>(null)
   const [loading, setLoading] = useState(true)
+  const [portraitFailed, setPortraitFailed] = useState(false)
 
   useEffect(() => {
     async function loadData() {
       setLoading(true)
+      setPortraitFailed(false)
       try {
         const leg = await getLegislator(params.id)
         setLegislator(leg)
@@ -70,27 +103,34 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
         if (leg) {
           const bioguideId = leg.bioguide_id || leg.id
           
-          // Background fetch funding
-          getMemberFunding(bioguideId).then(setFunding).catch(console.error)
+          getMemberFunding(bioguideId)
+            .then((data) => {
+              setFunding(data)
+              setFundingError(null)
+            })
+            .catch((e) => {
+              setFundingError(e instanceof Error ? e.message : "Funding request failed")
+              log.error("Funding fetch failed", { error: String(e) })
+            })
 
           // Background fetch votes
-          getMemberVotes(bioguideId).then(setVotes).catch(console.error)
+          getMemberVotes(bioguideId).then(setVotes).catch(e => log.error("Background fetch failed", { error: String(e) }))
 
           getMemberLegislation(bioguideId).then(data => {
             setSponsoredBills(data.sponsor.map(mapLegislationToBill))
             setCosponsoredBills(data.cosponsor.map(mapLegislationToBill))
-          }).catch(console.error)
+          }).catch(e => log.error("Background fetch failed", { error: String(e) }))
 
           getRelationships({ subjectKey: `member:${bioguideId}`, limit: 25 })
             .then(data => setRelationships(data.relationships))
-            .catch(console.error)
+            .catch(e => log.error("Background fetch failed", { error: String(e) }))
 
           getMemberDisclosures(bioguideId)
             .then(setDisclosures)
-            .catch(console.error)
+            .catch(e => log.error("Background fetch failed", { error: String(e) }))
         }
       } catch (error) {
-        console.error("Failed to load legislator data", error)
+        log.error("Failed to load legislator data", { error: String(error) })
       } finally {
         setLoading(false)
       }
@@ -139,17 +179,16 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
     </div>
   )
 
-  const partyName = legislator.party === "D" || legislator.party === "Democrat" ? "Democrat" 
-    : legislator.party === "R" || legislator.party === "Republican" ? "Republican" : "Independent";
+  const normalizedParty = (legislator.current_party || legislator.party || "").toLowerCase()
+  const partyName = normalizedParty === "d" || normalizedParty.includes("democrat") ? "Democrat"
+    : normalizedParty === "r" || normalizedParty.includes("republican") ? "Republican"
+      : normalizedParty.includes("independent") ? "Independent" : legislator.current_party || legislator.party || "Unknown";
     
   const partyBadgeClass = partyName === "Democrat" ? "bg-blue-600 text-white" : partyName === "Republican" ? "bg-red-600 text-white" : "bg-gray-600 text-white";
 
-  const hasFecRun = funding?.has_successful_fec_run ?? (
-    funding !== null &&
-    funding.data_quality !== "missing_crosswalk" &&
-    !funding.provenance?.warnings?.includes("no_fec_data") &&
-    (funding.total_receipts > 0 || funding.pac_contributions > 0 || (funding.top_contributors?.length ?? 0) > 0 || funding.provenance?.sources?.some(s => s.source === "openfec" && s.status === "success"))
-  )
+  const { hasFundingTotals, totalsOnly: fundingTotalsOnly, hasCanonicalRankings: hasCanonicalFundingRankings } = classifyFundingCoverage(funding)
+  const profileSource = legislator.provenance?.sources[0]
+  const serviceYears = legislator.years_in_office == null ? completedServiceYears(legislator.service_start) : Math.floor(Number(legislator.years_in_office))
 
   const aipacNetwork = funding?.influence_networks?.find(n => n.network_slug.toLowerCase() === "aipac")
 
@@ -190,11 +229,11 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
         <div className="bg-card border border-border p-8 md:p-10 mb-8 relative flex flex-col md:flex-row gap-8 items-start">
           <div className="relative shrink-0">
             <div className="w-32 h-32 md:w-40 md:h-40 border border-border bg-muted">
-              {(legislator.depiction_url || legislator.avatar || legislator.id) ? (
-                <Image src={legislator.depiction_url || legislator.avatar || `https://bioguide.congress.gov/bioguide/photo/${legislator.id[0]}/${legislator.id}.jpg`} alt={legislator.name} width={320} height={320} unoptimized className="w-full h-full object-cover" />
+              {(legislator.depiction_url || legislator.avatar || legislator.id) && !portraitFailed ? (
+                <Image priority src={legislator.depiction_url || legislator.avatar || `https://bioguide.congress.gov/bioguide/photo/${legislator.id[0]}/${legislator.id}.jpg`} alt={legislator.name} width={320} height={320} unoptimized onError={() => setPortraitFailed(true)} className="w-full h-full object-cover" />
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-                  <Users size={40} />
+                  <span className="font-serif text-4xl font-bold opacity-60">{legislator.name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase()}</span>
                 </div>
               )}
             </div>
@@ -238,12 +277,29 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
             <div className="flex gap-5 mt-6">
               <div className="w-1 shrink-0 bg-border"></div>
               <p className="font-serif text-base md:text-lg text-muted-foreground leading-relaxed max-w-3xl">
-                {legislator.bio || "Member of the United States Congress."}
+                {legislator.biography_summary || legislator.bio || "Member of the United States Congress."}
               </p>
             </div>
 
             <ProvenanceBadge provenance={legislator.provenance} />
           </div>
+        </div>
+
+        <div className="mb-8">
+          <EvidenceSpine
+            identifier={legislator.bioguide_id}
+            source={profileSource?.source || "Member profile API"}
+            status={profileSource?.status || "Loaded"}
+            updated={profileSource?.fetched_at}
+            coverage={`${legislator.committees?.length ?? 0} committee assignments · ${legislator.recentTrades.length} linked trades`}
+            sourceUrl={legislator.url || null}
+          >
+            {legislator.provenance?.warnings.length ? (
+              <ul className="mt-3 list-disc space-y-1 pl-5 text-xs leading-5 text-muted-foreground">
+                {legislator.provenance.warnings.map((warning) => <li key={warning}>{warning}</li>)}
+              </ul>
+            ) : null}
+          </EvidenceSpine>
         </div>
 
         {/* Tabs Navigation */}
@@ -292,7 +348,7 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
                   <div className="flex justify-between border-b border-border pb-3">
                     <span className="text-muted-foreground">Years in Office</span>
                     <span className="font-bold text-foreground">
-                      {legislator.years_in_office != null ? `${Number(legislator.years_in_office).toFixed(1)} years` : "N/A"}
+                      {serviceYears != null ? `${serviceYears} ${serviceYears === 1 ? "year" : "years"}` : "Records unavailable"}
                     </span>
                   </div>
                   <div className="flex justify-between pt-1">
@@ -363,13 +419,23 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
 
           {activeTab === 'donations' && (
             <div className="space-y-8">
-              {!hasFecRun ? (
+              {fundingError ? (
+                <div className="bg-card border border-red-500/50 p-6 flex items-start gap-4" role="alert">
+                  <AlertCircle className="text-red-500 shrink-0 mt-0.5" size={24} />
+                  <div>
+                    <h3 className="font-serif font-bold text-lg text-foreground mb-1">Funding request failed</h3>
+                    <p className="font-sans text-sm text-muted-foreground">
+                      {fundingError}. No totals or rankings are shown because an API failure is not evidence of zero contributions.
+                    </p>
+                  </div>
+                </div>
+              ) : !hasFundingTotals ? (
                 <div className="bg-card border border-amber-500/50 p-6 flex items-start gap-4">
                   <AlertCircle className="text-amber-500 shrink-0 mt-0.5" size={24} />
                   <div>
-                    <h3 className="font-serif font-bold text-lg text-foreground mb-1">FEC Transaction Notice</h3>
+                    <h3 className="font-serif font-bold text-lg text-foreground mb-1">Funding coverage unavailable</h3>
                     <p className="font-sans text-sm text-muted-foreground">
-                      No FEC transactions loaded for this member. Run the FEC ingest for this cycle.
+                      No verified funding totals are loaded for this member and cycle. This is a coverage gap, not evidence of zero contributions.
                     </p>
                   </div>
                 </div>
@@ -378,23 +444,54 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
                   <div className="bg-card border border-border p-6 text-center">
                     <div className="text-xs font-mono text-muted-foreground uppercase tracking-wider mb-2">Total Receipts</div>
                     <div className="text-3xl font-serif font-bold text-foreground">
-                      ${(funding?.total_receipts || 0).toLocaleString()}
+                      ${(funding?.direct_receipts || 0).toLocaleString()}
                     </div>
                   </div>
                   <div className="bg-card border border-border p-6 text-center">
                     <div className="text-xs font-mono text-muted-foreground uppercase tracking-wider mb-2">PAC Receipts</div>
                     <div className="text-3xl font-serif font-bold text-foreground">
-                      ${(funding?.pac_contributions || 0).toLocaleString()}
+                      ${(funding?.pac_receipts || 0).toLocaleString()}
                     </div>
                   </div>
                   <div className="bg-card border border-border p-6 text-center">
                     <div className="text-xs font-mono text-muted-foreground uppercase tracking-wider mb-2">Individual Receipts</div>
                     <div className="text-3xl font-serif font-bold text-foreground">
-                      ${(funding?.individual_contributions || 0).toLocaleString()}
+                      ${(funding?.individual_receipts || 0).toLocaleString()}
                     </div>
                   </div>
                 </div>
               )}
+
+              {fundingTotalsOnly ? (
+                <div className="border border-amber-500/50 bg-amber-500/10 p-5" role="note">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-300" size={20} aria-hidden="true" />
+                    <div className="space-y-2">
+                      <h3 className="font-serif text-lg font-bold text-foreground">Funding totals only</h3>
+                      <p className="text-sm leading-6 text-muted-foreground">
+                        OpenFEC supplied candidate-cycle totals, but donor and committee rankings require canonical paginated FEC transaction ingestion. No rankings are inferred from these totals.
+                      </p>
+                      <p className="font-mono text-xs uppercase tracking-wide text-amber-700 dark:text-amber-200">
+                        OpenFEC · Cycle {funding?.cycle ?? "unavailable"} · Rankings unavailable
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              <ArchivePanel title="Funding evidence" kicker="Source coverage">
+                <EvidenceSpine
+                  source={funding?.provenance?.sources.map((source) => source.source).join(", ") || "OpenFEC funding endpoint"}
+                  status={fundingError ? "Request failed" : fundingTotalsOnly ? "Totals only" : hasFundingTotals ? "Loaded" : "Unavailable"}
+                  coverage={fundingError ? "No funding claims rendered" : hasCanonicalFundingRankings ? "Canonical donor and committee rankings loaded" : "Candidate totals loaded; rankings require paginated FEC transactions"}
+                >
+                  {funding?.provenance?.warnings.length ? (
+                    <ul className="mt-3 list-disc space-y-1 pl-5 text-xs leading-5 text-muted-foreground">
+                      {funding.provenance.warnings.map((warning) => <li key={warning}>{warning}</li>)}
+                    </ul>
+                  ) : null}
+                </EvidenceSpine>
+              </ArchivePanel>
 
               {aipacNetwork && (
                 <ArchivePanel title="AIPAC / Pro-Israel Network Tracing" kicker="Verified Political Expenditures">
@@ -402,19 +499,19 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
                     <div className="p-5 bg-muted/40 border border-border">
                       <div className="text-xs font-mono text-muted-foreground uppercase mb-1">Direct PAC contributions</div>
                       <div className="text-2xl font-serif font-bold text-foreground">
-                        {!hasFecRun ? "Unavailable" : `$${(aipacNetwork.direct_pac_amount || 0).toLocaleString()}`}
+                        {!hasFundingTotals ? "Unavailable" : `$${(aipacNetwork.direct_pac || 0).toLocaleString()}`}
                       </div>
                     </div>
                     <div className="p-5 bg-muted/40 border border-border">
                       <div className="text-xs font-mono text-muted-foreground uppercase mb-1">Independent expenditures supporting</div>
                       <div className="text-2xl font-serif font-bold text-green-600 dark:text-green-400">
-                        {!hasFecRun ? "Unavailable" : `$${(aipacNetwork.independent_expenditure_support_amount || 0).toLocaleString()}`}
+                        {!hasFundingTotals ? "Unavailable" : `$${(aipacNetwork.independent_supporting || 0).toLocaleString()}`}
                       </div>
                     </div>
                     <div className="p-5 bg-muted/40 border border-border">
                       <div className="text-xs font-mono text-muted-foreground uppercase mb-1">Independent expenditures opposing</div>
                       <div className="text-2xl font-serif font-bold text-red-600 dark:text-red-400">
-                        {!hasFecRun ? "Unavailable" : `$${(aipacNetwork.independent_expenditure_oppose_amount || 0).toLocaleString()}`}
+                        {!hasFundingTotals ? "Unavailable" : `$${(aipacNetwork.independent_opposing || 0).toLocaleString()}`}
                       </div>
                     </div>
                   </div>
@@ -423,49 +520,49 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <ArchivePanel title="Top Donors" kicker="Receipt Breakdown">
-                  {hasFecRun && (funding?.top_contributors?.length ?? 0) > 0 ? (
+                  {hasFundingTotals && (funding?.top_donors?.length ?? 0) > 0 ? (
                     <div className="space-y-4">
-                      {funding?.top_contributors.map((donor, idx) => (
+                      {funding?.top_donors.map((donor, idx) => (
                         <div key={idx} className="flex justify-between items-center p-4 border border-border bg-muted/30">
                           <div>
-                            <div className="font-serif font-bold text-foreground">{donor.name}</div>
+                            <div className="font-serif font-bold text-foreground">{donor.contributor_name}</div>
                             <div className="text-xs font-mono text-muted-foreground uppercase mt-0.5">
-                              PAC: ${(donor.pac_contributions || 0).toLocaleString()} | Indiv: ${(donor.individual_contributions || 0).toLocaleString()}
+                              {donor.count} contributions
                             </div>
                           </div>
                           <div className="font-mono font-bold text-base text-foreground">
-                            ${(donor.total || 0).toLocaleString()}
+                            ${(donor.amount || 0).toLocaleString()}
                           </div>
                         </div>
                       ))}
                     </div>
                   ) : (
                     <div className="text-muted-foreground font-mono italic p-6 text-center border border-border">
-                      {!hasFecRun ? "No FEC transactions loaded for this member." : "No top donors identified."}
+                      {!hasFundingTotals ? "No verified funding totals are loaded." : "Donor rankings are unavailable until canonical paginated FEC transactions are ingested."}
                     </div>
                   )}
                 </ArchivePanel>
 
                 <ArchivePanel title="Top Committees" kicker="PAC & Committee Transfers">
-                  {hasFecRun && (funding?.top_committees?.length ?? 0) > 0 ? (
+                  {hasFundingTotals && (funding?.top_committees?.length ?? 0) > 0 ? (
                     <div className="space-y-4">
                       {funding?.top_committees.map((comm, idx) => (
                         <div key={idx} className="flex justify-between items-center p-4 border border-border bg-muted/30">
                           <div>
-                            <div className="font-serif font-bold text-foreground">{comm.name}</div>
+                            <div className="font-serif font-bold text-foreground">{comm.committee_name}</div>
                             <div className="text-xs font-mono text-muted-foreground uppercase mt-0.5">
-                              ID: {comm.committee_id} | Transactions: {comm.transaction_count}
+                              ID: {comm.committee_id}
                             </div>
                           </div>
                           <div className="font-mono font-bold text-base text-foreground">
-                            ${(comm.total || 0).toLocaleString()}
+                            ${(comm.amount || 0).toLocaleString()}
                           </div>
                         </div>
                       ))}
                     </div>
                   ) : (
                     <div className="text-muted-foreground font-mono italic p-6 text-center border border-border">
-                      {!hasFecRun ? "No FEC transactions loaded for this member." : "No top committee transfers identified."}
+                      {!hasFundingTotals ? "No verified funding totals are loaded." : "Committee rankings are unavailable until canonical paginated FEC transactions are ingested."}
                     </div>
                   )}
                 </ArchivePanel>
@@ -643,14 +740,20 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
               {relationships.length > 0 ? (
                 <div className="space-y-3">
                   {relationships.map((relationship) => (
-                    <div key={relationship.evidence_id} className="border border-border p-4">
-                      <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
-                        <span>{relationship.relation_type}</span>
-                        <span className="text-muted-foreground">{relationship.object_key}</span>
-                        <span className="text-xs uppercase tracking-wide text-muted-foreground">{relationship.evidence_tier}</span>
+                    <div key={relationship.relationship_id} className="border border-border p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <div className="archive-panel-kicker">{humanizeRelationshipType(relationship.relation_type)}</div>
+                          <div className="mt-1 font-serif text-lg font-semibold">
+                            {relationship.object_key.startsWith("committee:")
+                              ? (legislator.committees?.find((committee) => typeof committee !== "string" && committee.committee_id === relationship.object_key.replace("committee:", "")) as Exclude<NonNullable<Legislator["committees"]>[number], string> | undefined)?.name || relationship.object_key.replace("committee:", "Committee ")
+                              : relationship.object_key.replace(/^[^:]+:/, "")}
+                          </div>
+                        </div>
+                        <span className="archive-chip">{relationship.evidence_tier} evidence</span>
                       </div>
                       <p className="mt-2 text-xs text-muted-foreground">
-                        Confidence: {relationship.confidence}. Source: {relationship.source_url || relationship.source_record_id || "recorded source"}.
+                        Verified from {relationship.source_url ? "the linked public source" : relationship.source_record_id ? `source record ${relationship.source_record_id}` : relationship.source}. Confidence: {relationship.confidence}.
                       </p>
                     </div>
                   ))}
@@ -687,7 +790,15 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
           )}
 
           {activeTab === 'biography' && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className="space-y-8">
+              {legislator.biography_full && (
+                <ArchivePanel title="About" kicker="Wikipedia">
+                  <p className="font-serif text-base leading-relaxed text-foreground">
+                    {legislator.biography_full}
+                  </p>
+                </ArchivePanel>
+              )}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               <ArchivePanel title="Personal Profile" kicker="Biographical Information">
                 <div className="space-y-4 font-mono text-sm">
                   <div className="flex justify-between border-b border-border pb-3">
@@ -705,7 +816,7 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
                   <div className="flex justify-between border-b border-border pb-3">
                     <span className="text-muted-foreground">Office Address</span>
                     <span className="font-bold text-foreground text-right max-w-[240px]">
-                      {legislator.office_address || "Capitol Building, Washington D.C."}
+                      {legislator.office_address || "Not listed"}
                     </span>
                   </div>
                   <div className="flex justify-between pt-1">
@@ -718,12 +829,19 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
               <ArchivePanel title="External Identifiers" kicker="Crosswalk IDs">
                 {legislator.identifiers && Object.keys(legislator.identifiers).length > 0 ? (
                   <div className="grid grid-cols-2 gap-3 font-mono text-xs">
-                    {Object.entries(legislator.identifiers).map(([scheme, vals]) => (
-                      <div key={scheme} className="p-3 border border-border bg-muted/30">
+                    {Object.entries(legislator.identifiers).map(([scheme, vals]) => {
+                      const values = Array.isArray(vals) ? vals : [String(vals)]
+                      const href = externalIdentifierUrl(scheme, values[0])
+                      const content = <>
                         <div className="text-muted-foreground uppercase mb-1">{scheme}</div>
-                        <div className="font-bold text-foreground truncate">{Array.isArray(vals) ? vals.join(", ") : String(vals)}</div>
-                      </div>
-                    ))}
+                        <div className="font-bold text-foreground truncate">{values.join(", ")}</div>
+                      </>
+                      return href ? (
+                        <a key={scheme} href={href} target="_blank" rel="noreferrer" className="p-3 border border-border bg-muted/30 transition-colors hover:border-accent hover:bg-accent/5" aria-label={`Open ${scheme} source record`}>
+                          {content}
+                        </a>
+                      ) : <div key={scheme} className="p-3 border border-border bg-muted/30">{content}</div>
+                    })}
                   </div>
                 ) : (
                   <div className="text-muted-foreground font-mono italic p-6 text-center border border-border">
@@ -763,6 +881,7 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
                   </div>
                 )}
               </ArchivePanel>
+            </div>
             </div>
           )}
         </div>
