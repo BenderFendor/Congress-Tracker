@@ -21,7 +21,9 @@ cd ..
 | run canonical backend | `cargo run -p intel_backend --bin intel_backend` | `backend/` |
 | run legacy backend | `cargo run -p backend_server` | `backend/` |
 | typecheck | `npx tsc --noEmit` | `frontend/` |
-| lint (ts) | `pnpm lint` | `frontend/` |
+| lint (ESLint, warnings fail) | `pnpm lint` | `frontend/` |
+| lint (Oxlint, warnings fail) | `pnpm lint:ox` | `frontend/` |
+| strict frontend gate | `pnpm verify` | `frontend/` |
 | dev | `pnpm dev` | `frontend/` |
 | test (intel) | `cargo test -p intel_backend` | `backend/` |
 | smoke ingest | `cargo run -p intel_backend --bin ingest -- all-smoke` | `backend/` |
@@ -41,6 +43,9 @@ scripts/self-test
 - Runtime endpoint proof still requires a running Postgres-backed `intel_backend`
 - No pre-commit hook configured
 - No CI pipeline defined
+- Oxlint and ESLint are now configured as error gates; any new warning fails the respective command.
+- TypeScript uses `strict`, `noUnusedLocals`, `noUnusedParameters`, and `noFallthroughCasesInSwitch`; type diagnostics fail the build.
+- Current data gaps are tracked through `/api/sources/coverage`; an empty stock table is an ingestion gap until House Clerk/Senate eFD workers are complete.
 
 ## Environment requirements
 

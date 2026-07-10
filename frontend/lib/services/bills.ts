@@ -125,13 +125,9 @@ export async function getRecentBills(limit = 10): Promise<Bill[]> {
 }
 
 export async function getBillIntel(congress: number, billType: string, billNumber: number): Promise<BillIntel | null> {
-    try {
-        const response = await fetch(
-            `${BACKEND_URL}/api/bills/${congress}/${billType.toLowerCase()}/${billNumber}/intel`
-        );
-        if (!response.ok) throw new Error(`Failed to fetch bill intel: ${response.status} ${response.statusText}`);
-        return response.json();
-    } catch (error) {
-        throw error;
-    }
+    const response = await fetch(
+        `${BACKEND_URL}/api/bills/${congress}/${billType.toLowerCase()}/${billNumber}/intel`
+    );
+    if (!response.ok) throw new Error(`Failed to fetch bill intel: ${response.status} ${response.statusText}`);
+    return response.json();
 }

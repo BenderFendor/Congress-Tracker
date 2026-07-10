@@ -200,9 +200,9 @@ impl Repository {
         // Aggregated totals from the materialized view
         let total_row: Option<(f64, f64, f64)> = sqlx::query_as(
             r#"SELECT
-                COALESCE(SUM(direct_amount), 0),
-                COALESCE(SUM(support_ie_amount), 0),
-                COALESCE(SUM(oppose_ie_amount), 0)
+                COALESCE(SUM(direct_amount), 0)::double precision,
+                COALESCE(SUM(support_ie_amount), 0)::double precision,
+                COALESCE(SUM(oppose_ie_amount), 0)::double precision
             FROM influence_network_member_mv
             WHERE network_slug = $1 AND cycle = $2"#,
         )
@@ -229,9 +229,9 @@ impl Repository {
                 inc.committee_id,
                 inc.committee_name,
                 inc.role::text AS role,
-                COALESCE(SUM(inm.direct_amount), 0) AS direct_amount,
-                COALESCE(SUM(inm.support_ie_amount), 0) AS support_ie_amount,
-                COALESCE(SUM(inm.oppose_ie_amount), 0) AS oppose_ie_amount
+                COALESCE(SUM(inm.direct_amount), 0)::double precision AS direct_amount,
+                COALESCE(SUM(inm.support_ie_amount), 0)::double precision AS support_ie_amount,
+                COALESCE(SUM(inm.oppose_ie_amount), 0)::double precision AS oppose_ie_amount
             FROM influence_network_committees inc
             LEFT JOIN influence_network_member_mv inm
                 ON inc.network_slug = inm.network_slug
@@ -278,7 +278,7 @@ impl Repository {
                 m.current_party AS party,
                 m.current_chamber AS chamber,
                 m.current_state AS state,
-                COALESCE(SUM(inm.direct_amount + inm.support_ie_amount + inm.oppose_ie_amount), 0) AS total_received
+                COALESCE(SUM(inm.direct_amount + inm.support_ie_amount + inm.oppose_ie_amount), 0)::double precision AS total_received
             FROM influence_network_member_mv inm
             JOIN members m ON inm.bioguide_id = m.bioguide_id
             WHERE inm.network_slug = $1 AND inm.cycle = $2

@@ -32,15 +32,19 @@ pub struct RecentActivity {
     pub latest_source_run: Option<DateTime<Utc>>,
 }
 
-#[derive(Debug, Serialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct SourceFreshness {
     pub source: String,
     pub display_name: Option<String>,
+    pub source_type: Option<String>,
+    pub default_ttl_seconds: Option<i32>,
     pub status: Option<String>,
     pub fetched_at: Option<DateTime<Utc>>,
     pub rows_seen: Option<i64>,
     pub rows_written: Option<i64>,
     pub error_message: Option<String>,
+    #[sqlx(default)]
+    pub freshness: String,
 }
 
 pub async fn summary(State(state): State<Arc<AppState>>) -> Result<Json<HomeSummary>, AppError> {
@@ -81,9 +85,11 @@ pub async fn summary(State(state): State<Arc<AppState>>) -> Result<Json<HomeSumm
 }
 
 pub async fn source_freshness(pool: &sqlx::PgPool) -> Result<Vec<SourceFreshness>, AppError> {
-    sqlx::query_as(
+    let mut sources: Vec<SourceFreshness> = sqlx::query_as(
         r#"SELECT ds.source,
                   ds.display_name,
+                  ds.source_type,
+                  ds.default_ttl_seconds,
                   sr.status::text AS status,
                   sr.finished_at AS fetched_at,
                   sr.rows_seen,
@@ -101,5 +107,22 @@ pub async fn source_freshness(pool: &sqlx::PgPool) -> Result<Vec<SourceFreshness
     )
     .fetch_all(pool)
     .await
-    .map_err(|e| AppError::Internal(format!("database error: {}", e)))
+    .map_err(|e| AppError::Internal(format!("database error: {}", e)))?;
+
+    let now = Utc::now();
+    for source in &mut sources {
+        source.freshness = match (source.status.as_deref(), source.fetched_at) {
+            (Some("failed"), _) => "failed".to_string(),
+            (Some("success"), Some(fetched_at)) => {
+                let ttl = i64::from(source.default_ttl_seconds.unwrap_or(86_400));
+                if now.signed_duration_since(fetched_at).num_seconds() <= ttl {
+                    "fresh".to_string()
+                } else {
+                    "stale".to_string()
+                }
+            }
+            _ => "missing".to_string(),
+        };
+    }
+    Ok(sources)
 }

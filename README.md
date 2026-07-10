@@ -28,6 +28,9 @@ The frontend reads from `http://localhost:4020` by default.
 |------|------------------|
 | Home | `/api/home/summary`, `/api/sources/status` |
 | Legislators | `/api/legislators`, `/api/legislators/:bioguide_id` |
+| Member intelligence | `/api/members/:bioguide_id/votes`, `/api/members/:bioguide_id/legislation`, `/api/members/:bioguide_id/disclosures` |
+| Relationships and organizations | `/api/relationships`, `/api/organizations/:organization_id` |
+| Source coverage | `/api/sources/status`, `/api/sources/coverage` |
 | Bills | `/api/bills`, `/api/bills/:bill_id` |
 | Influence | `/api/influence/networks`, `/api/influence/networks/:slug` |
 | Committees | `/api/committees`, `/api/committees/:committee_id` |
@@ -54,8 +57,19 @@ cargo run -p intel_backend --bin ingest -- influence-seeds
 cargo run -p intel_backend --bin ingest -- congress-bills --congress 119 --limit 50
 cargo run -p intel_backend --bin ingest -- fec-candidates --cycle 2024 --limit 100
 cargo run -p intel_backend --bin ingest -- lobbying-filings --year 2025 --page-size 25 --limit-pages 2
+cargo run -p intel_backend --bin ingest -- disclosure-manifest --source house_disclosures --path ./data/house-disclosures.jsonl
+cargo run -p intel_backend --bin ingest -- organization-manifest --source sec_company_identity --path ./data/company-identities.jsonl
+cargo run -p intel_backend --bin ingest -- house-ptr --pdf-path ./raw/house/20030494.pdf --bioguide-id F000472 --filing-id 20030494 --source-url https://disclosures-clerk.house.gov/public_disc/ptr-pdfs/2025/20030494.pdf
+cargo run -p intel_backend --bin ingest -- house-ptr-url --url https://disclosures-clerk.house.gov/public_disc/ptr-pdfs/2025/20030494.pdf --output-path ./raw/house/20030494.pdf --bioguide-id F000472 --filing-id 20030494
+cargo run -p intel_backend --bin ingest -- refresh-relationships
 cargo run -p intel_backend --bin ingest -- refresh-materialized-views
 ```
+
+`disclosure-manifest` imports one JSON object per line with an official filing URL and optional member/report metadata. It records documents as pending or parsed; it does not invent holdings or transaction values. House and Senate download/parsing jobs should produce this manifest and then populate the normalized holding and transaction tables.
+
+`organization-manifest` imports canonical organization records plus identifiers such as SEC CIK, FEC committee ID, or LDA client/registrant ID. Identifier values are source-scoped evidence and are never treated as proof of a member relationship by themselves.
+
+`house-ptr-url` downloads an official PDF and passes it to `house-ptr`. `house-ptr` hashes the PDF, runs `pdftotext -layout`, parses anchored transaction rows, and stores range-aware transactions with the original filing URL. It intentionally rejects unanchored rows rather than guessing. Run `refresh-relationships` after importing documents to connect disclosure tickers to canonical organizations.
 
 4. Start the backend:
 
@@ -99,6 +113,7 @@ Browser verification artifacts can be stored under `reports/verification/`.
 ## Known Limits
 
 - Official House and Senate financial disclosure/PTR parsing still needs dedicated source ingestion.
+- Member vote and sponsorship pages read only canonical relational records; missing rows are shown as unavailable rather than inferred from search.
 - Stocks and portfolio pages must stay empty or caveated until real disclosure rows exist.
 - Voteview and Wikidata are registered as sources but are not required for the core smoke dataset.
 - The visualizations route is outside the required tab set and still needs a separate cleanup pass.

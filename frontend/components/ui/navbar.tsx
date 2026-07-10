@@ -2,11 +2,13 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Shield } from "lucide-react"
+import { Menu, Shield, X } from "lucide-react"
+import { useState } from "react"
 import { ThemeToggle } from "@/components/theme-toggle"
 
 export function Navbar() {
     const pathname = usePathname()
+    const [menuOpen, setMenuOpen] = useState(false)
 
     const isActive = (path: string) => {
         if (path === "/" && pathname === "/") return true
@@ -51,11 +53,33 @@ export function Navbar() {
                 ))}
                 <ThemeToggle />
             </nav>
-            {/* Mobile Menu Placeholder */}
-            <div className="xl:hidden flex items-center gap-4">
+            <div className="xl:hidden flex items-center gap-2">
                 <ThemeToggle />
+                <button
+                    type="button"
+                    aria-label={menuOpen ? "Close navigation" : "Open navigation"}
+                    aria-expanded={menuOpen}
+                    onClick={() => setMenuOpen((open) => !open)}
+                    className="grid h-9 w-9 place-items-center rounded-full border border-border bg-card text-primary transition hover:border-accent hover:text-accent dark:text-foreground"
+                >
+                    {menuOpen ? <X size={17} /> : <Menu size={17} />}
+                </button>
             </div>
             </div>
+            {menuOpen ? (
+                <nav aria-label="Mobile navigation" className="mx-auto mt-4 grid w-full max-w-[116rem] grid-cols-2 gap-x-5 border-t border-border/70 pt-4 sm:grid-cols-3">
+                    {navLinks.map((link) => (
+                        <Link
+                            key={link.href}
+                            href={link.href}
+                            onClick={() => setMenuOpen(false)}
+                            className={`border-b border-border/60 py-3 text-sm font-medium ${isActive(link.href) ? "text-accent" : "text-muted-foreground hover:text-primary dark:hover:text-foreground"}`}
+                        >
+                            {link.label}
+                        </Link>
+                    ))}
+                </nav>
+            ) : null}
         </header>
     )
 }

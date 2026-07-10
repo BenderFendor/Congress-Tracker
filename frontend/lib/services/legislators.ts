@@ -194,3 +194,38 @@ export async function getAllLegislators(chamber?: string): Promise<Legislator[]>
         throw error;
     }
 }
+
+export type MemberLegislationItem = {
+    bill_id: string;
+    congress: number;
+    bill_type: string;
+    bill_number: number;
+    title: string;
+    status: string;
+    introduced_date?: string | null;
+    latest_action_date?: string | null;
+    latest_action_text?: string | null;
+    sponsor_type: "sponsor" | "cosponsor";
+    sponsorship_date?: string | null;
+    is_original_cosponsor: boolean;
+};
+
+export type MemberLegislationResponse = {
+    sponsor: MemberLegislationItem[];
+    cosponsor: MemberLegislationItem[];
+    provenance?: ProvenanceSummary;
+};
+
+export async function getMemberLegislation(
+    bioguideId: string,
+    congress = 119,
+): Promise<MemberLegislationResponse> {
+    const params = new URLSearchParams({ congress: String(congress), limit: "200" });
+    const response = await fetch(
+        `${BACKEND_URL}/api/members/${encodeURIComponent(bioguideId)}/legislation?${params}`,
+    );
+    if (!response.ok) {
+        throw new Error(`Failed to fetch member legislation: ${response.status}`);
+    }
+    return response.json();
+}

@@ -32,6 +32,7 @@ pub const SOURCE_CAPITOLTRADES: &str = "capitoltrades";
 pub const SOURCE_CIVIQ: &str = "civiq";
 pub const SOURCE_WIKIDATA: &str = "wikidata";
 pub const SOURCE_MANUAL: &str = "manual_influence_seed";
+pub const SOURCE_RELATIONSHIP_DERIVATION: &str = "relationship_derivation";
 
 // ── ID scheme constants ────────────────────────────────────────────────────
 

@@ -4,9 +4,6 @@ import React, { useState, useEffect } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { ArchivePage, ArchiveHero, ArchivePanel, ArchiveMetrics } from "@/components/ui/archive-ui"
 import { Badge } from "@/components/ui/badge"
-import { CampaignFinanceChart } from "@/components/visualizations/campaign-finance-chart"
-import { DonationFlowChart } from "@/components/visualizations/donation-flow-chart"
-import { InfluenceNetwork as InfluenceNetworkChart } from "@/components/visualizations/influence-network"
 import { getInfluenceNetwork, type InfluenceNetwork } from "@/lib/services/influence"
 import { Network, Building2, DollarSign, ArrowLeft, Loader2, ShieldAlert, CheckCircle2 } from "lucide-react"
 
@@ -179,60 +176,12 @@ export default function InfluenceNetworkDetailPage() {
               </table>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-              <CampaignFinanceChart
-                title={`${network.display_name} Expenditure Breakdown`}
-                description="Distribution across direct PAC contributions and IE support"
-                data={
-                  committees.length > 0
-                    ? committees.map((c) => ({
-                        name: c.committee_name.length > 24 ? c.committee_name.substring(0, 21) + "..." : c.committee_name,
-                        amount: c.role === "super_pac" ? 14500000 : c.role === "direct_pac" ? 3200000 : 4800000,
-                        industry: c.role ? c.role.replace(/_/g, " ").toUpperCase() : "PAC"
-                      }))
-                    : [
-                        { name: "Direct PAC Allocation", amount: 3200000, industry: "DIRECT PAC" },
-                        { name: "Super PAC IE Support", amount: 14500000, industry: "SUPER PAC" },
-                        { name: "IE Opposition Spending", amount: 4800000, industry: "ADVOCACY" }
-                      ]
-                }
-              />
-
-              <DonationFlowChart
-                title="Donation Flow Analysis"
-                description="Money flow from spending entities to congressional recipients"
-                data={{
-                  nodes: [
-                    { name: network.display_name, category: "Network" },
-                    ...(committees.length > 0
-                      ? committees.slice(0, 3).map(c => ({ name: c.committee_name.length > 20 ? c.committee_name.substring(0, 18) + "..." : c.committee_name, category: "Committee" }))
-                      : [{ name: "Direct PAC Entity", category: "Committee" }, { name: "Independent Super PAC", category: "Committee" }]
-                    ),
-                    { name: "House Campaigns", category: "Recipients" },
-                    { name: "Senate Campaigns", category: "Recipients" }
-                  ],
-                  links: [
-                    { source: 0, target: 1, value: 3500000 },
-                    { source: 0, target: 2, value: 12000000 },
-                    { source: 1, target: committees.length > 0 ? committees.length + 1 : 3, value: 2100000 },
-                    { source: 1, target: committees.length > 0 ? committees.length + 2 : 4, value: 1400000 },
-                    { source: 2, target: committees.length > 0 ? committees.length + 1 : 3, value: 7500000 },
-                    { source: 2, target: committees.length > 0 ? committees.length + 2 : 4, value: 4500000 }
-                  ]
-                }}
-              />
-            </div>
-
-            <InfluenceNetworkChart
-              title={`${network.display_name} Network Topology`}
-              description="Visual mapping between network organizations and legislative actions"
-              nodes={[
-                { id: "net", name: network.display_name, type: "organization", amount: 22500000, connections: ["leg1", "leg2", "bill1"] },
-                { id: "leg1", name: "Representative Leadership", type: "legislator", party: "Democrat", amount: 1250000, connections: ["net", "bill1"] },
-                { id: "leg2", name: "Ranking Committee Members", type: "legislator", party: "Republican", amount: 1100000, connections: ["net", "bill1"] },
-                { id: "bill1", name: "Foreign Affairs & Defense Appropriations", type: "bill", connections: ["net", "leg1", "leg2"] }
-              ]}
-            />
+            <ArchivePanel title="Financial and relationship evidence" kicker="Canonical source records">
+              <p className="p-6 text-sm text-muted-foreground">
+                Financial flows and relationship topology will appear here when the canonical FEC
+                records are ingested. No estimated allocations or inferred members are displayed.
+              </p>
+            </ArchivePanel>
           </ArchivePanel>
         </>
       )}

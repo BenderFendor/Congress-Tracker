@@ -138,8 +138,8 @@ export default function CommitteeDetailPage() {
                   members
                     .slice()
                     .sort((a, b) => (a.rank || 999) - (b.rank || 999))
-                    .map((m) => (
-                      <tr key={m.bioguide_id} className="hover:bg-muted/30">
+                    .map((m, index) => (
+                      <tr key={`${m.bioguide_id}-${index}`} className="hover:bg-muted/30">
                         <td className="p-3 font-mono text-xs text-muted-foreground">
                           {m.rank !== undefined ? `#${m.rank}` : "-"}
                         </td>
@@ -186,7 +186,7 @@ export default function CommitteeDetailPage() {
                   bills.map((b, idx) => {
                     const billSlug = b.bill_id || `${b.bill_type || "hr"}${b.bill_number}-${b.congress || 119}`
                     return (
-                      <tr key={b.bill_id || idx} className="hover:bg-muted/30">
+                      <tr key={`${b.bill_id || "bill"}-${idx}`} className="hover:bg-muted/30">
                         <td className="p-3 font-mono text-xs font-semibold uppercase text-accent">
                           <Link href={`/bills/${billSlug}`} className="hover:underline">
                             {b.bill_id || `${b.bill_type?.toUpperCase() || "HR"} ${b.bill_number}`}

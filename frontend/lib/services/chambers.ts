@@ -12,6 +12,8 @@ export type ChamberDashboard = {
   avg_party_line_pct?: number;
   total_lobbying_spend?: number;
   total_independent_expenditures?: number;
+  avg_nominate_dim1?: number;
+  total_direct_receipts: number;
   provenance?: ProvenanceSummary;
 };
 

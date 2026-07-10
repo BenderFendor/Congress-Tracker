@@ -1,31 +1,6 @@
-// Congressional voting records via Congress.gov API.
-// Based on voting schemas from unitedstates/congress community project (CC0).
-
 import { BACKEND_URL } from "@/lib/constants";
 
-export interface VoteRecord {
-  vote_id: string;
-  chamber: string;
-  congress: number;
-  session: number;
-  roll_call: number;
-  question: string;
-  description: string;
-  vote_type: string;
-  result: string;
-  date: string;
-  source_url: string;
-  democratic: { yes: number; no: number; present: number; not_voting: number };
-  republican: { yes: number; no: number; present: number; not_voting: number };
-  total: { yes: number; no: number; present: number; not_voting: number };
-  positions: Array<{
-    member_name: string;
-    bioguide_id: string;
-    vote: string;
-  }>;
-}
-
-export interface Vote {
+export type Vote = {
   bill: {
     bill_id: string;
     number: string;
@@ -38,62 +13,45 @@ export interface Vote {
   time: string;
   result: string;
   position: string;
-}
+};
 
-function mapVoteRecordToVote(record: VoteRecord, memberVote: string): Vote {
+type MemberVotePosition = {
+  vote_id: string;
+  chamber: string;
+  roll_number: number;
+  vote_date: string | null;
+  question: string;
+  position: string;
+};
+
+type MemberVotesResponse = { votes: MemberVotePosition[] };
+
+function mapMemberVote(position: MemberVotePosition): Vote {
   return {
     bill: {
-      bill_id: record.vote_id,
-      number: record.vote_id,
-      title: record.description,
-      latest_action: record.date,
+      bill_id: position.vote_id,
+      number: `${position.chamber} ${position.roll_number}`,
+      title: position.question,
+      latest_action: position.vote_date ?? "",
     },
-    question: record.question,
-    description: record.description,
-    date: record.date,
+    question: position.question,
+    description: position.question,
+    date: position.vote_date ?? "",
     time: "",
-    result: record.result,
-    position: memberVote,
+    result: "Recorded",
+    position: position.position,
   };
 }
 
-export async function getRecentVotes(chamber?: 'house' | 'senate'): Promise<VoteRecord[]> {
-  const params = new URLSearchParams();
-  if (chamber) params.set('chamber', chamber);
-  params.set('limit', '20');
-
-  try {
-    const res = await fetch(`${BACKEND_URL}/api/congress/votes?${params}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    return data.votes || [];
-  } catch (error) {
-    console.error('Failed to fetch votes:', error);
-    return [];
+export async function getMemberVotes(bioguideId: string, congress = 119): Promise<Vote[]> {
+  const params = new URLSearchParams({ congress: String(congress), limit: "100" });
+  const response = await fetch(
+    `${BACKEND_URL}/api/members/${encodeURIComponent(bioguideId)}/votes?${params}`,
+  );
+  if (!response.ok) {
+    throw new Error(`Failed to fetch member votes: ${response.status}`);
   }
-}
 
-export async function getMemberVotes(bioguideId: string): Promise<Vote[]> {
-    const allVotes = await getRecentVotes();
-    const memberVotes: Vote[] = [];
-
-    for (const record of allVotes) {
-      const position = record.positions?.find(p => p.bioguide_id === bioguideId);
-      if (position) {
-        memberVotes.push(mapVoteRecordToVote(record, position.vote));
-      }
-    }
-
-    return memberVotes;
-}
-
-export async function getVotesOnTopic(topic: string): Promise<Vote[]> {
-    const allVotes = await getRecentVotes();
-    const topicLower = topic.toLowerCase();
-    const filtered = allVotes.filter(v =>
-      v.question?.toLowerCase().includes(topicLower) ||
-      v.description?.toLowerCase().includes(topicLower)
-    );
-
-    return filtered.map(v => mapVoteRecordToVote(v, ""));
+  const data = (await response.json()) as MemberVotesResponse;
+  return data.votes.map(mapMemberVote);
 }

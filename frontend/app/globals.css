@@ -158,12 +158,12 @@
   .archive-hero {
     position: relative;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(18rem, 34rem) minmax(18rem, 28rem);
+    grid-template-columns: minmax(0, 1.15fr) minmax(18rem, 0.85fr);
     gap: clamp(1.25rem, 3vw, 3rem);
     align-items: center;
     width: min(100% - 2rem, 116rem);
     margin: 0 auto;
-    padding: clamp(2.5rem, 5vw, 5.5rem) clamp(1.25rem, 3vw, 3.5rem);
+    padding: clamp(2rem, 4vw, 4.5rem) clamp(1.25rem, 3vw, 3.5rem);
     border-bottom: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
     overflow: hidden;
   }
@@ -176,6 +176,10 @@
     background:
       radial-gradient(circle at 70% 48%, rgba(201, 72, 61, 0.1), transparent 18rem),
       linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.48) 48%, transparent 100%);
+  }
+
+  .archive-hero:has(.archive-hero-aside) {
+    grid-template-columns: minmax(0, 1fr) minmax(18rem, 28rem) minmax(16rem, 22rem);
   }
 
   .archive-page-dark .archive-hero::before {
@@ -205,7 +209,7 @@
   .archive-hero h1 {
     margin-top: 0.9rem;
     font-family: var(--font-playfair), Georgia, serif;
-    font-size: clamp(3.2rem, 6vw, 7.5rem);
+    font-size: clamp(3rem, 5.3vw, 6.4rem);
     line-height: 0.95;
     letter-spacing: 0;
     color: var(--primary);
@@ -235,7 +239,7 @@
   }
 
   .archive-hero-art {
-    min-height: 18rem;
+    min-height: 15rem;
     display: grid;
     place-items: center;
   }
@@ -313,7 +317,7 @@
   .archive-metrics {
     border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
     background: color-mix(in srgb, var(--card) 90%, transparent);
-    box-shadow: 0 1.5rem 4rem rgba(22, 20, 18, 0.08);
+    box-shadow: 0 0.7rem 2.2rem rgba(22, 20, 18, 0.06);
     backdrop-filter: blur(18px);
   }
 
@@ -333,7 +337,7 @@
     grid-template-columns: repeat(4, minmax(0, 1fr));
     width: min(100% - 2rem, 106rem);
     margin: 1.8rem auto;
-    border-radius: 0.75rem;
+    border-radius: 0.45rem;
     overflow: hidden;
   }
 
@@ -378,7 +382,7 @@
 
   .archive-panel {
     border-radius: 0.75rem;
-    padding: clamp(1rem, 2vw, 1.6rem);
+    padding: clamp(1rem, 2vw, 1.35rem);
   }
 
   .archive-panel-head {
@@ -471,16 +475,17 @@
     gap: 1rem;
     align-items: center;
     padding: 1rem;
-    border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
-    background: color-mix(in srgb, var(--card) 86%, transparent);
-    border-radius: 0.55rem;
+    border: 0;
+    border-top: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
+    background: transparent;
+    border-radius: 0;
     transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
   }
 
   .archive-row:hover {
     transform: translateY(-2px);
     border-color: color-mix(in srgb, var(--accent) 52%, var(--border));
-    box-shadow: 0 1rem 2.4rem rgba(22, 20, 18, 0.08);
+    box-shadow: none;
   }
 
   .archive-chip {

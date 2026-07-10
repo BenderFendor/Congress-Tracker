@@ -6,10 +6,7 @@ import {
   RefreshCw, Search
 } from "lucide-react"
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts"
-import {
-  fetchLobbyingOverview, fetchLobbyingFilings, fetchInfluenceFlow, fetchTopSectors,
-  type FilingCardItem, type FlowNode, type FlowLink,
-} from "@/lib/services/lobbying"
+import { fetchLobbyingFilings, type FilingCardItem, type FlowNode, type FlowLink } from "@/lib/services/lobbying"
 
 import { formatCompactCurrency } from "@/lib/format"
 
@@ -134,43 +131,25 @@ export default function LobbyingPage() {
   const [year, setYear] = useState(currentYear)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [overview, setOverview] = useState<{ total: number; breakdown: { label: string; amount: number; percent: number }[]; sourceNote: string } | null>(null)
+  const [overview] = useState<{ total: number; breakdown: { label: string; amount: number; percent: number }[]; sourceNote: string } | null>(null)
   const [filingItems, setFilingItems] = useState<FilingCardItem[]>([])
   const [hasMore, setHasMore] = useState(false)
-  const [flowData, setFlowData] = useState<{ nodes: FlowNode[]; links: FlowLink[] } | null>(null)
-  const [sectorData, setSectorData] = useState<{ sector: string; amount: number }[]>([])
-  const [sectorSource, setSectorSource] = useState("")
-
-  const loadOverview = useCallback(async () => {
-    const data = await fetchLobbyingOverview(year)
-    if (data) setOverview({ total: data.totalReportedLobbying, breakdown: data.breakdown, sourceNote: data.sourceNote })
-  }, [year])
+  const [flowData] = useState<{ nodes: FlowNode[]; links: FlowLink[] } | null>(null)
+  const [sectorData] = useState<{ sector: string; amount: number }[]>([])
+  const [sectorSource] = useState("")
 
   const loadFilings = useCallback(async () => {
     const data = await fetchLobbyingFilings(year, search || undefined, 12, 0)
     if (data) { setFilingItems(data.items); setHasMore(data.hasMore) }
   }, [year, search])
 
-  const loadFlow = useCallback(async () => {
-    const data = await fetchInfluenceFlow(year)
-    if (data) setFlowData(data)
-  }, [year])
-
-  const loadSectors = useCallback(async () => {
-    const data = await fetchTopSectors(year)
-    if (data) {
-      setSectorData(data.items.slice(0, 5).map(i => ({ sector: i.sector, amount: i.amount })))
-      setSectorSource(data.sourceNote)
-    }
-  }, [year])
-
   useEffect(() => {
     setLoading(true)
     setError(null)
-    Promise.all([loadOverview(), loadFilings(), loadFlow(), loadSectors()])
+    Promise.all([loadFilings()])
       .catch(e => setError(e instanceof Error ? e.message : "Failed to load"))
       .finally(() => setLoading(false))
-  }, [loadOverview, loadFilings, loadFlow, loadSectors])
+  }, [loadFilings])
 
   const handleSearch = useCallback((value: string) => {
     setSearch(value)
@@ -178,10 +157,10 @@ export default function LobbyingPage() {
 
   const handleRefresh = useCallback(() => {
     setLoading(true)
-    Promise.all([loadOverview(), loadFilings(), loadFlow(), loadSectors()])
+    Promise.all([loadFilings()])
       .catch(e => setError(e instanceof Error ? e.message : "Failed to load"))
       .finally(() => setLoading(false))
-  }, [loadOverview, loadFilings, loadFlow, loadSectors])
+  }, [loadFilings])
 
   const tabs = ["Recent Filings", "Top Spenders", "Top Firms", "Industry Spend", "Top Recipients"]
 
@@ -228,7 +207,7 @@ export default function LobbyingPage() {
                 </div>
                 <div className="text-center mb-4">
                   <div className="font-serif text-3xl md:text-4xl font-extrabold text-foreground">
-                    {loading ? "..." : formatCompactCurrency(overview?.total ?? 0)}
+                    {loading ? "..." : overview ? formatCompactCurrency(overview.total) : "Unavailable"}
                   </div>
                   <div className="text-[10px] font-bold text-muted-foreground tracking-wider uppercase mt-1">Total Reported Lobbying</div>
                   <div className="text-[9px] text-muted-foreground mt-0.5">YTD {year}</div>
@@ -257,7 +236,9 @@ export default function LobbyingPage() {
                     </div>
                   </div>
                 ) : (
-                  <div className="text-center text-xs text-muted-foreground py-6">No data available</div>
+                  <div className="text-center text-xs text-muted-foreground py-6">
+                    Aggregated breakdown is unavailable until the canonical analytics endpoint is populated.
+                  </div>
                 )}
                 <div className="mt-4 pt-3 border-t border-border text-[9px] text-muted-foreground font-mono">
                   Source: {overview?.sourceNote ?? "LDA filings"}
@@ -358,7 +339,7 @@ export default function LobbyingPage() {
                   <InfluenceFlowSvg nodes={flowData.nodes} links={flowData.links} />
                 </>
               ) : (
-                <div className="text-center text-xs text-muted-foreground py-8">No flow data available</div>
+                  <div className="text-center text-xs text-muted-foreground py-8">Canonical flow data is not yet available.</div>
               )}
             </div>
 
@@ -392,7 +373,7 @@ export default function LobbyingPage() {
                   </div>
                 </>
               ) : (
-                <div className="text-center text-xs text-muted-foreground py-8">No sector data available</div>
+                  <div className="text-center text-xs text-muted-foreground py-8">Canonical sector totals are not yet available.</div>
               )}
             </div>
           </div>

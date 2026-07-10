@@ -8,7 +8,9 @@ pub mod health;
 pub mod home;
 pub mod influence;
 pub mod lobbying;
+pub mod member_intel;
 pub mod members;
+pub mod organizations;
 pub mod portfolio;
 pub mod search;
 pub mod sources;
@@ -32,6 +34,10 @@ pub fn build_router(repo: Repository, cache: Arc<CacheLayer>) -> Router {
         .route("/api/health", axum::routing::get(health::health_check))
         .route("/api/home/summary", axum::routing::get(home::summary))
         .route("/api/sources/status", axum::routing::get(sources::status))
+        .route(
+            "/api/sources/coverage",
+            axum::routing::get(sources::coverage),
+        )
         // Members
         .route(
             "/api/legislators",
@@ -46,6 +52,18 @@ pub fn build_router(repo: Repository, cache: Arc<CacheLayer>) -> Router {
             axum::routing::get(members::get_member_profile),
         )
         .route("/api/members", axum::routing::get(members::list_members))
+        .route(
+            "/api/members/:bioguide_id/votes",
+            axum::routing::get(member_intel::get_member_votes),
+        )
+        .route(
+            "/api/members/:bioguide_id/legislation",
+            axum::routing::get(member_intel::get_member_legislation),
+        )
+        .route(
+            "/api/members/:bioguide_id/disclosures",
+            axum::routing::get(organizations::get_member_disclosures),
+        )
         // Bills
         .route("/api/bills", axum::routing::get(bills::list_bills))
         .route(
@@ -117,6 +135,14 @@ pub fn build_router(repo: Repository, cache: Arc<CacheLayer>) -> Router {
         )
         .route("/api/portfolios", axum::routing::get(portfolio::members))
         .route("/api/search", axum::routing::get(search::search))
+        .route(
+            "/api/relationships",
+            axum::routing::get(organizations::list_relationships),
+        )
+        .route(
+            "/api/organizations/:organization_id",
+            axum::routing::get(organizations::get_organization),
+        )
         // Lobbying
         .route(
             "/api/lobbying/filings",

@@ -185,3 +185,21 @@ Fix:
 1. Review `GET /api/admin/entity-resolution-queue` for pending entries
 2. Accept matches manually or run a more complete `members` ingest to bring in missing crosswalks
 3. Update crosswalk data from the `unitedstates/congress-legislators` dataset
+
+---
+
+## Legacy-only frontend endpoint
+
+The audited pages now use the canonical routes. Keep this check when adding a new page; it remains a regression if a new call is introduced.
+
+Symptom:
+- A page returns empty data or `404` while the legacy `backend_server` would have served it.
+
+Cause:
+- The page calls `/api/congress/votes`, `/api/enrichment/*`, or legacy lobbying analytics while
+  `run_all.sh` starts only `intel_backend`.
+
+Fix:
+- Use the canonical member, bill, committee, trade, funding, and filing routes. If a canonical
+  source is not available yet, render an explicit unavailable state instead of returning fixture
+  data or an empty success response.

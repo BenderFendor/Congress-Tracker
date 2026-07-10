@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
+import Image from "next/image"
 import {
   ArrowLeft,
   MapPin,
@@ -10,14 +11,13 @@ import {
   ExternalLink,
   AlertCircle
 } from "lucide-react"
-import { getLegislator, Legislator } from "@/lib/services/legislators"
+import { getLegislator, getMemberLegislation, Legislator } from "@/lib/services/legislators"
 import { getMemberFunding, MemberFunding } from "@/lib/services/funding"
 import { ProvenanceSummary } from "@/lib/services/provenance"
 import { getMemberVotes, Vote } from "@/lib/services/voting"
-import { getEnrichedMember, EnrichedTrade } from "@/lib/services/enrichment"
-import { BACKEND_URL } from "@/lib/constants"
 import { formatAmountRange } from "@/lib/services/stocks"
 import { ArchivePage, ArchivePanel } from "@/components/ui/archive-ui"
+import { getMemberDisclosures, getRelationships, MemberDisclosures, RelationshipEvidence } from "@/lib/services/relationships"
 
 function ProvenanceBadge({ provenance }: { provenance?: ProvenanceSummary }) {
   if (!provenance) return null;
@@ -54,9 +54,10 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
   const [legislator, setLegislator] = useState<Legislator | null>(null)
   const [funding, setFunding] = useState<MemberFunding | null>(null)
   const [votes, setVotes] = useState<Vote[]>([])
-  const [enrichedTrades, setEnrichedTrades] = useState<EnrichedTrade[]>([])
   const [sponsoredBills, setSponsoredBills] = useState<BillRow[]>([])
   const [cosponsoredBills, setCosponsoredBills] = useState<BillRow[]>([])
+  const [relationships, setRelationships] = useState<RelationshipEvidence[]>([])
+  const [disclosures, setDisclosures] = useState<MemberDisclosures | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -75,15 +76,18 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
           // Background fetch votes
           getMemberVotes(bioguideId).then(setVotes).catch(console.error)
 
-          // Background fetch enriched member trades
-          getEnrichedMember(bioguideId).then(res => {
-            if (res && Array.isArray(res.trades)) {
-              setEnrichedTrades(res.trades)
-            }
+          getMemberLegislation(bioguideId).then(data => {
+            setSponsoredBills(data.sponsor.map(mapLegislationToBill))
+            setCosponsoredBills(data.cosponsor.map(mapLegislationToBill))
           }).catch(console.error)
 
-          // Background fetch sponsored & cosponsored legislation
-          fetchBillsForMember(bioguideId, leg.recentBills)
+          getRelationships({ subjectKey: `member:${bioguideId}`, limit: 25 })
+            .then(data => setRelationships(data.relationships))
+            .catch(console.error)
+
+          getMemberDisclosures(bioguideId)
+            .then(setDisclosures)
+            .catch(console.error)
         }
       } catch (error) {
         console.error("Failed to load legislator data", error)
@@ -94,45 +98,20 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
     loadData()
   }, [params.id])
 
-  async function fetchBillsForMember(bioguideId: string, initialRecent?: Array<{ id?: string; title: string; status?: string; date: string }>) {
-    const sponsored: BillRow[] = []
-    const cosponsored: BillRow[] = []
-
-    if (initialRecent && Array.isArray(initialRecent)) {
-      initialRecent.forEach(b => {
-        sponsored.push({
-          bill_id: b.id || "N/A",
-          title: b.title || "Untitled Legislation",
-          status: b.status || "Introduced",
-          latest_action: b.date ? `Introduced on ${b.date}` : "Action recorded",
-          date: b.date
-        })
-      })
+  function mapLegislationToBill(bill: {
+    bill_id: string
+    title: string
+    status: string
+    latest_action_date?: string | null
+    latest_action_text?: string | null
+  }): BillRow {
+    return {
+      bill_id: bill.bill_id,
+      title: bill.title,
+      status: bill.status,
+      latest_action: bill.latest_action_text || "No latest action recorded",
+      date: bill.latest_action_date || undefined,
     }
-
-    try {
-      const searchRes = await fetch(`${BACKEND_URL}/api/search?q=${encodeURIComponent(bioguideId)}&type=bill`)
-      if (searchRes.ok) {
-        const data = await searchRes.json()
-        if (data.results && Array.isArray(data.results)) {
-          data.results.forEach((item: { id?: string; label?: string; subtitle?: string }) => {
-            if (!sponsored.some(s => s.bill_id.toLowerCase() === (item.id || "").toLowerCase())) {
-              sponsored.push({
-                bill_id: item.id || "N/A",
-                title: item.label || "Legislation",
-                status: item.subtitle || "Under Review",
-                latest_action: item.subtitle || "See bill details"
-              })
-            }
-          })
-        }
-      }
-    } catch {
-      // Keep existing bills on failure
-    }
-
-    setSponsoredBills(sponsored)
-    setCosponsoredBills(cosponsored)
   }
 
   if (loading) return (
@@ -211,8 +190,8 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
         <div className="bg-card border border-border p-8 md:p-10 mb-8 relative flex flex-col md:flex-row gap-8 items-start">
           <div className="relative shrink-0">
             <div className="w-32 h-32 md:w-40 md:h-40 border border-border bg-muted">
-              {legislator.depiction_url || legislator.avatar ? (
-                <img src={legislator.depiction_url || legislator.avatar} alt={legislator.name} className="w-full h-full object-cover" />
+              {(legislator.depiction_url || legislator.avatar || legislator.id) ? (
+                <Image src={legislator.depiction_url || legislator.avatar || `https://bioguide.congress.gov/bioguide/photo/${legislator.id[0]}/${legislator.id}.jpg`} alt={legislator.name} width={320} height={320} unoptimized className="w-full h-full object-cover" />
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-muted-foreground">
                   <Users size={40} />
@@ -275,6 +254,8 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
             { id: 'voting', label: 'Votes' },
             { id: 'bills', label: 'Bills' },
             { id: 'trades', label: 'Trades' },
+            { id: 'connections', label: 'Connections' },
+            { id: 'disclosures', label: 'Disclosures' },
             { id: 'biography', label: 'Biography' }
           ].map((tab) => {
             const isActive = activeTab === tab.id;
@@ -617,8 +598,8 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
           )}
 
           {activeTab === 'trades' && (
-            <ArchivePanel title="Recent Stock Trades" kicker="Enriched Financial Disclosures">
-              {enrichedTrades.length > 0 || legislator.recentTrades.length > 0 ? (
+            <ArchivePanel title="Recent Stock Trades" kicker="Canonical disclosure records">
+              {legislator.recentTrades.length > 0 ? (
                 <div className="overflow-x-auto">
                   <table className="w-full border-collapse font-sans text-sm">
                     <thead>
@@ -632,28 +613,7 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
                       </tr>
                     </thead>
                     <tbody>
-                      {enrichedTrades.length > 0
-                        ? enrichedTrades.map((t, idx) => (
-                            <tr key={idx} className="border-b border-border hover:bg-muted/40 transition-colors">
-                              <td className="p-4 font-mono font-bold text-foreground">{t.ticker || "N/A"}</td>
-                              <td className="p-4 font-serif">{t.asset_description || "Asset"}</td>
-                              <td className="p-4 font-mono text-xs font-bold uppercase">{t.trade_type}</td>
-                              <td className="p-4 font-mono text-xs">{t.amount}</td>
-                              <td className="p-4 font-mono text-xs text-muted-foreground">{t.trade_date || t.disclosure_date || "N/A"}</td>
-                              <td className="p-4">
-                                {t.highest_conflict_severity !== 'CLEAN' ? (
-                                  <span className="px-2.5 py-1 text-xs font-mono font-bold bg-red-900/20 text-red-600 dark:text-red-400 border border-red-500/30 rounded-sm">
-                                    {t.highest_conflict_severity}
-                                  </span>
-                                ) : (
-                                  <span className="px-2.5 py-1 text-xs font-mono bg-muted text-muted-foreground border border-border rounded-sm">
-                                    No Conflict
-                                  </span>
-                                )}
-                              </td>
-                            </tr>
-                          ))
-                        : legislator.recentTrades.map((t, idx) => (
+                      {legislator.recentTrades.map((t, idx) => (
                             <tr key={idx} className="border-b border-border hover:bg-muted/40 transition-colors">
                               <td className="p-4 font-mono font-bold text-foreground">{t.ticker || "N/A"}</td>
                               <td className="p-4 font-serif">{t.asset_name || "Asset"}</td>
@@ -674,6 +634,54 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
                 <div className="text-muted-foreground font-mono italic p-6 text-center border border-border">
                   No stock disclosures found for this member.
                 </div>
+              )}
+            </ArchivePanel>
+          )}
+
+          {activeTab === 'connections' && (
+            <ArchivePanel title="Evidence-backed connections" kicker="Canonical relationship records">
+              {relationships.length > 0 ? (
+                <div className="space-y-3">
+                  {relationships.map((relationship) => (
+                    <div key={relationship.evidence_id} className="border border-border p-4">
+                      <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
+                        <span>{relationship.relation_type}</span>
+                        <span className="text-muted-foreground">{relationship.object_key}</span>
+                        <span className="text-xs uppercase tracking-wide text-muted-foreground">{relationship.evidence_tier}</span>
+                      </div>
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Confidence: {relationship.confidence}. Source: {relationship.source_url || relationship.source_record_id || "recorded source"}.
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">No evidence-backed relationship records are available for this member yet. Missing records are not evidence of no relationship.</p>
+              )}
+            </ArchivePanel>
+          )}
+
+          {activeTab === 'disclosures' && (
+            <ArchivePanel title="Official financial disclosures" kicker="Range-aware source records">
+              {disclosures?.documents.length ? (
+                <div className="space-y-4">
+                  <p className="text-sm text-muted-foreground">
+                    {disclosures.documents.length} official filing documents, {disclosures.holdings.length} holdings, and {disclosures.transactions.length} transactions are loaded.
+                  </p>
+                  <div className="space-y-2">
+                    {disclosures.documents.map((document) => (
+                      <a key={document.document_id} href={document.source_url} target="_blank" rel="noreferrer" className="block border border-border p-4 hover:bg-muted/40">
+                        <div className="flex flex-wrap justify-between gap-2 text-sm font-medium">
+                          <span>{document.chamber} {document.report_type}</span>
+                          <span className="text-muted-foreground">{document.parse_status}</span>
+                        </div>
+                        <span className="mt-1 block text-xs text-muted-foreground">{document.filing_date || "Filing date unavailable"} · {document.source}</span>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">No official disclosure documents are loaded for this member yet. This is an ingestion gap, not evidence that no holdings or transactions exist.</p>
               )}
             </ArchivePanel>
           )}

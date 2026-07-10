@@ -60,7 +60,7 @@ export interface Filing {
     url: string
 }
 
-export async function getRecentFilings(page = 1, pageSize = 25): Promise<{ count: number, results: Filing[] }> {
+export async function getRecentFilings(page = 1, pageSize = 25): Promise<{ count: number, results: LobbyingFiling[] }> {
     const offset = (page - 1) * pageSize;
     const params = new URLSearchParams({ limit: String(pageSize), offset: String(offset) });
     const response = await fetch(`${BACKEND_URL}/api/lobbying/filings?${params}`);
@@ -161,19 +161,8 @@ export async function getLobbyingContributions(params: {
   page?: number;
   page_size?: number;
 }): Promise<{ count: number; results: Contribution[] } | null> {
-  const searchParams = new URLSearchParams();
-  if (params.year) searchParams.set('year', String(params.year));
-  searchParams.set('page_size', String(params.page_size ?? 25));
-  if (params.page) searchParams.set('page', String(params.page));
-
-  try {
-    const res = await fetch(`${BACKEND_URL}/api/lobbying/contributions?${searchParams}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
-  } catch (error) {
-    console.error('Failed to fetch lobbying contributions:', error);
-    return null;
-  }
+  void params;
+  throw new Error("Lobbying contributions are not exposed by the canonical backend yet.");
 }
 
 export async function getLobbyingFilings(params: {
@@ -269,16 +258,8 @@ export type TopSectorsResponse = {
 };
 
 export async function fetchLobbyingOverview(year?: number): Promise<OverviewResponse | null> {
-  try {
-    const params = new URLSearchParams();
-    if (year) params.set('year', String(year));
-    const res = await fetch(`${BACKEND_URL}/api/lobbying/overview?${params}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
-  } catch (error) {
-    console.error('Failed to fetch lobbying overview:', error);
-    return null;
-  }
+  void year;
+  throw new Error("Lobbying overview is not exposed by the canonical backend yet.");
 }
 
 export async function fetchLobbyingFilings(
@@ -290,12 +271,43 @@ export async function fetchLobbyingFilings(
   try {
     const params = new URLSearchParams();
     if (year) params.set('year', String(year));
-    if (q) params.set('q', q);
+    if (q) params.set('registrant', q);
     if (limit) params.set('limit', String(limit));
     if (offset) params.set('offset', String(offset));
     const res = await fetch(`${BACKEND_URL}/api/lobbying/filings?${params}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
+    const data = await res.json() as {
+      filings?: LobbyingFiling[];
+      total?: number;
+      limit?: number;
+      offset?: number;
+    };
+    const filings = Array.isArray(data.filings) ? data.filings : [];
+    const items: FilingCardItem[] = filings.map((filing) => {
+      const name = filing.registrant_name || filing.client_name || "Unnamed filer";
+      const initials = name
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((part) => part[0]?.toUpperCase() ?? "")
+        .join("");
+      return {
+        registrantId: filing.registrant_id ?? undefined,
+        registrantName: name,
+        jurisdiction: "Public filing",
+        entityRole: "Registrant",
+        filingCount: 1,
+        clientCount: filing.client_name ? 1 : 0,
+        reportedAmount: filing.income ?? filing.expenses ?? 0,
+        reportedAmountLabel: filing.income != null ? "Reported Income" : "Reported Expenses",
+        topIssueAreas: filing.issue_codes ?? [],
+        avatarText: initials || "LD",
+      };
+    });
+    const pageLimit = data.limit ?? limit ?? items.length;
+    const pageOffset = data.offset ?? offset ?? 0;
+    const total = data.total ?? items.length;
+    return { items, hasMore: pageOffset + pageLimit < total };
   } catch (error) {
     console.error('Failed to fetch lobbying filings:', error);
     return null;
@@ -303,27 +315,11 @@ export async function fetchLobbyingFilings(
 }
 
 export async function fetchInfluenceFlow(year?: number): Promise<InfluenceFlowResponse | null> {
-  try {
-    const params = new URLSearchParams();
-    if (year) params.set('year', String(year));
-    const res = await fetch(`${BACKEND_URL}/api/lobbying/influence-flow?${params}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
-  } catch (error) {
-    console.error('Failed to fetch influence flow:', error);
-    return null;
-  }
+  void year;
+  throw new Error("Lobbying influence flow is not exposed by the canonical backend yet.");
 }
 
 export async function fetchTopSectors(year?: number): Promise<TopSectorsResponse | null> {
-  try {
-    const params = new URLSearchParams();
-    if (year) params.set('year', String(year));
-    const res = await fetch(`${BACKEND_URL}/api/lobbying/top-sectors?${params}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
-  } catch (error) {
-    console.error('Failed to fetch top sectors:', error);
-    return null;
-  }
+  void year;
+  throw new Error("Lobbying sector totals are not exposed by the canonical backend yet.");
 }

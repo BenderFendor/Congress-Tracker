@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import Link from "next/link"
 import { ArrowDownRight, ArrowUpRight, Building, Calendar, FileText, TrendingUp, Users } from "lucide-react"
 import { ArchiveHero, ArchiveMetrics, ArchivePage, ArchivePanel, ArchiveSearch } from "@/components/ui/archive-ui"
 import { formatAmountRange, getRecentTrades, type StockTrade } from "@/lib/services/stocks"
@@ -63,10 +64,10 @@ export default function StocksPage() {
   return (
     <ArchivePage>
       <ArchiveHero
-        eyebrow="Stocks"
-        title="Market"
-        accent="Moves."
-        description="Track congressional stock trading activity from public financial disclosure records and inspect the underlying filings."
+        eyebrow="Portfolio + stocks"
+        title="Disclosure"
+        accent="Ledger."
+        description="Track member portfolios and STOCK Act transactions from the same canonical public disclosure records. Amounts remain reported ranges."
         mode="market"
         aside={
           <div>
@@ -84,6 +85,11 @@ export default function StocksPage() {
           </div>
         }
       />
+
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-5 py-4 text-sm">
+        <span className="text-muted-foreground">Looking for chamber mix, committee exposure, or member rankings?</span>
+        <Link href="/portfolio" className="font-semibold text-accent hover:underline">Open portfolio overview</Link>
+      </div>
 
       <ArchiveSearch value={searchTerm} onChange={setSearchTerm} placeholder="Search trades, members, tickers, or issuers">
         <select value={filterAction} onChange={(event) => setFilterAction(event.target.value)}>

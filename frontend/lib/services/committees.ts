@@ -48,7 +48,23 @@ export async function getCommittee(id: string): Promise<Committee | null> {
   try {
     const res = await fetch(`${BACKEND_URL}/api/committees/${id}`);
     if (!res.ok) return null;
-    return res.json();
+    const data = await res.json();
+    return {
+      ...data,
+      members: Array.isArray(data.roster)
+        ? data.roster.map((member: Record<string, unknown>) => ({
+            bioguide_id: String(member.bioguide_id ?? ""),
+            first_name: String(member.first_name ?? ""),
+            last_name: String(member.last_name ?? ""),
+            party: String(member.party ?? ""),
+            state: String(member.state ?? ""),
+            district: member.district ? String(member.district) : undefined,
+            rank: typeof member.rank === "number" ? member.rank : undefined,
+            title: member.title ? String(member.title) : undefined,
+          }))
+        : [],
+      bills: Array.isArray(data.bills) ? data.bills : [],
+    };
   } catch {
     return null;
   }

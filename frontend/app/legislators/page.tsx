@@ -1,12 +1,13 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { Building2, Landmark, Shield, Users, Search, Info, ChevronDown, Check } from "lucide-react"
+import { Building2, Landmark, Search, Info, ChevronDown, Check } from "lucide-react"
 import { ArchivePage } from "@/components/ui/archive-ui"
 import { getAllLegislators, type Legislator } from "@/lib/services/legislators"
 import { LegislatorCard } from "@/components/ui/legislator-card"
 
 export default function LegislatorsPage() {
+  // Visual thesis: an editorial public-record directory with portraits as the evidence anchor.
   const [members, setMembers] = useState<Legislator[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -80,7 +81,7 @@ export default function LegislatorsPage() {
                 Legislator <span className="italic text-accent">Index.</span>
               </h1>
               <p className="mt-6 text-lg leading-relaxed text-muted-foreground md:text-xl lg:max-w-2xl">
-                Browse all current members of Congress with district context, chamber filters, and matched CapitolTrades activity when available.
+                Browse current members, district context, and public-disclosure coverage. Missing source rows are shown as coverage gaps.
               </p>
             </div>
             
@@ -262,29 +263,9 @@ export default function LegislatorsPage() {
                   </div>
                 </div>
 
-                {/* Enhanced Insights Card */}
-                <div className="relative overflow-hidden rounded-2xl bg-[#0a0f18] px-6 py-8 text-white">
-                  <div className="relative z-10">
-                    <Shield className="mb-4 h-10 w-10 drop-shadow-md" style={{ fill: 'white', stroke: '#ef4444', strokeWidth: 1.5 }} />
-                    <h4 className="font-serif text-xl font-bold leading-tight">Enhanced Insights</h4>
-                    <p className="mt-2 text-sm text-white/70 leading-relaxed">
-                      Our system matches Congress.gov data with CapitolTrades via bioguide IDs, providing 99.8% accuracy in financial reporting.
-                    </p>
-                    <button className="mt-6 text-[10px] font-bold tracking-widest uppercase text-white hover:underline">
-                      Learn About Our Methodology →
-                    </button>
-                  </div>
-                  {/* Decorative Gradient */}
-                  <div className="absolute top-0 right-0 -mr-12 -mt-12 h-40 w-40 rounded-full bg-blue-900/30 blur-3xl" />
-                </div>
-
-                {/* Decorative Coin/Medal */}
-                <div className="flex justify-center pt-8">
-                  <div className="flex h-24 w-24 items-center justify-center rounded-full border-4 border-double border-border bg-accent/5">
-                    <div className="flex h-16 w-16 items-center justify-center rounded-full border border-border/50 bg-card shadow-inner">
-                      <Users className="h-6 w-6 text-muted-foreground/30" />
-                    </div>
-                  </div>
+                <div className="border-l-2 border-accent pl-5 text-sm leading-6 text-muted-foreground">
+                  <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-accent">Coverage note</p>
+                  <p className="mt-2">Member records use stable bioguide IDs. Financial disclosure metrics appear only after an official filing is ingested and linked.</p>
                 </div>
 
               </div>

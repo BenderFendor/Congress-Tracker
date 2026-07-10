@@ -146,7 +146,9 @@ impl Repository {
         };
 
         // Load recent votes
-        let recent_votes = self.get_member_recent_votes(bioguide_id, 20).await?;
+        let recent_votes = self
+            .get_member_votes_for_congress(bioguide_id, congress, 20, 0)
+            .await?;
 
         Ok(Some(MemberVoteSummary {
             bioguide_id: bioguide_id.to_string(),
@@ -166,17 +168,33 @@ impl Repository {
         bioguide_id: &str,
         limit: i64,
     ) -> Result<Vec<VotePosition>, sqlx::Error> {
+        self.get_member_votes_for_congress(bioguide_id, 0, limit, 0)
+            .await
+    }
+
+    /// Get paginated vote positions for a member, optionally constrained to a
+    /// Congress. A congress of zero means all available Congresses.
+    pub async fn get_member_votes_for_congress(
+        &self,
+        bioguide_id: &str,
+        congress: i32,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<VotePosition>, sqlx::Error> {
         let rows: Vec<VotePosRow> = sqlx::query_as::<_, VotePosRow>(
             r#"SELECT rcv.vote_id, rcv.congress, rcv.chamber, rcv.roll_number,
                       rcv.vote_date, rcv.question, mv.position
                FROM member_votes mv
                JOIN roll_call_votes rcv ON rcv.vote_id = mv.vote_id
                WHERE mv.bioguide_id = $1
+                 AND ($2 = 0 OR rcv.congress = $2)
                ORDER BY rcv.vote_date DESC NULLS LAST, rcv.roll_number DESC
-               LIMIT $2"#,
+               LIMIT $3 OFFSET $4"#,
         )
         .bind(bioguide_id)
+        .bind(congress)
         .bind(limit)
+        .bind(offset)
         .fetch_all(self.pool())
         .await?;
 

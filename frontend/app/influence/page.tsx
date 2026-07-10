@@ -1,12 +1,11 @@
 "use client"
 
-import React, { useState, useEffect, useMemo } from "react"
+/* oxlint-disable jsx-a11y/prefer-tag-over-role -- composite disclosure headers contain nested controls. */
+
+import React, { useState, useEffect, useMemo, useRef } from "react"
 import { ArchivePage, ArchiveHero, ArchivePanel, ArchiveMetrics, ArchiveSearch } from "@/components/ui/archive-ui"
 import { Badge } from "@/components/ui/badge"
-import { CampaignFinanceChart } from "@/components/visualizations/campaign-finance-chart"
-import { DonationFlowChart } from "@/components/visualizations/donation-flow-chart"
-import { InfluenceNetwork as InfluenceNetworkChart } from "@/components/visualizations/influence-network"
-import { getInfluenceNetworks, getInfluenceNetwork, type InfluenceNetworkSummary, type InfluenceNetwork } from "@/lib/services/influence"
+import { getInfluenceNetworks, getInfluenceNetwork, getInfluenceNetworkFinancials, type InfluenceNetworkSummary, type InfluenceNetwork, type InfluenceNetworkFinancials } from "@/lib/services/influence"
 import { Network, Building2, DollarSign, Info, ChevronDown, ChevronUp, Filter, Loader2, ShieldAlert, CheckCircle2 } from "lucide-react"
 
 export default function InfluenceWorkbenchPage() {
@@ -15,14 +14,13 @@ export default function InfluenceWorkbenchPage() {
   const [searchQuery, setSearchQuery] = useState<string>("")
   const [selectedCategory, setSelectedCategory] = useState<string>("all")
   const [selectedCycle, setSelectedCycle] = useState<string>("2026")
-  const [selectedChamber, setSelectedChamber] = useState<string>("all")
-  const [selectedParty, setSelectedParty] = useState<string>("all")
-  const [minAmount, setMinAmount] = useState<string>("all")
 
   // Detail view state for expanded network cards
   const [expandedSlug, setExpandedSlug] = useState<string | null>(null)
   const [networkDetails, setNetworkDetails] = useState<Record<string, InfluenceNetwork>>({})
   const [detailLoading, setDetailLoading] = useState<Record<string, boolean>>({})
+  const [financials, setFinancials] = useState<Record<string, InfluenceNetworkFinancials | null>>({})
+  const requestedDetails = useRef(new Set<string>())
 
   useEffect(() => {
     let isMounted = true
@@ -51,7 +49,8 @@ export default function InfluenceWorkbenchPage() {
   // Fetch detail when a network slug is expanded
   useEffect(() => {
     if (!expandedSlug) return
-    if (networkDetails[expandedSlug] || detailLoading[expandedSlug]) return
+    if (requestedDetails.current.has(expandedSlug)) return
+    requestedDetails.current.add(expandedSlug)
     setDetailLoading(prev => ({ ...prev, [expandedSlug]: true }))
     let cancelled = false
     getInfluenceNetwork(expandedSlug)
@@ -65,7 +64,14 @@ export default function InfluenceWorkbenchPage() {
         if (!cancelled) setDetailLoading(prev => ({ ...prev, [expandedSlug]: false }))
       })
     return () => { cancelled = true }
-  }, [expandedSlug, networkDetails, detailLoading])
+  }, [expandedSlug])
+
+  useEffect(() => {
+    if (!expandedSlug || financials[expandedSlug] !== undefined) return
+    getInfluenceNetworkFinancials(expandedSlug, Number(selectedCycle)).then((data) => {
+      setFinancials((prev) => ({ ...prev, [expandedSlug]: data }))
+    })
+  }, [expandedSlug, selectedCycle, financials])
 
   const handleToggleExpand = (slug: string) => {
     if (expandedSlug === slug) {
@@ -102,13 +108,13 @@ export default function InfluenceWorkbenchPage() {
       },
       {
         label: "Registered Committees",
-        value: totalCommittees || (networks.length * 3),
+        value: totalCommittees || "Unavailable",
         detail: "Verified OpenFEC PACs & filers",
         icon: <Building2 size={20} className="text-primary" />
       },
       {
         label: "High Confidence",
-        value: verifiedCount || networks.length,
+        value: verifiedCount || "Unavailable",
         detail: "Deterministic FEC resolution",
         icon: <CheckCircle2 size={20} className="text-primary" />
       },
@@ -183,40 +189,6 @@ export default function InfluenceWorkbenchPage() {
               <option value="all">All Cycles</option>
             </select>
 
-            <select
-              value={selectedChamber}
-              onChange={(e) => setSelectedChamber(e.target.value)}
-              className="h-9 px-3 rounded-md border border-border bg-background text-xs font-medium focus:outline-none focus:ring-2 focus:ring-primary"
-              aria-label="Filter by Chamber Focus"
-            >
-              <option value="all">Both Chambers</option>
-              <option value="house">House Focus</option>
-              <option value="senate">Senate Focus</option>
-            </select>
-
-            <select
-              value={selectedParty}
-              onChange={(e) => setSelectedParty(e.target.value)}
-              className="h-9 px-3 rounded-md border border-border bg-background text-xs font-medium focus:outline-none focus:ring-2 focus:ring-primary"
-              aria-label="Filter by Party Focus"
-            >
-              <option value="all">All Parties</option>
-              <option value="Democrat">Democrat Recipients</option>
-              <option value="Republican">Republican Recipients</option>
-              <option value="Bipartisan">Bipartisan Spread</option>
-            </select>
-
-            <select
-              value={minAmount}
-              onChange={(e) => setMinAmount(e.target.value)}
-              className="h-9 px-3 rounded-md border border-border bg-background text-xs font-medium focus:outline-none focus:ring-2 focus:ring-primary"
-              aria-label="Filter by Minimum Amount"
-            >
-              <option value="all">Any Spending Amount</option>
-              <option value="10000">$10,000+ Tracked</option>
-              <option value="100000">$100,000+ Tracked</option>
-              <option value="1000000">$1,000,000+ Tracked</option>
-            </select>
           </div>
         </div>
       </section>
@@ -245,6 +217,7 @@ export default function InfluenceWorkbenchPage() {
               const isLoadingDetail = detailLoading[net.network_slug]
               const committeeList = detail?.committees || net.committees || []
               const committeeCount = committeeList.length
+              const networkFinancials = financials[net.network_slug]
 
               return (
                 <div
@@ -254,8 +227,15 @@ export default function InfluenceWorkbenchPage() {
                   }`}
                 >
                   {/* Card Header */}
+                  {/* The header is a composite disclosure control because it contains the separate explore button. */}
+                  {/* oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- composite header contains a nested explore control. */}
                   <div
                     onClick={() => handleToggleExpand(net.network_slug)}
+                    onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") handleToggleExpand(net.network_slug) }}
+                    role="button"
+                    tabIndex={0}
+                    aria-expanded={isExpanded}
+                    aria-label={`${isExpanded ? "Collapse" : "Expand"} ${net.display_name} network details`}
                     className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer select-none"
                   >
                     <div className="space-y-2 flex-1">
@@ -280,7 +260,7 @@ export default function InfluenceWorkbenchPage() {
                       <div className="text-left md:text-right">
                         <div className="text-xs font-semibold text-muted-foreground uppercase">Committees</div>
                         <div className="text-sm font-bold text-foreground">
-                          {committeeCount > 0 ? `${committeeCount} Linked Entities` : "1+ Linked Entity"}
+                          {committeeCount > 0 ? `${committeeCount} Linked Entities` : "Unavailable"}
                         </div>
                       </div>
                       <button
@@ -373,63 +353,13 @@ export default function InfluenceWorkbenchPage() {
                             </div>
                           </div>
 
-                          {/* Visualizations Section */}
-                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2">
-                            <CampaignFinanceChart
-                              title={`${net.display_name} Financial Profile`}
-                              description="Estimated campaign expenditure distribution by committee designation"
-                              data={
-                                committeeList.length > 0
-                                  ? committeeList.map((c) => ({
-                                      name: c.committee_name.length > 24 ? c.committee_name.substring(0, 21) + "..." : c.committee_name,
-                                      amount: c.role === "super_pac" ? 14500000 : c.role === "direct_pac" ? 3200000 : 4800000,
-                                      industry: c.role ? c.role.replace(/_/g, " ").toUpperCase() : "PAC"
-                                    }))
-                                  : [
-                                      { name: "Direct PAC Allocation", amount: 3200000, industry: "DIRECT PAC" },
-                                      { name: "Super PAC IE Support", amount: 14500000, industry: "SUPER PAC" },
-                                      { name: "IE Opposition Spending", amount: 4800000, industry: "ADVOCACY" }
-                                    ]
-                              }
-                            />
-
-                            <DonationFlowChart
-                              title="Congressional Allocation Flow"
-                              description="Flow from network spending entities to legislative campaigns"
-                              data={{
-                                nodes: [
-                                  { name: net.display_name, category: "Network" },
-                                  ...(committeeList.length > 0
-                                    ? committeeList.slice(0, 3).map(c => ({ name: c.committee_name.length > 20 ? c.committee_name.substring(0, 18) + "..." : c.committee_name, category: "Committee" }))
-                                    : [{ name: "Direct PAC Entity", category: "Committee" }, { name: "Independent Super PAC", category: "Committee" }]
-                                  ),
-                                  { name: "House Campaigns", category: "Recipients" },
-                                  { name: "Senate Campaigns", category: "Recipients" }
-                                ],
-                                links: [
-                                  { source: 0, target: 1, value: 3500000 },
-                                  { source: 0, target: 2, value: 12000000 },
-                                  { source: 1, target: committeeList.length > 0 ? committeeList.length + 1 : 3, value: 2100000 },
-                                  { source: 1, target: committeeList.length > 0 ? committeeList.length + 2 : 4, value: 1400000 },
-                                  { source: 2, target: committeeList.length > 0 ? committeeList.length + 1 : 3, value: 7500000 },
-                                  { source: 2, target: committeeList.length > 0 ? committeeList.length + 2 : 4, value: 4500000 }
-                                ]
-                              }}
-                            />
-                          </div>
-
-                          <div className="pt-2">
-                            <InfluenceNetworkChart
-                              title={`${net.display_name} Policy & Legislative Topology`}
-                              description="Mapping connected congressional members, committees, and legislative action areas"
-                              nodes={[
-                                { id: "net", name: net.display_name, type: "organization", amount: 22500000, connections: ["leg1", "leg2", "bill1"] },
-                                { id: "leg1", name: "Representative Leadership", type: "legislator", party: "Democrat", amount: 1250000, connections: ["net", "bill1"] },
-                                { id: "leg2", name: "Ranking Committee Members", type: "legislator", party: "Republican", amount: 1100000, connections: ["net", "bill1"] },
-                                { id: "bill1", name: "Foreign Affairs & Defense Appropriations", type: "bill", connections: ["net", "leg1", "leg2"] }
-                              ]}
-                            />
-                          </div>
+                          <ArchivePanel title="Financial and relationship evidence" kicker={`${selectedCycle} OpenFEC aggregates`}>
+                            {networkFinancials ? (
+                              <div className="grid gap-3 p-6 sm:grid-cols-4">
+                                {[["Direct contributions", networkFinancials.total_direct_contributions], ["Independent support", networkFinancials.total_independent_supporting], ["Independent oppose", networkFinancials.total_independent_opposing], ["Total tracked", networkFinancials.total_all]].map(([label, value]) => <div key={String(label)} className="border border-border p-3"><div className="text-[10px] uppercase text-muted-foreground">{label}</div><div className="mt-1 font-mono text-lg">{Number(value).toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 })}</div></div>)}
+                              </div>
+                            ) : <p className="p-6 text-sm text-muted-foreground">No financial aggregate is available for this network and cycle.</p>}
+                          </ArchivePanel>
                         </>
                       )}
                     </div>

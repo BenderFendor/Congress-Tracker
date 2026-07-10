@@ -1,12 +1,9 @@
-// Backend enrichment endpoints: sector lookup, committee conflicts, anomaly scores.
-// Based on poli-ticker, CongressWatch, and congress-trading-monitor.
-
-import { BACKEND_URL } from "@/lib/constants";
+import { getIntelTrades } from "./stocks";
 
 export interface EnrichedTrade {
   ticker: string;
   asset_description: string;
-  trade_type: 'BUY' | 'SELL' | 'EXCHANGE' | 'UNKNOWN';
+  trade_type: "BUY" | "SELL" | "EXCHANGE" | "UNKNOWN";
   amount: string;
   estimated_value: number;
   trade_date: string | null;
@@ -21,137 +18,67 @@ export interface EnrichedTrade {
   owner: string | null;
   sector: string;
   industry: string;
-  sector_source: 'StaticMap' | 'YahooApi' | 'Unknown';
+  sector_source: "StaticMap" | "YahooApi" | "Unknown";
   committees: string[];
-  committee_conflicts: CommitteeConflict[];
-  highest_conflict_severity: 'DIRECT OVERLAP' | 'ADJACENT' | 'CLEAN';
+  committee_conflicts: never[];
+  highest_conflict_severity: "DIRECT OVERLAP" | "ADJACENT" | "CLEAN";
   conflict_flag_count: number;
 }
 
-export interface CommitteeConflict {
-  ticker: string;
-  sector: string;
-  industry: string;
-  committee: string;
-  severity: 'DIRECT OVERLAP' | 'ADJACENT' | 'CLEAN';
-  description: string;
+function mapTrade(trade: Awaited<ReturnType<typeof getIntelTrades>>["trades"][number]): EnrichedTrade {
+  const type = trade.tx_type.toUpperCase();
+  const tradeType: EnrichedTrade["trade_type"] =
+    type === "BUY" || type === "SELL" || type === "EXCHANGE" ? type : "UNKNOWN";
+  const estimatedValue = trade.estimated_value ?? trade.amount_max ?? trade.amount_min ?? 0;
+  return {
+    ticker: trade.ticker ?? "N/A",
+    asset_description: trade.asset_name ?? "Asset description unavailable",
+    trade_type: tradeType,
+    amount: trade.amount_min != null || trade.amount_max != null
+      ? `${trade.amount_min ?? "?"}-${trade.amount_max ?? "?"}`
+      : "Range unavailable",
+    estimated_value: estimatedValue,
+    trade_date: trade.transaction_date,
+    disclosure_date: trade.disclosure_date,
+    disclosure_lag_days: null,
+    late_filing: false,
+    chamber: trade.chamber,
+    politician_name: trade.member_name,
+    party: trade.party,
+    state: trade.state,
+    district: trade.district,
+    owner: null,
+    sector: "Unknown",
+    industry: "Unknown",
+    sector_source: "Unknown",
+    committees: [],
+    committee_conflicts: [],
+    highest_conflict_severity: "CLEAN",
+    conflict_flag_count: 0,
+  };
 }
 
-export interface FilerMetrics {
-  politician_name: string;
-  party: string;
-  state: string;
-  chamber: string;
-  total_trades: number;
-  total_buys: number;
-  total_sells: number;
-  buy_sell_ratio: number;
-  estimated_total_volume: number;
-  top_tickers: [string, number][];
-  top_sectors: [string, number][];
-  committees: string[];
-  conflict_count: number;
-  direct_conflict_count: number;
-  adjacent_conflict_count: number;
-  late_filing_count: number;
-  late_filing_rate: number;
-  last_trade_date: string | null;
+/** Compatibility adapter over the canonical stock-trades endpoint. */
+export async function getEnrichedTrades(options?: { politician_id?: string; limit?: number }): Promise<EnrichedTrade[]> {
+  const data = await getIntelTrades(options?.limit ?? 100, 0);
+  const trades = data.trades.map(mapTrade);
+  return options?.politician_id
+    ? trades.filter((trade) => trade.politician_name === options.politician_id)
+    : trades;
 }
 
-export interface AnomalySignals {
-  stock_timing: number;
-  wealth_gap: number;
-  donor_vote_alignment: number;
-  bill_authorship: number;
-  foreign_travel: number;
-  attendance: number;
+export async function getEnrichedMember(id: string): Promise<{ legislator: Record<string, unknown>; metrics: Record<string, never>; trades: EnrichedTrade[] }> {
+  return { legislator: {}, metrics: {}, trades: await getEnrichedTrades({ politician_id: id }) };
 }
 
-export interface AnomalyScore {
-  member_identifier: string;
-  member_name: string;
-  signals: AnomalySignals;
-  overall_score: number;
-  percentile: number | null;
+export async function getAnomalyScores(): Promise<never[]> {
+  throw new Error("Anomaly scores are unavailable until canonical evidence signals are ingested.");
 }
 
-export interface SectorInfo {
-  sector: string;
-  industries: string[];
+export async function getAllSectors(): Promise<never[]> {
+  throw new Error("Sector enrichment is unavailable until canonical issuer metadata is ingested.");
 }
 
-export interface CommitteeKeyword {
-  keyword: string;
-  sectors: string[];
-}
-
-export async function getEnrichedTrades(options?: {
-  politician_id?: string
-  limit?: number
-}): Promise<EnrichedTrade[]> {
-  const params = new URLSearchParams();
-  if (options?.politician_id) params.set('politician_id', options.politician_id);
-  params.set('limit', String(options?.limit ?? 100));
-
-  try {
-    const res = await fetch(`${BACKEND_URL}/api/enrichment/trades?${params}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
-  } catch (error) {
-    console.error('Failed to fetch enriched trades:', error);
-    return [];
-  }
-}
-
-export async function getEnrichedMember(id: string): Promise<{
-  legislator: Record<string, unknown>;
-  metrics: FilerMetrics;
-  trades: EnrichedTrade[];
-} | null> {
-  try {
-    const res = await fetch(`${BACKEND_URL}/api/enrichment/member/${id}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
-  } catch (error) {
-    console.error('Failed to fetch enriched member:', error);
-    return null;
-  }
-}
-
-export async function getAnomalyScores(memberId?: string): Promise<AnomalyScore[]> {
-  const params = new URLSearchParams();
-  if (memberId) params.set('member_id', memberId);
-
-  try {
-    const res = await fetch(`${BACKEND_URL}/api/enrichment/anomaly?${params}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
-  } catch (error) {
-    console.error('Failed to fetch anomaly scores:', error);
-    return [];
-  }
-}
-
-export async function getAllSectors(): Promise<SectorInfo[]> {
-  try {
-    const res = await fetch(`${BACKEND_URL}/api/enrichment/sectors`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    return data.sectors;
-  } catch (error) {
-    console.error('Failed to fetch sectors:', error);
-    return [];
-  }
-}
-
-export async function getCommitteeKeywords(): Promise<CommitteeKeyword[]> {
-  try {
-    const res = await fetch(`${BACKEND_URL}/api/enrichment/committee-keywords`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    return data.keywords;
-  } catch (error) {
-    console.error('Failed to fetch committee keywords:', error);
-    return [];
-  }
+export async function getCommitteeKeywords(): Promise<never[]> {
+  throw new Error("Committee conflict metadata is unavailable until canonical issuer metadata is ingested.");
 }

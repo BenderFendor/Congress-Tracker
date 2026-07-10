@@ -1,6 +1,7 @@
 pub mod cache;
 pub mod config;
 pub mod db;
+pub mod disclosures;
 pub mod entity_resolution;
 pub mod models;
 pub mod normalize;

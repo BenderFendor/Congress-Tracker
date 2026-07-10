@@ -5,7 +5,10 @@
   "scripts": {
     "build": "next build",
     "dev": "next dev",
-    "lint": "next lint",
+    "lint": "next lint --max-warnings=0",
+    "lint:ox": "oxlint . --config .oxlintrc.json --deny-warnings --nextjs-plugin --react-plugin --jsx-a11y-plugin",
+    "typecheck": "tsc --noEmit",
+    "verify": "pnpm typecheck && pnpm lint && pnpm lint:ox && pnpm build",
     "start": "next start"
   },
   "dependencies": {
@@ -29,6 +32,7 @@
     "@types/react-dom": "^18",
     "eslint": "^8.57.1",
     "eslint-config-next": "14.2.16",
+    "oxlint": "^1.73.0",
     "postcss": "^8.5",
     "tailwindcss": "^4.1.9",
     "tw-animate-css": "1.3.3",

@@ -24,7 +24,19 @@ pub struct CommitteeDetail {
     pub parent_committee_id: Option<String>,
     pub url: Option<String>,
     pub roster: Vec<CommitteeAssignment>,
+    pub bills: Vec<CommitteeBill>,
     pub provenance: ProvenanceSummary,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct CommitteeBill {
+    pub bill_id: String,
+    pub congress: i32,
+    pub bill_type: String,
+    pub bill_number: i32,
+    pub title: String,
+    pub status: String,
+    pub latest_action_date: Option<chrono::NaiveDate>,
 }
 
 /// GET /api/committees?chamber=&limit=
@@ -162,6 +174,19 @@ pub async fn get_committee(
         warnings: Vec::new(),
     };
 
+    let bills: Vec<CommitteeBill> = sqlx::query_as(
+        r#"SELECT bill_id, congress, bill_type, bill_number, title, status,
+                  latest_action_date
+           FROM bills
+           WHERE $1 = ANY(committee_referrals)
+           ORDER BY latest_action_date DESC NULLS LAST, bill_id
+           LIMIT 200"#,
+    )
+    .bind(&committee_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| crate::models::AppError::Internal(format!("database error: {}", e)))?;
+
     let detail = CommitteeDetail {
         committee_id: row.committee_id,
         chamber: row.chamber,
@@ -173,6 +198,7 @@ pub async fn get_committee(
         parent_committee_id: row.parent_committee_id,
         url: row.url,
         roster,
+        bills,
         provenance,
     };
 

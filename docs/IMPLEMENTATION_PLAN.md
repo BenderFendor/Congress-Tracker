@@ -74,54 +74,44 @@ Each feature below credits the open-source projects whose logic was adapted.
 
 ---
 
-## Phase 2: Wire Backend Routes
+## Phase 2: Canonical backend contracts (implemented)
 
-### New routes in `backend_server/src/main.rs`:
-- `GET /api/congress/votes` — Congress.gov votes (wired from existing `get_votes()`)
-- `GET /api/congress/members/{id}/votes` — Member voting record
-- `GET /api/fec/committees` — OpenFEC committees (wired from existing `get_committees()`)
-- `GET /api/enrichment/trades` — Enriched trades with sector + committee overlap
-- `GET /api/enrichment/member/{id}` — Full member enrichment (votes, donations, conflicts)
-- `GET /api/enrichment/anomaly` — Anomaly scores for all members
-- `GET /api/lobbying/filings` — Senate LDA lobbying filings
-- `GET /api/lobbying/clients` — Lobbying clients
-- `GET /api/lobbying/registrants` — Lobbying registrants/orgs
+`backend/crates/intel_backend` is the canonical backend. The old `backend_server` routes remain compatibility code and should not be used by new pages.
 
-### Updated AppState:
-```rust
-struct AppState {
-    capitoltrades: Arc<CapitolTradesClient>,
-    congress: Option<Arc<CongressClient>>,
-    openfec: Option<Arc<OpenFECClient>>,
-    lobbying: Option<Arc<LobbyingClient>>,   // NEW
-}
-```
+- `GET /api/members/:bioguide_id/votes` — congress-scoped vote positions and summary.
+- `GET /api/members/:bioguide_id/legislation` — normalized sponsorship/cosponsorship rows.
+- `GET /api/committees/:committee_id` — roster plus referred bills.
+- `GET /api/relationships` and `GET /api/organizations/:organization_id` — evidence-tiered relationship graph.
+- `GET /api/sources/status` and `GET /api/sources/coverage` — source runs with TTL-based `fresh`, `stale`, `missing`, and `failed` labels.
+- `disclosure-manifest` ingest — official filing metadata with source URLs and parse status.
+- `organization-manifest` ingest — SEC/FEC/LDA identifiers without treating an identifier as relationship proof.
+- `refresh-relationships` ingest — deterministic edges from normalized committee, bill, campaign, and trade records.
+- `house-ptr` ingest — hashes an official House PTR PDF, extracts text with `pdftotext`, and stores range-aware transactions with the filing URL.
+- `house-ptr-url` ingest — downloads and validates an official House PDF before invoking the parser.
 
 ---
 
-## Phase 3: Frontend Services and Pages
+## Phase 3: Official evidence ingestion (next required work)
 
-### New/updated frontend services:
-- `lib/services/enrichment.ts` — enrichment endpoints (trades, member detail, anomaly)
-- `lib/services/voting.ts` — UN-STUB: wire to `/api/congress/votes` and `/api/congress/members/{id}/votes`
-- `lib/services/lobbying.ts` — UN-STUB: wire to `/api/lobbying/*` endpoints
-- `lib/services/legislators.ts` — populate hardcoded-zero fields (age, votingScore, totalDonations, etc.)
+1. Build House Clerk and Senate eFD download/index workers. Store immutable raw documents, hashes, filing URLs, and source runs. House PTR PDF parsing is now implemented; annual House statements and Senate eFD formats remain.
+2. Parse annual financial disclosures and Senate periodic transaction reports into range-aware `disclosure_holdings` and `disclosure_transactions` rows. Preserve owner type and parser errors.
+3. Import SEC company identity, FEC committees, LDA clients/registrants, and USAspending recipient identifiers through `organization-manifest`.
+4. Derive relationship evidence only from explicit source records. Every edge must include subject/object keys, relation type, evidence tier, confidence, source record, and source URL.
+5. Add organization detail and member disclosure panels once rows exist. Empty or stale source coverage must remain visible.
+6. Add bill action/amendment history, finance correlations, and lobbying-to-bill links as separate normalized tables and contracts.
 
-### Un-stubbed pages:
-- `app/voting/page.tsx` or integrate into legislator detail — real voting data
-- `app/lobbying/page.tsx` — wire remaining 4 tabs (Top Spenders, Top Lobbying Firms, Industry Spend, Top Recipients)
-- `app/lobbying/[id]/page.tsx` — organization profile with lobbying history + IRS enrichment
-- `app/bills/[id]/page.tsx` — bill detail with amendment history, finance correlations, lobbying
-- `app/networth/page.tsx` — portfolio estimation from CapitolTrades data
-- `app/portfolio/page.tsx` — sector allocation via committee conflict data
-- `app/visualizations/page.tsx` — replace Math.random() with real data
+## Phase 4: Frontend product completion
 
-### Home page updates:
-- `app/page.tsx` — fix networth and portfolios tabs
+- Add source coverage indicators to the home and member pages.
+- Add organization search/detail and relationship filtering by company, PAC, lobbying client, committee, and bill.
+- Add range-aware holdings/transactions views; never render exact net worth from disclosure ranges.
+- Add bill detail with actions, sponsors, committees, lobbying links, and provenance.
+- Add visualizations only from canonical relationship and activity rows; no CSV, random, or placeholder fallback.
+- Keep unsupported analytics as explicit setup/unavailable states until canonical rows are ingested.
 
 ---
 
-## Phase 4: Credits and Documentation
+## Phase 5: Credits and Documentation
 
 - `CREDITS.md` — full credits for all open-source projects and APIs
 - Code-level `///` doc comments on all new Rust modules citing sources
@@ -133,12 +123,14 @@ struct AppState {
 ## Execution Order
 
 ```
-Phase 1 (Parallel):          Phase 2 (Sequential):       Phase 3 (Parallel):       Phase 4:
+Phase 1 (foundation):       Phase 2 (implemented):       Phase 3 (parallel):       Phase 4:
 ┌─────────────────────┐      ┌──────────────────────┐    ┌─────────────────────┐   ┌───────────┐
-│ 1a ticker_resolver  │      │ Wire backend routes  │    │ Frontend services   │   │ CREDITS.md│
-│ 1b committee_detector│─────▶│ Add enrichment       │───▶│ Un-stub pages       │──▶│ Docstrings│
-│ 1c lobbying_client  │      │ endpoints            │    │ Wire visualizations │   │ Frontend  │
-│ 1d trade_enricher   │      └──────────────────────┘    │ Portfolio analysis  │   │ footers   │
-│ 1e anomaly_scorer   │                                  └─────────────────────┘   └───────────┘
-└─────────────────────┘
+│ crates and adapters │─────▶│ Canonical contracts  │───▶│ Disclosure workers  │──▶│ Product UI │
+│ source clients      │      │ Evidence schema      │    │ Entity crosswalks   │   │ Detail views│
+└─────────────────────┘      │ Coverage + ingest    │    │ Relationship edges  │   │ Visuals   │
+                             └──────────────────────┘    └─────────────────────┘   └───────────┘
 ```
+
+## Stock disclosure source policy
+
+CapitolTrades is an optional enrichment source, not the system of record. The durable stock pipeline must ingest official House Clerk financial disclosure filings and Senate eFD periodic transaction reports, validate each document as an official PDF or API response, retain the source URL and hash, and normalize transaction ranges into `disclosure_transactions`. CapitolTrades may be used for discovery and cross-checking only. If it is unavailable or returns no match, the UI must continue to use official filings and show source freshness rather than silently substituting estimates.

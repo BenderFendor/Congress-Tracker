@@ -5,6 +5,11 @@
 //! the source run with an accurate status and row counts.
 
 use std::sync::Arc;
+use std::{
+    fs::File,
+    io::{BufRead, BufReader},
+    process::Command as ProcessCommand,
+};
 
 use capitoltrades_api::Query;
 use chrono::NaiveDate;
@@ -25,9 +30,10 @@ use intel_backend::{
     },
     schema::{
         self, SOURCE_CAPITOLTRADES, SOURCE_CONGRESS_GOV, SOURCE_LDA, SOURCE_MANUAL, SOURCE_OPENFEC,
-        SOURCE_UNITEDSTATES, SOURCE_VOTEVIEW,
+        SOURCE_RELATIONSHIP_DERIVATION, SOURCE_UNITEDSTATES, SOURCE_VOTEVIEW,
     },
 };
+use sha2::{Digest, Sha256};
 use tracing::info;
 
 // ── CLI definition ─────────────────────────────────────────────────────────
@@ -115,6 +121,42 @@ enum Command {
         #[arg(long, default_value = "5")]
         limit_pages: u32,
     },
+    /// Import a JSONL manifest of official disclosure documents.
+    DisclosureManifest {
+        #[arg(long)]
+        path: String,
+        #[arg(long)]
+        source: String,
+    },
+    /// Import a JSONL organization/company identifier crosswalk.
+    OrganizationManifest {
+        #[arg(long)]
+        path: String,
+        #[arg(long)]
+        source: String,
+    },
+    /// Parse an official House PTR PDF through pdftotext and write normalized transactions.
+    HousePtr {
+        #[arg(long)]
+        pdf_path: String,
+        #[arg(long)]
+        bioguide_id: String,
+        #[arg(long)]
+        filing_id: String,
+        #[arg(long)]
+        source_url: String,
+    },
+    /// Download an official House PTR PDF, then parse it through the House PTR importer.
+    HousePtrUrl {
+        #[arg(long)]
+        url: String,
+        #[arg(long)]
+        output_path: String,
+        #[arg(long)]
+        bioguide_id: String,
+        #[arg(long)]
+        filing_id: String,
+    },
     /// Ingest CapitolTrades
     CapitolTrades {
         #[arg(long, default_value = "50")]
@@ -131,6 +173,8 @@ enum Command {
     },
     /// Refresh materialized views
     RefreshMaterializedViews,
+    /// Derive evidence-backed relationship edges from normalized records
+    RefreshRelationships,
     /// Run smoke test: members + influence-seeds + fec-committees + congress-bills + refresh-mvs
     AllSmoke,
 }
@@ -189,6 +233,24 @@ async fn main() {
             page_size,
             limit_pages,
         } => cmd_lobbying_filings(&repo, *year, *page_size, *limit_pages).await,
+        Command::DisclosureManifest { path, source } => {
+            cmd_disclosure_manifest(&repo, path, source).await
+        }
+        Command::OrganizationManifest { path, source } => {
+            cmd_organization_manifest(&repo, path, source).await
+        }
+        Command::HousePtr {
+            pdf_path,
+            bioguide_id,
+            filing_id,
+            source_url,
+        } => cmd_house_ptr(&repo, pdf_path, bioguide_id, filing_id, source_url).await,
+        Command::HousePtrUrl {
+            url,
+            output_path,
+            bioguide_id,
+            filing_id,
+        } => cmd_house_ptr_url(&repo, url, output_path, bioguide_id, filing_id).await,
         Command::CapitolTrades { limit } => cmd_capitol_trades(&repo, *limit).await,
         Command::Voteview {
             members,
@@ -196,8 +258,276 @@ async fn main() {
             rollcalls,
         } => cmd_voteview(&repo, *members, *votes, *rollcalls).await,
         Command::RefreshMaterializedViews => cmd_refresh_materialized_views(&repo).await,
+        Command::RefreshRelationships => cmd_refresh_relationships(&repo).await,
         Command::AllSmoke => cmd_all_smoke(&repo).await,
     }
+}
+
+async fn cmd_refresh_relationships(repo: &Repository) {
+    let run_id = repo
+        .create_source_run(
+            SOURCE_RELATIONSHIP_DERIVATION,
+            "refresh-relationships",
+            serde_json::json!({}),
+        )
+        .await
+        .expect("Failed to create relationship source_run");
+    match repo.refresh_relationship_evidence(run_id).await {
+        Ok((seen, written)) => {
+            info!(seen, written, "Relationship derivation complete");
+            repo.finish_source_run(run_id, "success", seen, written, None)
+                .await
+                .expect("Failed to finish relationship source_run");
+        }
+        Err(error) => {
+            let message = error.to_string();
+            eprintln!("Relationship derivation failed: {message}");
+            repo.finish_source_run(run_id, "failed", 0, 0, Some(&message))
+                .await
+                .expect("Failed to finish relationship source_run");
+            std::process::exit(1);
+        }
+    }
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct DisclosureManifestRow {
+    bioguide_id: Option<String>,
+    chamber: String,
+    report_type: String,
+    filing_date: Option<NaiveDate>,
+    reporting_period_start: Option<NaiveDate>,
+    reporting_period_end: Option<NaiveDate>,
+    source_record_id: Option<String>,
+    source_url: String,
+    raw_sha256: Option<String>,
+    raw_storage_key: Option<String>,
+    parse_status: Option<String>,
+    parse_error: Option<String>,
+}
+
+async fn cmd_disclosure_manifest(repo: &Repository, path: &str, source: &str) {
+    let run_id = repo
+        .create_source_run(
+            source,
+            "disclosure-manifest",
+            serde_json::json!({"path": path}),
+        )
+        .await
+        .expect("Failed to create source_run");
+    let result = async {
+        let file = File::open(path)?;
+        let reader = BufReader::new(file);
+        let mut seen = 0i64;
+        let mut written = 0i64;
+        for (line_number, line) in reader.lines().enumerate() {
+            let line = line?;
+            if line.trim().is_empty() {
+                continue;
+            }
+            let row: DisclosureManifestRow = serde_json::from_str(&line)
+                .map_err(|error| format!("invalid JSONL at line {}: {error}", line_number + 1))?;
+            seen += 1;
+            repo.upsert_disclosure_document(
+                &intel_backend::repository::organizations::DisclosureDocumentInput {
+                    bioguide_id: row.bioguide_id.as_deref(),
+                    chamber: &row.chamber,
+                    report_type: &row.report_type,
+                    filing_date: row.filing_date,
+                    reporting_period_start: row.reporting_period_start,
+                    reporting_period_end: row.reporting_period_end,
+                    source,
+                    source_record_id: row.source_record_id.as_deref(),
+                    source_url: &row.source_url,
+                    raw_sha256: row.raw_sha256.as_deref(),
+                    raw_storage_key: row.raw_storage_key.as_deref(),
+                    parse_status: row.parse_status.as_deref().unwrap_or("pending"),
+                    parse_error: row.parse_error.as_deref(),
+                    source_run_id: Some(run_id),
+                },
+            )
+            .await?;
+            written += 1;
+        }
+        Ok::<(i64, i64), Box<dyn std::error::Error>>((seen, written))
+    }
+    .await;
+    finish_api_run(repo, run_id, result).await;
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct OrganizationManifestRow {
+    canonical_name: String,
+    organization_type: String,
+    description: Option<String>,
+    website_url: Option<String>,
+    identifiers: Vec<OrganizationIdentifierManifestRow>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct OrganizationIdentifierManifestRow {
+    scheme: String,
+    value: String,
+}
+
+async fn cmd_organization_manifest(repo: &Repository, path: &str, source: &str) {
+    let run_id = repo
+        .create_source_run(
+            source,
+            "organization-manifest",
+            serde_json::json!({"path": path}),
+        )
+        .await
+        .expect("Failed to create source_run");
+    let result = async {
+        let file = File::open(path)?;
+        let reader = BufReader::new(file);
+        let mut seen = 0i64;
+        let mut written = 0i64;
+        for (line_number, line) in reader.lines().enumerate() {
+            let line = line?;
+            if line.trim().is_empty() {
+                continue;
+            }
+            let row: OrganizationManifestRow = serde_json::from_str(&line)
+                .map_err(|error| format!("invalid JSONL at line {}: {error}", line_number + 1))?;
+            let organization_id = repo
+                .upsert_organization(
+                    &intel_backend::repository::organizations::OrganizationInput {
+                        canonical_name: &row.canonical_name,
+                        organization_type: &row.organization_type,
+                        description: row.description.as_deref(),
+                        website_url: row.website_url.as_deref(),
+                    },
+                )
+                .await?;
+            for identifier in row.identifiers {
+                repo.upsert_organization_identifier(
+                    organization_id,
+                    &identifier.scheme,
+                    &identifier.value,
+                    source,
+                    Some(run_id),
+                )
+                .await?;
+            }
+            seen += 1;
+            written += 1;
+        }
+        Ok::<(i64, i64), Box<dyn std::error::Error>>((seen, written))
+    }
+    .await;
+    finish_api_run(repo, run_id, result).await;
+}
+
+async fn cmd_house_ptr(
+    repo: &Repository,
+    pdf_path: &str,
+    bioguide_id: &str,
+    filing_id: &str,
+    source_url: &str,
+) {
+    let run_id = repo
+        .create_source_run(
+            "house_disclosures",
+            "house-ptr",
+            serde_json::json!({"pdf_path": pdf_path, "filing_id": filing_id}),
+        )
+        .await
+        .expect("Failed to create House disclosure source_run");
+    let result = async {
+        let raw_pdf = std::fs::read(pdf_path)?;
+        let digest = format!("{:x}", Sha256::digest(&raw_pdf));
+        let extracted = ProcessCommand::new("pdftotext")
+            .args(["-layout", pdf_path, "-"])
+            .output()?;
+        if !extracted.status.success() {
+            return Err(format!("pdftotext failed with status {}", extracted.status).into());
+        }
+        let text = String::from_utf8(extracted.stdout)?;
+        let parsed = intel_backend::disclosures::parse_house_ptr_text(&text);
+        let document_id = repo
+            .upsert_disclosure_document(
+                &intel_backend::repository::organizations::DisclosureDocumentInput {
+                    bioguide_id: Some(bioguide_id),
+                    chamber: "House",
+                    report_type: "PTR",
+                    filing_date: None,
+                    reporting_period_start: None,
+                    reporting_period_end: None,
+                    source: "house_disclosures",
+                    source_record_id: Some(filing_id),
+                    source_url,
+                    raw_sha256: Some(&digest),
+                    raw_storage_key: Some(pdf_path),
+                    parse_status: if parsed.is_empty() {
+                        "partial"
+                    } else {
+                        "parsed"
+                    },
+                    parse_error: if parsed.is_empty() {
+                        Some("No transaction rows were anchored in extracted text")
+                    } else {
+                        None
+                    },
+                    source_run_id: Some(run_id),
+                },
+            )
+            .await?;
+        for transaction in &parsed {
+            repo.upsert_disclosure_transaction(
+                &intel_backend::repository::organizations::DisclosureTransactionInput {
+                    document_id,
+                    bioguide_id: Some(bioguide_id),
+                    owner_type: &transaction.owner_type,
+                    asset_name: &transaction.asset_name,
+                    ticker: transaction.ticker.as_deref(),
+                    organization_id: None,
+                    transaction_type: &transaction.transaction_type,
+                    amount_min: transaction.amount_min,
+                    amount_max: transaction.amount_max,
+                    transaction_date: transaction.transaction_date,
+                    disclosure_date: transaction.disclosure_date,
+                    filing_url: Some(source_url),
+                    raw_json: serde_json::json!({"pdf_path": pdf_path}),
+                },
+            )
+            .await?;
+        }
+        Ok::<(i64, i64), Box<dyn std::error::Error>>((parsed.len() as i64, parsed.len() as i64))
+    }
+    .await;
+    finish_api_run(repo, run_id, result).await;
+}
+
+async fn cmd_house_ptr_url(
+    repo: &Repository,
+    url: &str,
+    output_path: &str,
+    bioguide_id: &str,
+    filing_id: &str,
+) {
+    let result = async {
+        let response = reqwest::get(url).await?;
+        let response = response.error_for_status()?;
+        let body = response.bytes().await?;
+        if body.len() < 4 || &body[..4] != b"%PDF" {
+            return Err("official disclosure URL did not return a PDF".into());
+        }
+        if let Some(parent) = std::path::Path::new(output_path).parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent)?;
+            }
+        }
+        std::fs::write(output_path, &body)?;
+        Ok::<(), Box<dyn std::error::Error>>(())
+    }
+    .await;
+    if let Err(error) = result {
+        eprintln!("House disclosure download failed: {error}");
+        std::process::exit(1);
+    }
+    cmd_house_ptr(repo, output_path, bioguide_id, filing_id, url).await;
 }
 
 // ── Influence Seeds ────────────────────────────────────────────────────────

@@ -85,7 +85,7 @@ export function formatAmountRange(
     return `${formatDollar(amountMin)} – ${formatDollar(amountMax)}`;
   }
   if (amountMin != null) return `≥ ${formatDollar(amountMin)}`;
-  return `≤ ${formatDollar(amountMax!)}`;
+  return amountMax == null ? "Not disclosed" : `≤ ${formatDollar(amountMax)}`;
 }
 
 function formatDollar(value: number): string {

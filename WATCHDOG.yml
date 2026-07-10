@@ -1,0 +1,34 @@
+advisors:
+  - name: Congress Tracker Watchdog
+    tools:
+      - read
+      - glob
+      - grep
+      - web_search
+      - browser
+    instructions: >
+      This is a Next.js + Rust backend project for tracking congressional data:
+      legislators, bills, committees, stocks, lobbying, elections, influence,
+      and portfolio pages.
+
+      CRITICAL RULES:
+      1. Every page MUST fetch live data. Check every page.tsx for data fetching
+         (fetch, useQuery, getServerSideProps). If a page has only static/mock
+         content, flag it immediately.
+      2. Every page MUST have loading states (loading.tsx or Suspense) and error
+         boundaries (error.tsx). Missing either is a bug.
+      3. When auditing pages, use the page-audit skill to systematically check
+         all tabs: home, legislators, bills, influence, committees, stocks,
+         portfolio, lobbying, elections, search.
+      4. Backend routes live in backend/crates/intel_backend/src/routes/ and
+         backend/crates/backend_server/src/. Frontend services in
+         frontend/lib/services/. Keep the API surface consistent.
+      5. DeepSeek v4 is BLIND — all UI verification requires screenshots. The
+         frontend-visual-verifier skill should be used for any visual changes.
+      6. Run cargo check and cargo test for backend changes. Run pnpm typecheck
+         and pnpm lint for frontend changes.
+      7. All pages should use the same UI pattern (layout, typography, spacing).
+         Inconsistent pages should be flagged for refactor.
+      8. Data types must match between backend Rust structs and frontend
+         TypeScript interfaces. Use type-null-contract-auditor for API shape
+         verification.

@@ -6,9 +6,10 @@ import { ArrowRight, FileText, Landmark, Network, TrendingUp, Users } from "luci
 import { ArchiveHero, ArchiveMetrics, ArchivePage, ArchivePanel } from "@/components/ui/archive-ui"
 import { getAllLegislators, type Legislator } from "@/lib/services/legislators"
 import { formatAmountRange, getRecentTrades, type StockTrade } from "@/lib/services/stocks"
-import { getRecentFilings, type Filing } from "@/lib/services/lobbying"
+import { getRecentFilings, type LobbyingFiling } from "@/lib/services/lobbying"
 import { getRecentBills, type Bill } from "@/lib/services/bills"
 import { compactNumber, formatDate } from "@/lib/format"
+import { getSourceCoverage, type SourceCoverage } from "@/lib/services/sources"
 
 function numericValue(value: unknown) {
   if (typeof value === "number") return Number.isFinite(value) ? value : 0
@@ -22,24 +23,27 @@ function numericValue(value: unknown) {
 export default function HomePage() {
   const [legislators, setLegislators] = useState<Legislator[]>([])
   const [trades, setTrades] = useState<StockTrade[]>([])
-  const [filings, setFilings] = useState<Filing[]>([])
+  const [filings, setFilings] = useState<LobbyingFiling[]>([])
   const [bills, setBills] = useState<Bill[]>([])
+  const [sourceCoverage, setSourceCoverage] = useState<SourceCoverage | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     async function loadData() {
       try {
-        const [legislatorData, tradeData, filingData, billData] = await Promise.all([
+        const [legislatorData, tradeData, filingData, billData, coverageData] = await Promise.all([
           getAllLegislators().catch(() => []),
           getRecentTrades(80).catch(() => []),
           getRecentFilings(1, 40).then((data) => data.results || []).catch(() => []),
           getRecentBills(40).catch(() => []),
+          getSourceCoverage().catch(() => null),
         ])
 
         setLegislators(legislatorData)
         setTrades(tradeData)
         setFilings(filingData)
         setBills(billData)
+        setSourceCoverage(coverageData)
       } finally {
         setLoading(false)
       }
@@ -57,6 +61,7 @@ export default function HomePage() {
     () => filings.reduce((sum, filing) => sum + numericValue(filing.income) + numericValue(filing.expenses), 0),
     [filings],
   )
+  const lobbyingSpendLabel = totalLobbyingIncome > 0 ? `$${compactNumber(totalLobbyingIncome)} disclosed spend` : "Spend unavailable"
 
   const latestItems = [
     ...bills.slice(0, 3).map((bill) => ({
@@ -73,8 +78,8 @@ export default function HomePage() {
     })),
     ...filings.slice(0, 3).map((filing) => ({
       type: "Lobbying",
-      title: filing.registrant?.name || "Lobbying filing",
-      meta: `${filing.client?.name || "Client not listed"} posted ${formatDate(filing.dt_posted)}`,
+      title: filing.registrant_name || "Lobbying filing",
+      meta: `${filing.client_name || "Client not listed"} posted ${formatDate(filing.dt_posted || undefined)}`,
       href: "/lobbying",
     })),
   ].slice(0, 6)
@@ -82,7 +87,7 @@ export default function HomePage() {
   return (
     <ArchivePage>
       <ArchiveHero
-        eyebrow={loading ? "Syncing public records" : "Live public records"}
+        eyebrow={loading ? "Syncing public records" : sourceCoverage?.summary.successful ? "Fresh public records" : "Public records with coverage gaps"}
         title="Power. Policy."
         accent="Public Knowledge."
         description="Real-time transparency into congressional activity, financial disclosures, legislation, and lobbying influence."
@@ -113,6 +118,10 @@ export default function HomePage() {
                 <span className="text-sm text-muted-foreground">LDA filings loaded</span>
                 <span className="font-serif text-2xl">{loading ? "..." : filings.length}</span>
               </div>
+              <div className="flex items-center justify-between border-t border-border pt-3">
+                <span className="text-sm text-muted-foreground">Fresh sources</span>
+                <span className="font-serif text-2xl">{loading ? "..." : sourceCoverage?.summary.successful ?? 0}</span>
+              </div>
             </div>
           </div>
         }
@@ -122,7 +131,7 @@ export default function HomePage() {
         metrics={[
           { label: "Active legislators", value: loading ? "..." : legislators.length, detail: "Canonical member table", icon: <Users size={20} /> },
           { label: "Bills tracked", value: loading ? "..." : compactNumber(bills.length), detail: "Recent Congress.gov feed", icon: <FileText size={20} /> },
-          { label: "Lobbying reports", value: loading ? "..." : compactNumber(filings.length), detail: `$${compactNumber(totalLobbyingIncome)} disclosed spend`, icon: <Network size={20} /> },
+          { label: "Lobbying reports", value: loading ? "..." : compactNumber(filings.length), detail: lobbyingSpendLabel, icon: <Network size={20} /> },
           { label: "Stock trades", value: loading ? "..." : compactNumber(trades.length), detail: `${matchedTradeMembers} matched members`, icon: <TrendingUp size={20} /> },
         ]}
       />
@@ -158,13 +167,21 @@ export default function HomePage() {
             </div>
             <div className="relative z-10 mt-5 grid grid-cols-2 gap-3 text-sm text-muted-foreground">
               <div className="flex justify-between border-t border-border pt-3"><span>Legislators</span><strong className="text-foreground">{legislators.length || 0}</strong></div>
-              <div className="flex justify-between border-t border-border pt-3"><span>Organizations</span><strong className="text-foreground">{filings.length || 0}</strong></div>
+              <div className="flex justify-between border-t border-border pt-3"><span>Organizations</span><strong className="text-muted-foreground">Unavailable until entity crosswalks load</strong></div>
               <div className="flex justify-between border-t border-border pt-3"><span>Bills</span><strong className="text-foreground">{bills.length || 0}</strong></div>
               <div className="flex justify-between border-t border-border pt-3"><span>Trades</span><strong className="text-foreground">{trades.length || 0}</strong></div>
             </div>
           </div>
         </ArchivePanel>
       </div>
+
+      {sourceCoverage && sourceCoverage.summary.stale_or_missing > 0 && (
+        <ArchivePanel title="Source coverage" kicker="Data quality">
+          <p className="text-sm text-muted-foreground">
+            {sourceCoverage.summary.stale_or_missing} of {sourceCoverage.summary.total} registered sources are stale or missing. Results from those sources may be incomplete; missing records are not evidence of no activity.
+          </p>
+        </ArchivePanel>
+      )}
     </ArchivePage>
   )
 }
