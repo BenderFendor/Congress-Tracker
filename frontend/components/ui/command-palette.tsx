@@ -91,13 +91,18 @@ export function CommandPalette() {
   if (!open) return null
 
   return (
-    <div
+    <dialog
+      open
       className="ct-palette-overlay"
-      onClick={(e) => { if (e.target === e.currentTarget) setOpen(false) }}
-      role="dialog"
       aria-modal="true"
       aria-label="Navigate CongressTracker"
     >
+      <button
+        type="button"
+        className="ct-palette-backdrop"
+        aria-label="Close navigation dialog"
+        onClick={() => setOpen(false)}
+      />
       <div className="ct-palette-box">
         <div className="ct-palette-input">
           <Search size={19} className="text-muted-foreground shrink-0" />
@@ -119,7 +124,8 @@ export function CommandPalette() {
             filtered.map((item, i) => {
               const Icon = item.icon
               return (
-                <div
+                <button
+                  type="button"
                   key={`${item.label}-${i}`}
                   className={`ct-palette-item ${i === activeIndex ? "active" : ""}`}
                   onClick={() => navigate(item.href)}
@@ -128,13 +134,13 @@ export function CommandPalette() {
                   <Icon size={18} className="shrink-0" />
                   <strong>{item.label}</strong>
                   <span>{item.hint}</span>
-                </div>
+                </button>
               )
             })
           )}
         </div>
       </div>
-    </div>
+    </dialog>
   )
 }
 

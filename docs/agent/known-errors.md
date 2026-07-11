@@ -1,5 +1,23 @@
 # Known Errors
 
+## Chrome MCP Has No DevToolsActivePort
+
+Symptom:
+```text
+Could not connect to Chrome. Could not find DevToolsActivePort for chrome at
+/home/bender/.config/google-chrome/DevToolsActivePort
+```
+
+Cause:
+- Chrome is not running with the DevTools endpoint expected by Chrome MCP.
+
+Fix:
+1. Confirm Chrome is running before starting frontend visual verification.
+2. Reconnect Chrome MCP and call its page-list command before opening a route.
+3. If Chrome remains unavailable, record the exact blocker and run build, type, lint, and test gates. Do not claim browser verification.
+
+---
+
 ## Congress.gov API key not found
 
 Symptom:

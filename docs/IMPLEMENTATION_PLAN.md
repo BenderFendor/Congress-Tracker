@@ -52,7 +52,7 @@ the commands in the verification section before starting a milestone.
 - Canonical FEC classification tests keep memos, refunds, transfers, and outside spending out of direct-receipt totals.
 - `/portfolio` uses official disclosure rows and explicit coverage states.
 - AIPAC and other influence networks use verified FEC committee identifiers with separate direct and outside-spending totals.
-- `scripts/self-test` passed on 2026-07-11, including backend formatting, clippy, check, tests, frontend TypeScript, and ESLint.
+- `scripts/self-test` passed on 2026-07-11 and now includes backend formatting, clippy, check, tests, frontend helper tests, TypeScript, ESLint, Oxlint, and the production build.
 
 ### Implemented But Not Proved
 
@@ -68,12 +68,12 @@ the commands in the verification section before starting a milestone.
 - Bill actions and heuristic lobbying overlays already exist. Amendments and source-backed bill-to-lobbying links do not.
 - Frontend helper tests exist, but they cover only a small part of the critical page state space.
 
-### Current Blocking Verification Failure
+### Resolved Verification Gate
 
-`pnpm verify` fails at the Oxlint accessibility gate before the production
-build. The current warnings are in the command palette, election page, mockup
-visuals, and election map. The stronger frontend gate controls readiness even
-though `scripts/self-test` currently passes.
+The 2026-07-11 M0 frontend-gate work removed the Oxlint accessibility warnings
+from the command palette and election visuals. `pnpm verify` and the updated
+`scripts/self-test` now pass through the production build. Chrome MCP was not
+running, so live desktop and mobile browser proof remains open.
 
 ## Delivery Order
 
@@ -97,8 +97,8 @@ verified baseline before adding another product surface.
 
 1. Inventory the existing dirty worktree by concern. Preserve all user work and stage only files owned by each workstream.
 2. Keep runtime PDFs, FEC archives, Rust crash reports, and package-manager artifacts out of product commits. Do not delete diagnostic artifacts until their owner has confirmed they are no longer needed.
-3. Fix every current Oxlint accessibility warning with semantic elements and keyboard-safe interaction.
-4. Make `scripts/self-test` run the strongest frontend gate: helper tests, TypeScript, ESLint, Oxlint, and production build.
+3. [x] Fix every current Oxlint accessibility warning with semantic elements and keyboard-safe interaction.
+4. [x] Make `scripts/self-test` run the strongest frontend gate: helper tests, TypeScript, ESLint, Oxlint, and production build.
 5. Prove migrations `0001` through `0028` against a fresh database and an existing upgraded database.
 6. Reconcile interrupted `source_runs`, retryable FEC batches, and stuck disclosure jobs. Partial work stays partial until it reaches a truthful terminal state.
 7. Update `README.md`, `docs/BACKEND_REQUIREMENTS.md`, worker/disclosure docs, `docs/Log.md`, and `docs/agent/test-catalog.md` to match current behavior.

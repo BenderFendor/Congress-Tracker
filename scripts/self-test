@@ -35,32 +35,13 @@ echo "--- Frontend ---"
 if [[ -f frontend/package.json ]]; then
   cd frontend
 
-  if [[ -f pnpm-lock.yaml ]]; then
-    PM="pnpm"
-  elif [[ -f yarn.lock ]]; then
-    PM="yarn"
-  else
-    PM="npm run"
+  if ! command -v pnpm >/dev/null 2>&1; then
+    echo "  pnpm is required for the frontend verification gate"
+    exit 1
   fi
 
-  echo "  typecheck: npx tsc --noEmit"
-  npx tsc --noEmit
-
-  if [[ "$PM" == "npm run" ]]; then
-    if node -e "const p=require('./package.json'); process.exit(p.scripts && p.scripts.lint ? 0 : 1)" 2>/dev/null; then
-      echo "  lint: $PM lint"
-      $PM lint
-    else
-      echo "  lint: no lint script; skipping"
-    fi
-  else
-    if node -e "const p=require('./package.json'); process.exit(p.scripts && p.scripts.lint ? 0 : 1)" 2>/dev/null; then
-      echo "  lint: $PM lint"
-      $PM lint
-    else
-      echo "  lint: no lint script; skipping"
-    fi
-  fi
+  echo "  pnpm verify"
+  pnpm verify
 
   cd ..
   echo "  frontend checks passed"

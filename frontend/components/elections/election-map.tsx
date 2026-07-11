@@ -430,10 +430,11 @@ export function ElectionMap({
           <div className="election-map-svg-wrap">
             <svg
               ref={svgRef}
-              role="img"
               aria-label={`Map of U.S. ${OFFICE_LABELS[office]} activity, ${cycle} cycle`}
               className="election-map-svg"
-            />
+            >
+              <title>{`Map of U.S. ${OFFICE_LABELS[office]} activity, ${cycle} cycle`}</title>
+            </svg>
             <Legend
               view={view}
               metric={metric}
@@ -479,7 +480,7 @@ export function ElectionMap({
         selectedFips={selectedFips}
       />
 
-      {shareToast ? <div className="election-map-toast" role="status">{shareToast}</div> : null}
+      {shareToast ? <output className="election-map-toast">{shareToast}</output> : null}
     </div>
   )
 }
@@ -950,7 +951,7 @@ function MapTooltip({
     <div
       className="election-map-tooltip-card"
       style={{ left: clientX, top: clientY }}
-      role="status"
+      aria-live="polite"
     >
       <div className="election-map-tooltip-title">
         <MapPin size={12} aria-hidden="true" />

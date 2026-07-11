@@ -89,7 +89,8 @@ function ChamberBar({
     }))
     .filter((s) => s.count > 0)
   return (
-    <div className="election-chamber-bar" role="img" aria-label="Party seat distribution">
+    <figure className="election-chamber-bar">
+      <figcaption className="sr-only">Party seat distribution</figcaption>
       {segments.map((s) => (
         <div
           key={s.party}
@@ -98,7 +99,7 @@ function ChamberBar({
           title={`${s.party}: ${s.count} (${s.pct.toFixed(1)}%)`}
         />
       ))}
-    </div>
+    </figure>
   )
 }
 

@@ -223,22 +223,17 @@ export function GraphNode({
   r,
   label,
   cls = "",
-  onSelect,
 }: {
   x: number
   y: number
   r: number
   label: string
   cls?: string
-  onSelect?: (label: string) => void
 }) {
   return (
     <g
       className={`ct-graph-node ${cls}`}
       transform={`translate(${x} ${y})`}
-      onClick={() => onSelect?.(label)}
-      role="button"
-      tabIndex={0}
       aria-label={label}
     >
       <circle r={r} />
