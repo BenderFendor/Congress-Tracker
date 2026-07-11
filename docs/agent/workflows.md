@@ -36,7 +36,11 @@ This runs, in order: `members --current-only --limit 25`, `influence-seeds`, `fe
 
 Set `PROFILE_EVIDENCE_REFRESH_SECONDS` to change the interval. Manual ingest subcommands are diagnostics only and are not required for normal server operation.
 
-OpenFEC contributor rankings still require complete pagination across every authorized committee. Until that scheduler is implemented, candidate totals remain labeled `Totals only`; the UI must not promote partial receipts into a complete donor ranking.
+The worker schedules canonical FEC bulk refreshes for the current cycle and two
+prior even cycles by default. `FEC_CYCLES` overrides that window. Until every
+required file for a member and cycle is canonicalized and ranked, candidate
+totals remain labeled `Totals only`; the UI must not promote partial receipts
+into a complete donor ranking.
 
 ## Start Backend
 

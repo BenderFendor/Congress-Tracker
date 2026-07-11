@@ -18,3 +18,10 @@ the detailed worksheets under `.agent/traces/`.
 - Confirmed the live database upgraded from migration `0016` through `0028` while preserving members, earlier source runs, and canonical FEC rows.
 - Added `scripts/source-run-audit`, a read-only-by-default ledger, heartbeat, and queue report with an explicit stale-run repair mode.
 - Reconciled 38 abandoned source runs while preserving the active 2024 FEC and Congress.gov processes.
+
+## 2026-07-11 - Current Pipeline Documentation
+
+- Updated the README and backend contract document for canonical FEC receipt browsing, House annual parsing, OCR, financial snapshots, and staged Senate discovery.
+- Updated testing and workflow docs for the strict frontend gate and scheduled FEC bulk cycle window.
+- Updated worker and disclosure docs for bounded concurrency, supported annual forms, OCR, current migrations, financial snapshots, and independent heartbeat behavior.
+- Kept incomplete income, gift, position, Senate parsing, disbursement, and browser-proof work explicit.

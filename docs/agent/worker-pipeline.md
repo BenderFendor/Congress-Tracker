@@ -41,7 +41,7 @@ frontend Portfolio page
 | `parse_issues` | Unparseable content for review |
 | `disclosure_filings` | Filing metadata + amendment links |
 | `disclosure_assets` | Asset holdings from annual reports |
-| `disclosure_income/liabilities/gifts/positions` | Phase 3 tables |
+| `disclosure_income/liabilities/gifts/positions` | Annual-report tables; only liabilities are populated by the current production parser |
 | `stock_trades` | **Materialized view** — computed from disclosure_transactions |
 
 ## Migration order
@@ -63,6 +63,10 @@ frontend Portfolio page
 | 0013 | Grants worker roles permission to write resolved relationship evidence |
 | 0014 | Adds the persistent member funding cache used by the OpenFEC totals fallback |
 | 0015 | Keeps source transaction dates but nulls impossible negative filing intervals |
+| 0016-0023 | Adds restartable FEC bulk ingestion, linkage issues, supplemental sources, identity repair, and canonical influence totals |
+| 0024-0025 | Adds the range-safe financial warehouse and financial-asset resolution |
+| 0026 | Adds staged Senate eFD report discovery |
+| 0027-0028 | Adds receipt browse counts and null-safe browse indexes |
 
 ## PL/pgSQL enrichment functions
 
@@ -84,21 +88,25 @@ Computes committee jurisdiction overlap using the same rules as the Rust `commit
 
 ## Worker poll loop
 
-All intervals are configurable via constants in main.rs:
+Core intervals and concurrency limits are configured in `main.rs` and environment variables:
 
 | Step | Interval | What it does |
 |------|----------|-------------|
-| Discovery | 30 min | Downloads {year}FD.zip, parses TSV, records every row, and enqueues supported `P` filings |
-| Download | 10 sec | Processes 5 pending download jobs per tick |
-| Parse | 10 sec | Processes 5 pending parse jobs per tick |
-| Resolve | 60 sec | Matches identities, derives relationships, refreshes view |
-| Heartbeat | 30 sec | Writes worker health row |
+| Discovery | 30 min | Downloads yearly indexes, records every row, and enqueues forms |
+| Download | 10 sec | Processes a bounded batch controlled by `DOWNLOAD_CONCURRENCY` |
+| Parse | 10 sec | Processes a bounded batch controlled by `PARSE_CONCURRENCY` |
+| Resolve | 5 min default | Matches identities, derives relationships, builds snapshots, and refreshes views |
+| Heartbeat | 30 sec | Writes worker health from an independent task |
+| Profile evidence | 6 hr default | Refreshes all-current-member legislative and profile evidence |
+| FEC bulk | 6 hr default | Refreshes the configured election-cycle window |
+| Senate eFD | 6 hr default | Runs terms-gated discovery only |
 
 ## Operational notes
 
 - **Storage**: PDFs saved to `$WORKER_STORAGE_DIR` (default `./worker_storage`).
-- **Current parser scope**: periodic transaction reports (`FilingType=P`). Other Clerk forms stay indexed for coverage and are not presented as successful zero-row parses.
-- **PTR URLs**: periodic reports use `/public_disc/ptr-pdfs/{year}/{DocID}.pdf`; other financial forms use a different directory and are not queued until their parsers are production-ready.
+- **Current parser scope**: PTR formats plus annual-style `A`, `O`, `N`, and `T` forms. Assets and liabilities are persisted; income, gifts, and positions remain incomplete.
+- **PDF URLs**: periodic reports use `/public_disc/ptr-pdfs/{year}/{DocID}.pdf`; other forms use `/public_disc/financial-pdfs/{year}/{DocID}.pdf`.
+- **OCR**: text extraction falls back to `pdftoppm` plus Tesseract for image-only documents.
 - **Rate limiting**: Exponential backoff `2^attempts + rand(0..30)` seconds on 429/503.
 - **Idempotency**: All steps use ON CONFLICT DO NOTHING or advisory locks. Re-running the worker with the same data is safe.
 - **Source chronology**: Official filings can contain dates that are internally out of order. The API preserves both source dates and reports `disclosure_lag_days: null` for those rows instead of exposing a negative interval.

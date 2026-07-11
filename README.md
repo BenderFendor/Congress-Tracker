@@ -16,9 +16,10 @@ The app must not present mock data as real data. Missing source keys or empty in
 
 - `unitedstates/congress-legislators`: current members, terms, identifiers, committees, committee memberships
 - Congress.gov API: bills, sponsors, actions, official source URLs
-- OpenFEC API: candidates, committees, campaign finance entities
+- FEC bulk files and OpenFEC API: canonical receipts, committee transfers, leadership PACs, outside spending, candidates, and committees
 - Senate LDA API: lobbying filings, clients, registrants, issue codes
-- House Clerk financial disclosures: official PTR index and PDFs ingested by `intel_worker`
+- House Clerk financial disclosures: official PTR and annual-report indexes and PDFs ingested by `intel_worker`
+- Senate eFD: terms-gated official report discovery; download and parsing remain incomplete
 - CapitolTrades adapter: legacy/manual compatibility boundary; the canonical portfolio path uses official disclosure rows
 
 ## Canonical API
@@ -38,6 +39,9 @@ The frontend reads from `http://localhost:4020` by default.
 | Stocks | `/api/stocks/transactions` |
 | Portfolios | `/api/portfolios`, `/api/intel/portfolio/*` |
 | Lobbying | `/api/lobbying/filings`, `/api/lobbying/filings/:id` |
+| FEC receipts | `/api/fec/receipts` |
+| Financial snapshots | `/api/financial-snapshots` |
+| Senate disclosure audit | `/api/senate-disclosures` |
 | Elections | `/api/elections/candidates` |
 | Search | `/api/search` |
 
@@ -49,42 +53,19 @@ The frontend reads from `http://localhost:4020` by default.
    - `CONGRESS_GOV_API_KEY`
    - `OPENFEC_API_KEY`
    - `SENATE_LDA_API_KEY`
-3. Run source ingests:
+3. Start the canonical backend, frontend, and worker together:
 
 ```bash
-cd backend
-cargo run -p intel_backend --bin ingest -- members --current-only --limit 100
-cargo run -p intel_backend --bin ingest -- influence-seeds
-cargo run -p intel_backend --bin ingest -- congress-bills --congress 119 --limit 50
-cargo run -p intel_backend --bin ingest -- fec-candidates --cycle 2024 --limit 100
-cargo run -p intel_backend --bin ingest -- lobbying-filings --year 2025 --page-size 25 --limit-pages 2
-cargo run -p intel_backend --bin ingest -- disclosure-manifest --source house_disclosures --path ./data/house-disclosures.jsonl
-cargo run -p intel_backend --bin ingest -- organization-manifest --source sec_company_identity --path ./data/company-identities.jsonl
-cargo run -p intel_backend --bin ingest -- house-ptr --pdf-path ./raw/house/20030494.pdf --bioguide-id F000472 --filing-id 20030494 --source-url https://disclosures-clerk.house.gov/public_disc/ptr-pdfs/2025/20030494.pdf
-cargo run -p intel_backend --bin ingest -- house-ptr-url --url https://disclosures-clerk.house.gov/public_disc/ptr-pdfs/2025/20030494.pdf --output-path ./raw/house/20030494.pdf --bioguide-id F000472 --filing-id 20030494
-cargo run -p intel_backend --bin ingest -- refresh-relationships
-cargo run -p intel_backend --bin ingest -- refresh-materialized-views
+./run_all.sh
 ```
 
-`disclosure-manifest` imports one JSON object per line with an official filing URL and optional member/report metadata. It records documents as pending or parsed; it does not invent holdings or transaction values. House and Senate download/parsing jobs should produce this manifest and then populate the normalized holding and transaction tables.
+The worker owns normal member, bill, vote, FEC, House disclosure, and derived
+relationship freshness. Manual ingest subcommands remain diagnostics and
+targeted repair tools; normal member pages must not depend on them.
 
-`organization-manifest` imports canonical organization records plus identifiers such as SEC CIK, FEC committee ID, or LDA client/registrant ID. Identifier values are source-scoped evidence and are never treated as proof of a member relationship by themselves.
-
-`intel_worker` is the canonical continuous PTR path. It discovers the Clerk TSV index, queues supported periodic transaction reports, stores immutable PDF versions, parses range-aware transactions, resolves members, and refreshes the materialized trade view. The manual `house-ptr-url` command remains useful for a single known filing. Both paths keep the official filing URL and reject unanchored rows instead of guessing.
-
-4. Start the backend:
-
-```bash
-cd backend
-cargo run -p intel_backend --bin intel_backend
-```
-
-5. Start the frontend:
-
-```bash
-cd frontend
-NEXT_PUBLIC_BACKEND_URL=http://localhost:4020 pnpm dev
-```
+Set `SENATE_EFD_ACCEPT_TERMS=1` only after the operator has accepted the Senate
+eFD terms. Without it, Senate discovery is skipped rather than reported as a
+source failure.
 
 Frontend: `http://localhost:3000`
 
@@ -94,7 +75,6 @@ Backend: `http://localhost:4020`
 
 ```bash
 scripts/self-test
-cd frontend && npm run build
 ```
 
 Useful runtime checks:
@@ -103,6 +83,10 @@ Useful runtime checks:
 curl http://127.0.0.1:4020/api/health
 curl http://127.0.0.1:4020/api/home/summary
 curl http://127.0.0.1:4020/api/sources/status
+curl http://127.0.0.1:4020/api/system/worker-health
+curl http://127.0.0.1:4020/api/system/disclosure-coverage
+curl 'http://127.0.0.1:4020/api/fec/receipts?cycle=2026&page=1&per_page=10'
+curl 'http://127.0.0.1:4020/api/financial-snapshots?limit=10'
 curl 'http://127.0.0.1:4020/api/bills?limit=10'
 curl 'http://127.0.0.1:4020/api/lobbying/filings?limit=10'
 curl 'http://127.0.0.1:4020/api/elections/candidates?limit=10'
@@ -113,9 +97,12 @@ Browser verification artifacts can be stored under `reports/verification/`.
 
 ## Known Limits
 
-- The automated worker currently ingests House periodic transaction reports. Annual disclosure sections, scanned-document OCR, and Senate eFD ingestion remain explicit gaps.
+- House PTR ingestion and House annual asset/liability parsing are active. Income, gifts, and positions still need production parsing and coverage proof.
+- Scanned-document OCR is implemented, but representative accuracy and failure recovery still need live verification.
+- Senate eFD discovery is staged and terms-gated. Senate download, versioning, parsing, and shared member normalization remain incomplete.
+- Canonical FEC receipt browsing exists, but the configured three-cycle window is not complete until every required cycle reaches a terminal source state.
 - Member vote and sponsorship pages read only canonical relational records; missing rows are shown as unavailable rather than inferred from search.
-- Stocks and portfolio pages must stay empty or caveated until real disclosure rows exist.
+- Stocks, portfolio, and net-worth pages keep explicit coverage caveats when canonical disclosure rows are missing or partial.
 - Voteview and Wikidata are registered as sources but are not required for the core smoke dataset.
 - The visualizations route is outside the required tab set and still needs a separate cleanup pass.
 

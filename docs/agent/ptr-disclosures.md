@@ -8,11 +8,11 @@ The worker automates ingestion of House Clerk financial disclosures. It replaces
 
 ```
 intel_worker (Rust tokio process)
-├── run_discovery()    — downloads {year}FD.zip, parses TSV, enqueues supported PTR jobs
-├── run_downloads()    — fetches PDFs, versions them, enqueues parse jobs
-├── run_parses()       — fingerprint PDFs, dispatch to parser, store results
-├── run_resolve()      — match members, resolve tickers, refresh view
-└── heartbeat()        — health monitoring every 30s
+├── run_discovery()    - downloads {year}FD.zip, parses TSV, enqueues supported forms
+├── run_downloads()    - fetches PDFs with bounded concurrency and versions them
+├── run_parses()       - extracts text/OCR, dispatches parsers, and stores results
+├── run_resolve()      - matches members, resolves assets, builds snapshots, refreshes views
+└── heartbeat_loop()   - writes health independently every 30 seconds
 ```
 
 ## Storage Architecture
@@ -49,15 +49,15 @@ All INSERTs use ON CONFLICT clauses — the pipeline is idempotent.
    - `DocID` → Clerk document identifier
    - `Year` → filing year
 5. INSERTS into `source_index_entries` ON CONFLICT DO NOTHING
-6. For genuinely new `FilingType=P` entries, INSERTs a `download_document` job into `ingest_jobs`. Other types remain indexed as honest coverage gaps.
+6. Enqueues every newly discovered form. Core forms `A`, `O`, `N`, `T`, and `P` receive priority; other codes remain indexed and deferred.
 7. Releases advisory lock
 
 **Backfill mode**: `--backfill` flag iterates years from 2012 (STOCK Act) through current year.
 
 ### `run_downloads(pool)`
 
-1. SELECTs 5 pending `download_document` jobs with `FOR UPDATE SKIP LOCKED`
-2. Reads the filing type and constructs the official PTR URL: `https://disclosures-clerk.house.gov/public_disc/ptr-pdfs/{year}/{DocID}.pdf`
+1. Selects a bounded batch of pending `download_document` jobs with `FOR UPDATE SKIP LOCKED`.
+2. Uses the PTR directory for `P` forms and the financial-report directory for other forms.
 3. Downloads via reqwest with descriptive User-Agent
 4. Computes SHA-256 of PDF bytes
 5. UPSERTs `disclosure_documents` row (creates if new document, updates SHA if changed)
@@ -71,11 +71,11 @@ All INSERTs use ON CONFLICT clauses — the pipeline is idempotent.
 2. Reads the immutable PDF version from its persisted `storage_key`
 3. Runs `pdftotext -layout <pdf> -` via `std::process::Command`
 4. Calls `parsers::fingerprint()` and uses the authoritative Clerk `P` filing code when embedded fonts collapse the visible title during text extraction
-5. Dispatches to layout-specific parser:
+5. Dispatches to a layout-specific parser:
    - `PtrElectronic2022Plus` or `PtrLegacy2015To2021` or `PtrPre2015` → `parsers::parse_ptr_text()`
-   - `AnnualElectronic` → `parsers::parse_annual_electronic()` (Phase 3)
+   - `AnnualElectronic` or `AnnualScanned` -> OCR/text extraction followed by the annual parser
    - `Unknown` → no extraction, stored in `parse_issues`
-6. INSERTS parsed transactions into `disclosure_transactions` with `ON CONFLICT ... DO NOTHING`
+6. Inserts PTR transactions and annual assets/liabilities with idempotent keys.
 7. Records `parse_attempt` with status (`success`/`partial`/`failed`) and row count
 8. Stores unparseable rows in `parse_issues` with page number, raw text, issue type
 9. Wrapped in `std::panic::catch_unwind` — panics mark attempt failed, job retries on next tick
@@ -85,7 +85,7 @@ All INSERTs use ON CONFLICT clauses — the pipeline is idempotent.
 1. Matches transactions with NULL bioguide_id against `members` table using name+state from the index entry
 2. Resolves tickers to `organization_identifiers` (companies with matching asset names)
 3. Derives `relationship_evidence` edges (member → organization via disclosed_trade)
-4. Executes `REFRESH MATERIALIZED VIEW stock_trades`
+4. Builds range-safe financial snapshots and executes `REFRESH MATERIALIZED VIEW stock_trades`.
 
 ## Parser Tiers
 
@@ -96,8 +96,8 @@ Three tiers of parser quality, dispatched by `parsers::fingerprint()`:
 | 1 | `PtrElectronic2022Plus` | `parse_ptr_text()` (existing `disclosures.rs`) | Modern electronic PTRs with structured columns |
 | 2 | `PtrLegacy2015To2021` | `parse_ptr_legacy()` — collapses multi-line names, normalizes whitespace, then passes to standard parser | Pre-2022 format with less structure |
 | 3 | `PtrPre2015` | `parse_ptr_text()` with relaxed heuristics | Pre-STOCK Act era; fewer fields available |
-| 3 | `AnnualElectronic` | `parse_annual_electronic()` — extracts Schedule B section | Annual reports with table-based layouts |
-| 3 | `AnnualScanned` | `parse_annual_scanned()` — returns empty (Phase 3 OCR TBD) | Image-based PDFs needing tesseract |
+| 3 | `AnnualElectronic` | `parse_annual_electronic()` extracts current asset and liability sections | Annual reports with table-based layouts |
+| 3 | `AnnualScanned` | `extract_text_with_ocr()` then the annual parser | Image-based PDFs using `pdftoppm` and Tesseract |
 | - | `Unknown` | No extraction | Stored in `parse_issues` for manual review |
 
 ## Migrations

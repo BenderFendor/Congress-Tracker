@@ -15,6 +15,9 @@ CongressTracker uses `backend/crates/intel_backend` as the canonical API. Pages 
 | Stocks | `GET /api/stocks/transactions`, `GET /api/intel/trades/:ticker` |
 | Portfolios | `GET /api/intel/portfolio/summary`, `GET /api/intel/portfolio/members`, `GET /api/intel/portfolio/sectors`, `GET /api/intel/portfolio/pulse` |
 | Lobbying | `GET /api/lobbying/filings`, `GET /api/lobbying/filings/:id` |
+| FEC receipts | `GET /api/fec/receipts` |
+| Financial snapshots | `GET /api/financial-snapshots` |
+| Senate disclosure audit | `GET /api/senate-disclosures` |
 | Elections | `GET /api/elections/candidates` |
 | Search | `GET /api/search` |
 | Evidence graph | `GET /api/relationships`, `GET /api/organizations/:organization_id` |
@@ -31,11 +34,11 @@ CongressTracker uses `backend/crates/intel_backend` as the canonical API. Pages 
 
 ## Known Remaining Backend Gaps
 
-- Official annual House statements and Senate eFD financial disclosure ingestion are still needed for full portfolio holdings.
-- `house-ptr` parses official House periodic transaction report PDFs into range-aware transaction rows. `disclosure-manifest` records other official filing metadata and provenance.
+- House PTR ingestion is automated. House annual assets and liabilities are parsed into the range-safe financial warehouse; income, gifts, positions, and full live coverage remain incomplete.
+- Senate eFD discovery stages official report links and raw responses when operator terms are accepted. Download, versioning, parsing, and shared member normalization remain incomplete.
 - An `organization-manifest` ingest command records canonical organizations and source identifiers for SEC/FEC/LDA crosswalks. Crosswalk presence alone must not create a member relationship.
 - Lobbying clients, registrants, and lobbyist search have canonical storage but only filings are exposed as page routes.
-- FEC receipts/disbursements need canonical list endpoints before the receipts page can be promoted to a required tab.
+- Canonical FEC receipt browsing is implemented at `GET /api/fec/receipts`. Operating-disbursement ingestion and its list endpoint remain missing.
 - Member votes and sponsorships now have canonical relational endpoints; frontend pages must not reconstruct either relationship through search or the legacy server.
-- Influence charts, net-worth estimates, visualizations, and organization detail remain intentionally unavailable until their canonical source records are ingested.
+- Range-aware financial snapshots and the net-worth page exist, but their source coverage remains partial. Organization detail UI and canonical visualization aggregations remain missing.
 - The visualizations page is intentionally an unavailable state until canonical relationship/activity rows are ingested; it does not read legacy CSV fixtures.

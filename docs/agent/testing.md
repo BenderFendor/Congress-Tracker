@@ -37,15 +37,17 @@ cd ..
 scripts/self-test
 ```
 
-## Known missing checks
+`scripts/self-test` includes the complete `pnpm verify` frontend gate.
 
-- No frontend test suite (e.g. vitest, jest)
+## Known Missing Checks
+
+- Frontend helper tests cover data-quality, FEC query, and funding-coverage contracts; rendered component and browser-flow coverage remains limited.
 - Runtime endpoint proof still requires a running Postgres-backed `intel_backend`
 - No pre-commit hook configured
 - No CI pipeline defined
 - Oxlint and ESLint are now configured as error gates; any new warning fails the respective command.
 - TypeScript uses `strict`, `noUnusedLocals`, `noUnusedParameters`, and `noFallthroughCasesInSwitch`; type diagnostics fail the build.
-- Current data gaps are tracked through `/api/sources/coverage`; an empty stock table is an ingestion gap until House Clerk/Senate eFD workers are complete.
+- Current data gaps are tracked through `/api/sources/coverage` and `/api/system/disclosure-coverage`; empty stock or financial rows remain ingestion gaps until source coverage is proved.
 
 ## Environment requirements
 
