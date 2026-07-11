@@ -216,7 +216,7 @@ impl Repository {
 
         let organization_queries = [
             r#"INSERT INTO organizations (canonical_name, organization_type)
-               SELECT name,
+               SELECT DISTINCT name,
                       CASE
                         WHEN lower(coalesce(committee_type_full, '')) LIKE '%super pac%' THEN 'super_pac'
                         ELSE 'pac'
@@ -225,10 +225,13 @@ impl Repository {
                WHERE name <> ''
                ON CONFLICT (canonical_name, organization_type) DO UPDATE SET updated_at = now()"#,
             r#"INSERT INTO organizations (canonical_name, organization_type, description, website_url)
-               SELECT name, 'lobbying_client', NULL, NULL FROM lobbying_clients WHERE name <> ''
+               SELECT DISTINCT name, 'lobbying_client', NULL, NULL
+               FROM lobbying_clients WHERE name <> ''
                ON CONFLICT (canonical_name, organization_type) DO UPDATE SET updated_at = now()"#,
             r#"INSERT INTO organizations (canonical_name, organization_type, description, website_url)
-               SELECT name, 'lobbying_registrant', description, NULL FROM lobbying_registrants WHERE name <> ''
+               SELECT name, 'lobbying_registrant', max(description), NULL
+               FROM lobbying_registrants WHERE name <> ''
+               GROUP BY name
                ON CONFLICT (canonical_name, organization_type) DO UPDATE SET updated_at = now()"#,
             r#"INSERT INTO organizations (canonical_name, organization_type)
                SELECT DISTINCT COALESCE(NULLIF(asset_name, ''), ticker), 'company'
@@ -251,7 +254,11 @@ impl Repository {
                SELECT o.organization_id, 'fec', fc.committee_id, 'openfec', $1
                FROM fec_committees fc
                JOIN organizations o ON o.canonical_name = fc.name
-                 AND o.organization_type IN ('pac', 'super_pac')
+                 AND o.organization_type = CASE
+                   WHEN lower(coalesce(fc.committee_type_full, '')) LIKE '%super pac%'
+                     THEN 'super_pac'
+                   ELSE 'pac'
+                 END
                ON CONFLICT (scheme, value) DO UPDATE SET source = EXCLUDED.source, source_run_id = EXCLUDED.source_run_id"#,
             r#"INSERT INTO organization_identifiers (organization_id, scheme, value, source, source_run_id)
                SELECT o.organization_id, 'lda_client', lc.id::text, 'lda', $1

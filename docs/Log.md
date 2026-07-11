@@ -30,3 +30,15 @@ the detailed worksheets under `.agent/traces/`.
 
 - Added narrow ignore rules for worker PDF storage, Rust compiler crash reports, and npm lockfiles in this pnpm-only repository.
 - Kept `papercuts.md` trackable as the project friction ledger.
+
+## 2026-07-11 - Independent Worker Heartbeat
+
+- Moved worker heartbeat writes out of the main download/parse select loop.
+- Slow OCR, download, and parse batches can no longer make a live worker disappear from the five-minute health window.
+- Proved heartbeat ages stayed below 30 seconds during a live 65.761-second parse batch, then requeued the verification worker's interrupted jobs explicitly.
+
+## 2026-07-11 - Profile Evidence Runtime Repairs
+
+- Paginated OpenFEC candidate refreshes into provider-supported pages of at most 100 rows without narrowing the requested total.
+- Deduplicated organization derivation inputs and matched FEC identifiers to their exact PAC type before relationship evidence refresh.
+- Proved a 101-row candidate refresh and a 60,147-row live relationship derivation successfully.

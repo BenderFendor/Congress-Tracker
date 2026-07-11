@@ -88,21 +88,21 @@ M6 gates every milestone and the final release
 
 ## M0 - Stabilize And Prove The Current Worktree
 
-**State:** In progress
+**State:** Complete
 
 **Goal:** Turn the current FEC and disclosure work into a clean, reproducible,
 verified baseline before adding another product surface.
 
 ### Implementation
 
-1. Inventory the existing dirty worktree by concern. Preserve all user work and stage only files owned by each workstream.
-2. Keep runtime PDFs, FEC archives, Rust crash reports, and package-manager artifacts out of product commits. Do not delete diagnostic artifacts until their owner has confirmed they are no longer needed.
+1. [x] Inventory the existing dirty worktree by concern. Preserve all user work and stage only files owned by each workstream.
+2. [x] Keep runtime PDFs, FEC archives, Rust crash reports, and package-manager artifacts out of product commits. Do not delete diagnostic artifacts until their owner has confirmed they are no longer needed.
 3. [x] Fix every current Oxlint accessibility warning with semantic elements and keyboard-safe interaction.
 4. [x] Make `scripts/self-test` run the strongest frontend gate: helper tests, TypeScript, ESLint, Oxlint, and production build.
 5. [x] Prove migrations `0001` through `0028` against a fresh database and an existing upgraded database.
-6. Reconcile interrupted `source_runs`, retryable FEC batches, and stuck disclosure jobs. Partial work stays partial until it reaches a truthful terminal state.
+6. [x] Reconcile interrupted `source_runs`, retryable FEC batches, and stuck disclosure jobs. Partial work stays partial until it reaches a truthful terminal state.
 7. [x] Update `README.md`, `docs/BACKEND_REQUIREMENTS.md`, worker/disclosure docs, `docs/Log.md`, and `docs/agent/test-catalog.md` to match current behavior.
-8. Record baseline SQL, API responses, and verification output under `reports/verification/`.
+8. [x] Record baseline SQL, API responses, and verification output under `reports/verification/`.
 
 ### Exit Criteria
 

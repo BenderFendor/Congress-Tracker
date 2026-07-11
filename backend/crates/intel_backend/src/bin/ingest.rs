@@ -1882,67 +1882,80 @@ async fn try_fec_candidates(
     limit: u32,
 ) -> Result<(i64, i64), Box<dyn std::error::Error>> {
     let client = openfec_api::Client::new(api_key.to_string());
-    let query = openfec_api::query::CandidateQuery::default()
-        .with_cycle(cycle)
-        .with_limit(limit);
-    let resp = client.get_candidates(&query).await?;
-
     let mut seen = 0i64;
     let mut written = 0i64;
 
-    for candidate in &resp.data {
-        seen += 1;
+    let mut page = 1u32;
+    while seen < i64::from(limit) {
+        let remaining = limit.saturating_sub(seen as u32);
+        let query = openfec_api::query::CandidateQuery::default()
+            .with_cycle(cycle)
+            .with_limit(remaining.min(100))
+            .with_page(page);
+        let resp = client.get_candidates(&query).await?;
+        if resp.data.is_empty() {
+            break;
+        }
 
-        // Resolve candidate_id to bioguide_id via member_identifiers
-        let bioguide_id = repo
-            .find_member_by_identifier(schema::SCHEME_FEC, &candidate.candidate_id)
-            .await?;
+        for candidate in &resp.data {
+            seen += 1;
 
-        let first_file = candidate
-            .first_file_date
-            .as_deref()
-            .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok());
-        let last_file = candidate
-            .last_file_date
-            .as_deref()
-            .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok());
+            // Resolve candidate_id to bioguide_id via member_identifiers
+            let bioguide_id = repo
+                .find_member_by_identifier(schema::SCHEME_FEC, &candidate.candidate_id)
+                .await?;
 
-        repo.upsert_fec_candidate(FecCandidateUpsert {
-            candidate_id: &candidate.candidate_id,
-            bioguide_id: bioguide_id.as_deref(),
-            name: &candidate.name,
-            party: candidate.party.as_deref().map(normalize_party).as_deref(),
-            state: candidate.state.as_deref().map(normalize_state).as_deref(),
-            district: candidate.district.as_deref(),
-            office: candidate.office.as_deref(),
-            incumbent_challenge: candidate.incumbent_challenge.as_deref(),
-            active_through: candidate.active_through,
-            first_file_date: first_file,
-            last_file_date: last_file,
-            source_run_id: Some(run_id),
-        })
-        .await?;
-        written += 1;
+            let first_file = candidate
+                .first_file_date
+                .as_deref()
+                .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok());
+            let last_file = candidate
+                .last_file_date
+                .as_deref()
+                .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok());
 
-        // If no bioguide_id was found, queue for resolution
-        if bioguide_id.is_none() {
-            let reason = format!(
-                "FEC candidate {} ({}) not in member_identifiers for scheme=fec",
-                candidate.candidate_id, candidate.name
-            );
-            repo.queue_entity_resolution(EntityResolutionQueueInput {
-                entity_type: schema::ENTITY_TYPE_CANDIDATE,
-                source_scheme: schema::SCHEME_FEC,
-                source_value: &candidate.candidate_id,
-                candidate_bioguide_id: None,
-                confidence_score: 0.0,
-                reason: &reason,
-                raw_json: serde_json::json!(candidate),
+            repo.upsert_fec_candidate(FecCandidateUpsert {
+                candidate_id: &candidate.candidate_id,
+                bioguide_id: bioguide_id.as_deref(),
+                name: &candidate.name,
+                party: candidate.party.as_deref().map(normalize_party).as_deref(),
+                state: candidate.state.as_deref().map(normalize_state).as_deref(),
+                district: candidate.district.as_deref(),
+                office: candidate.office.as_deref(),
+                incumbent_challenge: candidate.incumbent_challenge.as_deref(),
+                active_through: candidate.active_through,
+                first_file_date: first_file,
+                last_file_date: last_file,
                 source_run_id: Some(run_id),
             })
             .await?;
             written += 1;
+
+            // If no bioguide_id was found, queue for resolution
+            if bioguide_id.is_none() {
+                let reason = format!(
+                    "FEC candidate {} ({}) not in member_identifiers for scheme=fec",
+                    candidate.candidate_id, candidate.name
+                );
+                repo.queue_entity_resolution(EntityResolutionQueueInput {
+                    entity_type: schema::ENTITY_TYPE_CANDIDATE,
+                    source_scheme: schema::SCHEME_FEC,
+                    source_value: &candidate.candidate_id,
+                    candidate_bioguide_id: None,
+                    confidence_score: 0.0,
+                    reason: &reason,
+                    raw_json: serde_json::json!(candidate),
+                    source_run_id: Some(run_id),
+                })
+                .await?;
+                written += 1;
+            }
         }
+
+        if page >= resp.pagination.pages || seen >= i64::from(limit) {
+            break;
+        }
+        page += 1;
     }
 
     Ok((seen, written))

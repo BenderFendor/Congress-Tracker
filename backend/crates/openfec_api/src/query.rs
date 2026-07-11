@@ -91,6 +91,11 @@ impl CandidateQuery {
         self.limit = Some(limit);
         self
     }
+
+    pub fn with_page(mut self, page: u32) -> Self {
+        self.page = Some(page);
+        self
+    }
 }
 
 #[derive(Default)]
@@ -408,5 +413,27 @@ impl CandidateTotalQuery {
     pub fn with_limit(mut self, limit: u32) -> Self {
         self.limit = Some(limit);
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CandidateQuery, Query};
+    use url::Url;
+
+    #[test]
+    fn candidate_query_serializes_bounded_page_parameters() {
+        let query = CandidateQuery::default()
+            .with_cycle(2026)
+            .with_limit(100)
+            .with_page(2);
+        let mut url = Url::parse("https://api.open.fec.gov/v1/candidates/").unwrap();
+
+        query.add_to_url(&mut url);
+
+        let pairs = url.query_pairs().collect::<Vec<_>>();
+        assert!(pairs.contains(&("cycle".into(), "2026".into())));
+        assert!(pairs.contains(&("per_page".into(), "100".into())));
+        assert!(pairs.contains(&("page".into(), "2".into())));
     }
 }

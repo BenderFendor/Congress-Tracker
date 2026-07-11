@@ -7,7 +7,6 @@
 **Fix or workaround:** never edit applied migrations; add migration integrity test
 
 ---
-
 ## 2026-07-11 17:15
 
 **What happened:** Mid-session scope change from review to implementation — user provided HTML mockup, agent pivoted without fresh session context
@@ -87,5 +86,10 @@
 ## 2026-07-11 18:05
 
 **What happened:** A negative CLI test used the variable name status under zsh, where status is read-only; portable shell checks should use exit_code instead.
+
+---
+## 2026-07-11 18:14
+
+**What happened:** FEC progress probe guessed updated_at and rows_read columns that are not in fec_bulk_batches/imports; inspect table schemas before composing operational SQL.
 
 ---

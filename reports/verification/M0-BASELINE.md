@@ -64,3 +64,44 @@ At the final audit:
 
 These counts prove that the disclosure backfill is active. They do not prove
 House disclosure completeness.
+
+## Coverage Snapshot
+
+The final M0 SQL audit found no `source_runs` left in `running` state.
+
+- FEC 2022: canonicalized; 63,885,805 individual rows seen and 12,684,888
+  written, plus 5,364,539 committee rows seen and 1,031,864 written.
+- FEC 2024: retryable `staging` batch with no canonical rows yet. M1 remains
+  responsible for resuming and completing it.
+- FEC 2026: canonicalized; the latest batch recorded 26,116,746 individual
+  rows seen and 6,319,498 written, plus 8,268,847 committee rows seen and
+  1,612,178 written.
+- House disclosures: 3,037 parsed, 273 partial, 13,033 pending, and 348
+  rejected. These are explicit coverage states, not factual zeroes.
+
+## Worker Heartbeat Finding
+
+The worker heartbeat exceeded the API's five-minute health window while the
+main select loop awaited a slow parse batch. The worker process and its locked
+parse job were still active. The fix moves heartbeat writes into an independent
+Tokio task with a 30-second delayed missed-tick policy. Targeted formatting,
+clippy, and worker tests passed.
+
+A patched backfill worker processed the live queue, including a 65.761-second
+parse batch. Heartbeat samples taken during that work were 3, 28, and 20
+seconds old. This proves the heartbeat task continued to update while the main
+worker loop awaited parsing. The controlled shutdown's two claimed jobs were
+returned to `pending` with an explicit reconciliation reason.
+
+## Runtime Failure Repairs
+
+- OpenFEC candidate refresh now splits requests into provider-supported pages
+  of at most 100 rows. A live 2026 request with limit 101 completed with 101
+  rows seen, proving the second page was fetched.
+- Relationship derivation now collapses duplicate organization conflict keys
+  and maps FEC identifiers to the exact derived organization type. A live
+  refresh completed with 60,147 rows seen and 132,232 writes.
+- The FEC subprocess reached its two-hour ceiling while staging 2024. Its
+  orphaned source run was marked failed with an explicit timeout-reconciliation
+  reason. The 2024 batch remains `staging` and is a truthful retryable M1 item,
+  not a completeness claim.

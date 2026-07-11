@@ -23,6 +23,7 @@ do not replace live source, runtime, or browser evidence.
 | `backend/crates/intel_backend/tests/full_api_contract_test.rs` | Canonical endpoint status and JSON contracts when the database is available | Data completeness and browser rendering |
 | `backend/crates/intel_backend/tests/ingestion_pipeline_test.rs` | Idempotency, source-run tracking, members, FEC candidates, view refresh, and chronology guards | Full public-source backfills |
 | `backend/crates/intel_backend/tests/legislator_tabs_test.rs` | Member profile, votes, legislation, funding, disclosures, and relationship routes | Browser interaction and source freshness |
+| `backend/crates/openfec_api/src/query.rs` | Candidate query cycle, provider-bounded page size, and page-number serialization | Live provider limits and multi-page persistence |
 
 Rust modules also contain focused unit tests for parsing, normalization,
 classification, provenance, entity resolution, Senate discovery helpers,
