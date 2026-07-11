@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+# Audit running source_runs and optionally mark runs older than a safe threshold failed.
+
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/source-run-audit [--stale-hours N] [--apply]
+
+Reports running source ingestion rows, worker heartbeats, and job counts.
+By default this command is read-only. With --apply, running source rows older
+than the threshold are marked failed with an explicit reconciliation message.
+DATABASE_URL must already be present in the command environment.
+
+Options:
+  --stale-hours N  Age threshold in hours (default: 24, minimum: 3)
+  --apply          Apply stale source-run reconciliation
+  -h, --help       Show this help
+EOF
+}
+
+stale_hours=24
+apply=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --stale-hours)
+      [[ $# -ge 2 ]] || { echo "--stale-hours requires a value" >&2; exit 2; }
+      stale_hours="$2"
+      shift 2
+      ;;
+    --apply)
+      apply=true
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+if [[ ! "$stale_hours" =~ ^[0-9]+$ ]] || (( stale_hours < 3 )); then
+  echo "--stale-hours must be an integer of at least 3" >&2
+  exit 2
+fi
+
+: "${DATABASE_URL:?DATABASE_URL is required}"
+
+echo "== Source run audit =="
+echo "Stale threshold: ${stale_hours} hours"
+echo
+
+psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -P pager=off \
+  -v stale_hours="$stale_hours" <<'SQL'
+SELECT source,
+       COUNT(*) AS running_count,
+       MIN(started_at) AS oldest_running,
+       MAX(started_at) AS newest_running,
+       COUNT(*) FILTER (
+         WHERE started_at < now() - make_interval(hours => :'stale_hours'::integer)
+       ) AS stale_count
+FROM source_runs
+WHERE status = 'running'
+GROUP BY source
+ORDER BY oldest_running;
+
+SELECT instance_id,
+       last_heartbeat,
+       now() - last_heartbeat AS heartbeat_age,
+       current_job_type,
+       current_job_id
+FROM worker_heartbeats
+ORDER BY last_heartbeat DESC
+LIMIT 10;
+
+SELECT job_type,
+       status,
+       COUNT(*) AS jobs,
+       MIN(created_at) AS oldest_created
+FROM ingest_jobs
+GROUP BY job_type, status
+ORDER BY job_type, status;
+SQL
+
+if [[ "$apply" != true ]]; then
+  echo
+  echo "Read-only audit complete. Pass --apply to reconcile stale source runs."
+  exit 0
+fi
+
+echo
+echo "Reconciling stale source runs..."
+psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -P pager=off \
+  -v stale_hours="$stale_hours" <<'SQL'
+WITH reconciled AS (
+  UPDATE source_runs
+  SET status = 'failed'::source_run_status,
+      finished_at = now(),
+      error_message = COALESCE(
+        error_message,
+        'reconciled stale running source run after process interruption'
+      )
+  WHERE status = 'running'
+    AND started_at < now() - make_interval(hours => :'stale_hours'::integer)
+  RETURNING source, id, endpoint, started_at, finished_at
+)
+SELECT * FROM reconciled ORDER BY started_at;
+SQL

@@ -11,3 +11,10 @@ the detailed worksheets under `.agent/traces/`.
 - Changed `scripts/self-test` to run `pnpm verify`, which includes frontend helper tests, TypeScript, ESLint, Oxlint, and the production build.
 - Verified the full backend and frontend self-test successfully.
 - Browser proof remains pending because Chrome MCP could not find a running Chrome `DevToolsActivePort`.
+
+## 2026-07-11 - Migration And Source-Run Audit
+
+- Proved migrations `0001` through `0028` in an empty isolated schema and confirmed all 28 SQLx migration records succeeded.
+- Confirmed the live database upgraded from migration `0016` through `0028` while preserving members, earlier source runs, and canonical FEC rows.
+- Added `scripts/source-run-audit`, a read-only-by-default ledger, heartbeat, and queue report with an explicit stale-run repair mode.
+- Reconciled 38 abandoned source runs while preserving the active 2024 FEC and Congress.gov processes.

@@ -99,7 +99,7 @@ verified baseline before adding another product surface.
 2. Keep runtime PDFs, FEC archives, Rust crash reports, and package-manager artifacts out of product commits. Do not delete diagnostic artifacts until their owner has confirmed they are no longer needed.
 3. [x] Fix every current Oxlint accessibility warning with semantic elements and keyboard-safe interaction.
 4. [x] Make `scripts/self-test` run the strongest frontend gate: helper tests, TypeScript, ESLint, Oxlint, and production build.
-5. Prove migrations `0001` through `0028` against a fresh database and an existing upgraded database.
+5. [x] Prove migrations `0001` through `0028` against a fresh database and an existing upgraded database.
 6. Reconcile interrupted `source_runs`, retryable FEC batches, and stuck disclosure jobs. Partial work stays partial until it reaches a truthful terminal state.
 7. Update `README.md`, `docs/BACKEND_REQUIREMENTS.md`, worker/disclosure docs, `docs/Log.md`, and `docs/agent/test-catalog.md` to match current behavior.
 8. Record baseline SQL, API responses, and verification output under `reports/verification/`.
