@@ -9,6 +9,11 @@
 *.log
 *.pid
 **/log/
+backend/worker_storage/
+backend/rustc-ice-*.txt
+
+# pnpm is the only supported frontend package manager
+package-lock.json
 
 /reports/verification/*
 *.snap.new

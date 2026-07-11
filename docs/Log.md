@@ -25,3 +25,8 @@ the detailed worksheets under `.agent/traces/`.
 - Updated testing and workflow docs for the strict frontend gate and scheduled FEC bulk cycle window.
 - Updated worker and disclosure docs for bounded concurrency, supported annual forms, OCR, current migrations, financial snapshots, and independent heartbeat behavior.
 - Kept incomplete income, gift, position, Senate parsing, disbursement, and browser-proof work explicit.
+
+## 2026-07-11 - Runtime Artifact Hygiene
+
+- Added narrow ignore rules for worker PDF storage, Rust compiler crash reports, and npm lockfiles in this pnpm-only repository.
+- Kept `papercuts.md` trackable as the project friction ledger.
