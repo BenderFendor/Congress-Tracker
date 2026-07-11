@@ -49,13 +49,14 @@ async fn main() {
         .await
         .expect("Failed to recover stale ingest jobs");
 
+    tokio::spawn(heartbeat_loop(pool.clone(), instance_id.clone()));
+
     info!(instance_id, "Worker started");
 
     let mut discovery_tick = tokio::time::interval(Duration::from_secs(1800));
     let mut download_tick = tokio::time::interval(Duration::from_secs(10));
     let mut parse_tick = tokio::time::interval(Duration::from_secs(10));
     let mut resolve_tick = tokio::time::interval(Duration::from_secs(60));
-    let mut heartbeat_tick = tokio::time::interval(Duration::from_secs(30));
     let profile_refresh_seconds = std::env::var("PROFILE_EVIDENCE_REFRESH_SECONDS")
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
@@ -90,11 +91,6 @@ async fn main() {
             _ = resolve_tick.tick() => {
                 if let Err(e) = run_resolve(&pool).await {
                     warn!(error = %e, "Resolve step failed");
-                }
-            }
-            _ = heartbeat_tick.tick() => {
-                if let Err(e) = heartbeat(&pool, &instance_id).await {
-                    warn!(error = %e, "Heartbeat failed");
                 }
             }
             _ = profile_refresh_tick.tick() => {
@@ -981,6 +977,17 @@ async fn heartbeat(pool: &PgPool, instance_id: &str) -> Result<(), Box<dyn std::
     .execute(pool)
     .await?;
     Ok(())
+}
+
+async fn heartbeat_loop(pool: PgPool, instance_id: String) {
+    let mut interval = tokio::time::interval(Duration::from_secs(30));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        interval.tick().await;
+        if let Err(error) = heartbeat(&pool, &instance_id).await {
+            warn!(error = %error, "Heartbeat failed");
+        }
+    }
 }
 
 async fn recover_stale_jobs(pool: &PgPool) -> Result<(), sqlx::Error> {
