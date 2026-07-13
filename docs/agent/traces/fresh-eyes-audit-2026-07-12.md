@@ -1,5 +1,9 @@
 # Fresh-Eyes Audit Worksheet
 
+> Superseded location: the audit findings were fused into
+> `docs/IMPLEMENTATION_PLAN.md` on 2026-07-12. The removed standalone audit
+> remains available in Git history at commit `dc42bc3`.
+
 This worksheet records the 2026-07-12 release audit of the current worktree,
 live runtime, database, frontend, CI, tests, plan, and documentation. The audit
 is findings-first and does not implement production fixes.
@@ -49,4 +53,5 @@ schema, source, runtime, or public behavior changed.
 
 ## Status
 
-Done. The release remains blocked by the findings in the audit report.
+Done. The release remains blocked by the finding ledger in
+`docs/IMPLEMENTATION_PLAN.md`.
