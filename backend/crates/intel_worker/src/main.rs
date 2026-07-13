@@ -1150,55 +1150,19 @@ async fn parse_one(
     });
     let rows_extracted = (parsed.transactions.len() + annual_rows) as i32;
 
-    if rows_extracted == 0 && layout == parsers::DocumentLayout::Unknown {
-        // Record unknown layout
-        sqlx::query(
-            "INSERT INTO parse_issues (parse_attempt_id, raw_text, issue_type, issue_detail)
-             VALUES ($1, $2, 'unknown_layout', $3)",
-        )
-        .bind(attempt_id)
-        .bind(truncate_utf8(&text, 2000))
-        .bind(format!("{:?}", layout))
-        .execute(pool)
-        .await?;
-    }
-
-    // Insert parsed transactions in one transaction. This keeps each filing
-    // atomic while avoiding one network round-trip/commit per row.
-    let mut transaction = pool.begin().await?;
-    for tx in &parsed.transactions {
-        sqlx::query(
-            r#"INSERT INTO disclosure_transactions
-               (document_id, bioguide_id, owner_type, asset_name, ticker,
-                transaction_type, amount_min, amount_max,
-                transaction_date, disclosure_date, filing_url, raw_json)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, '{}'::jsonb)
-               ON CONFLICT (document_id, owner_type, asset_name, ticker,
-                            transaction_type, transaction_date)
-               DO NOTHING"#,
-        )
-        .bind(document_id)
-        .bind(Option::<&str>::None) // bioguide_id resolved later in run_resolve
-        .bind(&tx.owner_type)
-        .bind(&tx.asset_name)
-        .bind(&tx.ticker)
-        .bind(&tx.transaction_type)
-        .bind(tx.amount_min)
-        .bind(tx.amount_max)
-        .bind(tx.transaction_date)
-        .bind(tx.disclosure_date)
-        .bind(&pdf_url) // filing_url from the source document
-        .execute(&mut *transaction)
-        .await?;
-    }
-    transaction.commit().await?;
-
-    if let Some(annual) = parsed.annual.as_ref() {
-        persist_annual_report(pool, document_id, version_id, source_year, &pdf_url, annual).await?;
-    }
-
+    let rows_complete = normalized_rows_are_complete(&parsed);
+    let annual_coverage_complete = parsed.annual.as_ref().is_some_and(|annual| {
+        annual_metadata_is_complete(annual) && required_annual_sections_are_present(&text)
+    });
+    let has_required_rows = required_rows_present(
+        layout,
+        parsed.transactions.len(),
+        annual_rows,
+        rows_complete,
+        annual_coverage_complete,
+    );
     let (attempt_status, document_status, parse_error): (&str, &str, Option<&str>) =
-        if rows_extracted > 0 {
+        if has_required_rows {
             ("success", "parsed", None)
         } else if layout == parsers::DocumentLayout::Unknown {
             ("failed", "rejected", Some("unknown document layout"))
@@ -1206,11 +1170,67 @@ async fn parse_one(
             (
                 "partial",
                 "partial",
-                Some("recognized layout produced no transaction rows"),
+                Some("recognized layout did not produce its required record family"),
             )
         };
 
-    // Mark parse complete without presenting a zero-row parse as success.
+    // Replace every record family and publish the successful status in one
+    // document-scoped transaction. A failed insert cannot leave a partially
+    // replaced filing visible as parsed.
+    let mut transaction = pool.begin().await?;
+    if rows_extracted == 0 && layout == parsers::DocumentLayout::Unknown {
+        sqlx::query(
+            "INSERT INTO parse_issues (parse_attempt_id, raw_text, issue_type, issue_detail)
+             VALUES ($1, $2, 'unknown_layout', $3)",
+        )
+        .bind(attempt_id)
+        .bind(truncate_utf8(&text, 2000))
+        .bind(format!("{:?}", layout))
+        .execute(&mut *transaction)
+        .await?;
+    }
+    if has_required_rows {
+        sqlx::query("DELETE FROM disclosure_transactions WHERE document_id = $1")
+            .bind(document_id)
+            .execute(&mut *transaction)
+            .await?;
+        for tx in &parsed.transactions {
+            sqlx::query(
+                r#"INSERT INTO disclosure_transactions
+                   (document_id, bioguide_id, owner_type, asset_name, ticker,
+                    transaction_type, amount_min, amount_max,
+                    transaction_date, disclosure_date, filing_url, raw_json)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, '{}'::jsonb)
+                   ON CONFLICT DO NOTHING"#,
+            )
+            .bind(document_id)
+            .bind(Option::<&str>::None) // bioguide_id resolved later in run_resolve
+            .bind(&tx.owner_type)
+            .bind(&tx.asset_name)
+            .bind(&tx.ticker)
+            .bind(&tx.transaction_type)
+            .bind(tx.amount_min)
+            .bind(tx.amount_max)
+            .bind(tx.transaction_date)
+            .bind(tx.disclosure_date)
+            .bind(&pdf_url)
+            .execute(&mut *transaction)
+            .await?;
+        }
+
+        if let Some(annual) = parsed.annual.as_ref() {
+            persist_annual_report(
+                &mut transaction,
+                document_id,
+                version_id,
+                source_year,
+                &pdf_url,
+                annual,
+            )
+            .await?;
+        }
+    }
+
     sqlx::query(
         "UPDATE parse_attempts
          SET status = $1, rows_extracted = $2, error_message = $3, finished_at = now()
@@ -1220,7 +1240,7 @@ async fn parse_one(
     .bind(rows_extracted)
     .bind(parse_error)
     .bind(attempt_id)
-    .execute(pool)
+    .execute(&mut *transaction)
     .await?;
 
     sqlx::query(
@@ -1231,7 +1251,7 @@ async fn parse_one(
     .bind(document_status)
     .bind(parse_error)
     .bind(document_id)
-    .execute(pool)
+    .execute(&mut *transaction)
     .await?;
 
     sqlx::query(
@@ -1240,11 +1260,95 @@ async fn parse_one(
          WHERE id = $1",
     )
     .bind(job_id)
-    .execute(pool)
+    .execute(&mut *transaction)
     .await?;
+    transaction.commit().await?;
 
     info!(job_id, doc_id, rows = rows_extracted, "Parsed");
     Ok(())
+}
+
+fn required_rows_present(
+    layout: parsers::DocumentLayout,
+    transaction_rows: usize,
+    annual_rows: usize,
+    rows_complete: bool,
+    annual_coverage_complete: bool,
+) -> bool {
+    match layout {
+        parsers::DocumentLayout::PtrElectronic2022Plus
+        | parsers::DocumentLayout::PtrLegacy2015To2021
+        | parsers::DocumentLayout::PtrPre2015 => transaction_rows > 0 && rows_complete,
+        parsers::DocumentLayout::AnnualElectronic | parsers::DocumentLayout::AnnualScanned => {
+            annual_rows > 0 && rows_complete && annual_coverage_complete
+        }
+        _ => false,
+    }
+}
+
+fn required_annual_sections_are_present(text: &str) -> bool {
+    ['A', 'C', 'D', 'E', 'G'].iter().all(|wanted| {
+        text.lines()
+            .any(|line| annual_section_marker(line) == Some(*wanted))
+    })
+}
+
+fn annual_section_marker(line: &str) -> Option<char> {
+    let mut fields = line.split_whitespace();
+    if fields.next() != Some("S") {
+        return None;
+    }
+    let marker = fields.next()?.strip_suffix(':')?;
+    (marker.len() == 1).then(|| marker.chars().next()).flatten()
+}
+
+fn annual_metadata_is_complete(
+    report: &intel_backend::annual_disclosures::ParsedAnnualReport,
+) -> bool {
+    report.filing_year.is_some()
+        && report.filing_date.is_some()
+        && report.reporting_period_start.is_some()
+        && report.reporting_period_end.is_some()
+}
+
+fn normalized_rows_are_complete(parsed: &ParsedDocument) -> bool {
+    let transactions_complete = parsed.transactions.iter().all(|row| {
+        !row.asset_name.trim().is_empty()
+            && matches!(
+                row.transaction_type.as_str(),
+                "purchase" | "sale" | "exchange"
+            )
+            && row.transaction_date.is_some()
+            && row.disclosure_date.is_some()
+            && row.amount_min.is_some()
+            && row.amount_max.is_some()
+            && row.raw_text.trim().len() >= 8
+    });
+    let annual_complete =
+        parsed.annual.as_ref().is_none_or(|annual| {
+            annual.assets.iter().all(|row| {
+                !row.asset_name.trim().is_empty()
+                    && !row.raw_text.trim().is_empty()
+                    && row
+                        .value
+                        .maximum
+                        .is_none_or(|maximum| maximum >= row.value.minimum)
+            }) && annual.liabilities.iter().all(|row| {
+                !row.creditor_name.trim().is_empty()
+                    && !row.raw_text.trim().is_empty()
+                    && row
+                        .amount
+                        .maximum
+                        .is_none_or(|maximum| maximum >= row.amount.minimum)
+            }) && annual.income.iter().all(|row| {
+                !row.source_description.trim().is_empty() && !row.raw_text.trim().is_empty()
+            }) && annual.gifts.iter().all(|row| {
+                !row.source_description.trim().is_empty() && !row.raw_text.trim().is_empty()
+            }) && annual.positions.iter().all(|row| {
+                !row.organization_name.trim().is_empty() && !row.raw_text.trim().is_empty()
+            })
+        });
+    transactions_complete && annual_complete
 }
 
 fn supported_house_filing_type(report_type: &str) -> bool {
@@ -1252,7 +1356,7 @@ fn supported_house_filing_type(report_type: &str) -> bool {
 }
 
 async fn persist_annual_report(
-    pool: &PgPool,
+    transaction: &mut Transaction<'_, Postgres>,
     document_id: i64,
     document_version_id: i64,
     source_year: i32,
@@ -1281,16 +1385,16 @@ async fn persist_annual_report(
     .bind(report.reporting_period_end)
     .bind(source_url)
     .bind(reporting_year)
-    .fetch_one(pool)
+    .fetch_one(&mut **transaction)
     .await?;
 
     sqlx::query("DELETE FROM disclosure_assets WHERE document_version_id = $1")
         .bind(document_version_id)
-        .execute(pool)
+        .execute(&mut **transaction)
         .await?;
     sqlx::query("DELETE FROM disclosure_liabilities WHERE document_version_id = $1")
         .bind(document_version_id)
-        .execute(pool)
+        .execute(&mut **transaction)
         .await?;
     for table in [
         "disclosure_income",
@@ -1301,7 +1405,7 @@ async fn persist_annual_report(
             "DELETE FROM {table} WHERE document_version_id = $1"
         ))
         .bind(document_version_id)
-        .execute(pool)
+        .execute(&mut **transaction)
         .await?;
     }
 
@@ -1320,7 +1424,7 @@ async fn persist_annual_report(
         .bind(asset_type)
         .bind(&asset.ticker)
         .bind(asset.ticker.is_some())
-        .fetch_one(pool)
+        .fetch_one(&mut **transaction)
         .await?;
         sqlx::query(
             r#"INSERT INTO disclosure_assets
@@ -1347,7 +1451,7 @@ async fn persist_annual_report(
             "asset_type_code": asset.asset_type_code,
             "range": asset.value.raw,
         }))
-        .execute(pool)
+        .execute(&mut **transaction)
         .await?;
         if asset.ticker.is_some() {
             sqlx::query(
@@ -1358,7 +1462,7 @@ async fn persist_annual_report(
             )
             .bind(format!("{document_version_id}:{}", asset.asset_name))
             .bind("Ticker requires SEC/company identity resolution")
-            .execute(pool)
+            .execute(&mut **transaction)
             .await?;
         }
     }
@@ -1385,7 +1489,7 @@ async fn persist_annual_report(
         .bind(report.reporting_period_end.or(report.filing_date))
         .bind(&liability.raw_text)
         .bind(serde_json::json!({ "range": liability.amount.raw }))
-        .execute(pool)
+        .execute(&mut **transaction)
         .await?;
     }
     for income in &report.income {
@@ -1404,7 +1508,7 @@ async fn persist_annual_report(
         .bind(income.amount.as_ref().and_then(|amount| amount.maximum))
         .bind(report.reporting_period_end.or(report.filing_date))
         .bind(&income.raw_text)
-        .execute(pool)
+        .execute(&mut **transaction)
         .await?;
     }
     for gift in &report.gifts {
@@ -1423,7 +1527,7 @@ async fn persist_annual_report(
         .bind(gift.value.as_ref().and_then(|value| value.maximum))
         .bind(report.reporting_period_end.or(report.filing_date))
         .bind(&gift.raw_text)
-        .execute(pool)
+        .execute(&mut **transaction)
         .await?;
     }
     for position in &report.positions {
@@ -1439,7 +1543,7 @@ async fn persist_annual_report(
         .bind(&position.organization_name)
         .bind(&position.position_title)
         .bind(&position.raw_text)
-        .execute(pool)
+        .execute(&mut **transaction)
         .await?;
     }
     Ok(())
@@ -1930,9 +2034,11 @@ fn truncate_utf8(input: &str, max_bytes: usize) -> &str {
 #[cfg(test)]
 mod tests {
     use super::{
-        recovery_priorities, supported_house_filing_type, truncate_utf8, IndexEntry,
-        RECOVER_DOWNLOAD_SQL, RECOVER_PARSE_SQL,
+        recovery_priorities, required_annual_sections_are_present, required_rows_present,
+        supported_house_filing_type, truncate_utf8, IndexEntry, RECOVER_DOWNLOAD_SQL,
+        RECOVER_PARSE_SQL,
     };
+    use crate::parsers::DocumentLayout;
 
     #[test]
     fn parses_real_house_clerk_index_shape() {
@@ -1972,6 +2078,71 @@ mod tests {
         for unsupported in ["B", "C", "D", "E", "G", "H", "W", "X"] {
             assert!(!supported_house_filing_type(unsupported));
         }
+    }
+
+    #[test]
+    fn parsed_status_requires_the_layouts_primary_record_family() {
+        assert!(required_rows_present(
+            DocumentLayout::PtrElectronic2022Plus,
+            1,
+            0,
+            true,
+            false,
+        ));
+        assert!(!required_rows_present(
+            DocumentLayout::PtrElectronic2022Plus,
+            0,
+            4,
+            true,
+            true,
+        ));
+        assert!(required_rows_present(
+            DocumentLayout::AnnualElectronic,
+            0,
+            1,
+            true,
+            true,
+        ));
+        assert!(!required_rows_present(
+            DocumentLayout::AnnualElectronic,
+            3,
+            0,
+            true,
+            true,
+        ));
+        assert!(!required_rows_present(
+            DocumentLayout::AnnualElectronic,
+            0,
+            1,
+            true,
+            false,
+        ));
+        assert!(!required_rows_present(
+            DocumentLayout::AnnualElectronic,
+            0,
+            5,
+            false,
+            true,
+        ));
+        assert!(!required_rows_present(
+            DocumentLayout::Unknown,
+            3,
+            3,
+            true,
+            true,
+        ));
+    }
+
+    #[test]
+    fn one_annual_section_cannot_prove_document_completeness() {
+        let one_section = "S A: Assets\nAsset Owner Value\nExample Fund $1,001 - $15,000";
+        assert!(!required_annual_sections_are_present(one_section));
+
+        let complete_section_markers =
+            "S A: Assets\nS C: Income\nS D: Liabilities\nS E: Positions\nS G: Gifts";
+        assert!(required_annual_sections_are_present(
+            complete_section_markers
+        ));
     }
 
     #[test]

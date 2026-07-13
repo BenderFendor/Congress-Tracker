@@ -430,9 +430,7 @@ pub async fn persist_parsed_report(
                (document_id,owner_type,asset_name,ticker,transaction_type,amount_min,
                 amount_max,transaction_date,disclosure_date,filing_url,raw_json)
                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-               ON CONFLICT (document_id,owner_type,asset_name,ticker,transaction_type,transaction_date)
-               DO UPDATE SET amount_min=EXCLUDED.amount_min,amount_max=EXCLUDED.amount_max,
-                             filing_url=EXCLUDED.filing_url,raw_json=EXCLUDED.raw_json"#,
+               ON CONFLICT DO NOTHING"#,
         )
         .bind(document_id)
         .bind(&row.owner_type)

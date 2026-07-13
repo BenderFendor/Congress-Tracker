@@ -180,8 +180,7 @@ impl Repository {
                 transaction_type, amount_min, amount_max, transaction_date, disclosure_date,
                 filing_url, raw_json)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-             ON CONFLICT (document_id, owner_type, asset_name, ticker, transaction_type, transaction_date)
-             DO NOTHING",
+             ON CONFLICT DO NOTHING",
         )
         .bind(input.document_id)
         .bind(input.bioguide_id)
