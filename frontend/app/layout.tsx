@@ -34,7 +34,7 @@ export default function RootLayout({
           <Suspense fallback={null}>{children}</Suspense>
           <CommandPalette />
         </ThemeProvider>
-        <Analytics />
+        {process.env.VERCEL ? <Analytics /> : null}
       </body>
     </html>
   )

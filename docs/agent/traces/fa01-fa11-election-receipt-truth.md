@@ -33,12 +33,16 @@ remain absent while candidate receipt links use the canonical search parameter.
 - Chrome MCP at 1440 by 1000 and 390 by 844: no document-level horizontal overflow and no console warning or error.
 - Chrome MCP at `http://localhost:3001/fec/receipts`: default minimum and maximum inputs were empty rather than zero.
 - Chrome MCP at `http://localhost:3001/candidates`: generated receipt links used `q`, `page`, and `per_page`, with no unsupported `search` parameter.
+- Chrome MCP receipt filter round trip: AIPAC, cycle 2024, minimum $1,000,
+  maximum $5,000 produced five canonical matches in a 671 ms loaded navigation;
+  Reset restored empty query and amount inputs plus 6,345,445 default matches.
 
 ## Browser evidence
 
 - `docs/agent/traces/elections-desktop-1440.png`
 - `docs/agent/traces/elections-mobile-loaded.png`
 - `docs/agent/traces/fec-receipts-default-mobile.png`
+- `docs/agent/traces/fa11-receipt-filter-roundtrip.png`
 - `docs/agent/traces/elections-desktop.snapshot.txt`
 - `docs/agent/traces/elections-mobile.snapshot.txt`
 
@@ -71,8 +75,7 @@ provenance contract are implemented first.
 
 ## Status
 
-Implemented in commit `e75ca39`, tag
-`fa01-fa11-election-receipt-truth`. FA-11 still needs a final browser filter
-round trip and measured receipt latency for strict ledger closure. FA-01 remains
-open for certified result ingestion and state-to-county reconciliation, while
-its public misinformation defect is fixed.
+FA-11 is done in commit `e75ca39`, tag
+`fa01-fa11-election-receipt-truth`, with final browser proof recorded above.
+FA-01 remains open for certified result ingestion and state-to-county
+reconciliation, while its public misinformation defect is fixed.

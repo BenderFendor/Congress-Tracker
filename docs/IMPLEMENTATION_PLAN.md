@@ -224,10 +224,12 @@ where applicable, worksheet, focused commit, and milestone tag all exist.
 - **FA-05 implementation complete, clean-checkout CI proof pending:** default
   suites are deterministic and provider-backed flows are separated, but the
   hosted workflow must still pass from the committed checkpoint before closure.
-- **FA-11 implementation complete, final browser filter-round-trip and measured
-  receipt latency pending:** absent bounds and canonical candidate links are
-  fixed and tested. Evidence:
-  `docs/agent/traces/fa01-fa11-election-receipt-truth.md`.
+- **FA-11 closed:** absent bounds and canonical candidate links are fixed;
+  Chrome proved populated default results, an AIPAC/cycle/$1,000-$5,000 filter
+  round trip, five matching canonical rows, reset-to-empty controls, and a 671
+  ms loaded navigation. Evidence:
+  `docs/agent/traces/fa01-fa11-election-receipt-truth.md`, tag
+  `fa01-fa11-election-receipt-truth`.
 - **FA-01 partially repaired:** filing-count-derived ratings and party lean are
   removed, DEM/REP classification is corrected, and Chrome proof is recorded.
   Certified state/county result ingestion and exact reconciliation remain open.
@@ -446,8 +448,7 @@ for the configured election cycles with honest coverage semantics.
 7. Populate member donor, committee, and influence-network rankings only from canonical cycle-complete records.
 8. Keep `Totals only` and `Rankings unavailable` when a member has official totals but lacks complete canonical rankings.
 9. [x] Fix FA-02's committee and network attribution before any influence amount is public.
-10. [x] Fix FA-11's default receipt query and candidate receipt links. Final
-    release closure still requires the ledger's browser and latency proof.
+10. [x] Fix FA-11's default receipt query and candidate receipt links.
 11. Repair resumable-download identity and archive replacement semantics; prove
     ETag or content-range validation and removal of records absent from a
     replacement archive.
