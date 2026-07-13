@@ -1,15 +1,18 @@
+pub mod annual_disclosures;
 pub mod cache;
-pub mod fec_bulk;
 pub mod config;
 pub mod db;
 pub mod disclosures;
 pub mod entity_resolution;
+pub mod fec_bulk;
 pub mod models;
 pub mod normalize;
 pub mod provenance;
 pub mod repository;
 pub mod routes;
 pub mod schema;
+pub mod sec_assets;
+pub mod senate_efd;
 pub mod tracing;
 
 pub use cache::CacheLayer;

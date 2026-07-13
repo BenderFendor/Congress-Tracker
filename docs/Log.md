@@ -4,6 +4,29 @@ This log records changes to public behavior, developer workflows, data
 contracts, and verification requirements. It does not replace Git history or
 the detailed worksheets under `docs/agent/traces/`.
 
+## 2026-07-12 - Election Filing Semantics And Receipt Query Truth
+
+- Removed race ratings, party lean, and competitiveness claims derived from
+  FEC candidate filing counts; the election atlas now labels these records as
+  filings and explicitly says they are not results or forecasts.
+- Added explicit classification for common FEC Democratic, Republican, and
+  independent party codes.
+- Preserved absent receipt amount filters instead of converting them to zero
+  and changed candidate receipt links to the canonical search parameter.
+- Added deterministic regression tests plus loaded desktop and mobile Chrome
+  evidence. Certified state and county result ingestion remains open.
+
+## 2026-07-12 - Hermetic And Isolated Verification Topology
+
+- Split deterministic frontend tests from populated live API flows so default
+  tests and CI no longer require or accidentally reuse a backend on port 4020.
+- Added an explicit live API wrapper that builds the current backend and runs it
+  on an isolated port before testing the representative populated database.
+- Replaced the stale Senate coverage assertion with the current explicit state
+  contract and made the live suite fail closed when the wrapper is bypassed.
+- Kept provider-backed and populated integration flows out of default CI while
+  compiling them and running deterministic database contracts separately.
+
 ## 2026-07-12 - Fresh-Eyes Audit Fused Into Master Plan
 
 - Consolidated all 28 fresh-eyes audit findings into the living implementation

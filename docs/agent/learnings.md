@@ -97,3 +97,42 @@ What failed:
 Future agents should:
 - Treat published CSV headers as contracts and test representative rows.
 - Keep ingestion idempotent, bounded, failure-isolated, and automatic; manual commands are diagnostics only.
+
+# 2026-07-11 — Disclosure and FEC warehouse guardrails
+
+What worked:
+- Bounded Tokio task sets improved House downloads measurably while keeping parser concurrency at two; `spawn_blocking` is required for pdftotext, OCR, and parser CPU work.
+- House annual PDF text can interleave asset values with adjacent income columns. Parse only the first value range and reject inverted bounds before persistence.
+- FEC receipt browsing needs precomputed cycle counts; a window count over millions of canonical rows made the public endpoint exceed 18 seconds.
+- Senate eFD discovery must keep the terms gate explicit and stage official report links before parsing.
+
+Future agents should:
+- Keep backfill discovery incremental so one large Clerk index does not block downloads, parsing, and resolution.
+- Treat impossible FEC dates as unresolved source data rather than emitting dates outside the congressional reporting window.
+- Preserve nullable upper bounds for unbounded disclosure categories and never turn missing coverage into zero totals.
+- Keep public lobbying search parameters broad enough to match registrants, clients, and issue text; a UI search that silently maps to one field creates false empty states.
+- Truncate parser diagnostics on UTF-8 character boundaries; byte slicing unknown-layout text can panic the worker and stop an otherwise healthy backfill.
+
+# 2026-07-12 — M0-M6 end-to-end verification patterns
+
+Context:
+- Completed full M0-M6 implementation plan verification across backend, frontend, and database
+- Ran browser verification on 11 critical routes at 1440px without errors
+- All 66 backend tests pass, 8 frontend tests pass, production build succeeds
+
+What worked:
+- Adding missing struct fields to fix cross-module compilation errors (raw_text on ParsedPtrTransaction for senate_efd)
+- Following existing route handler patterns when adding new endpoints (lobbying clients/registrants follow the same Query/Response convention as filings)
+- CI workflow matches the exact commands from scripts/self-test for consistency
+- Parallel subagents for M1/M2/M3 investigation produced ~4,200 lines of functional code without breaking compilation
+
+What failed:
+- Full self-test timed out at 600s due to compile-from-scratch (target directory cleaned); individual checks all pass
+- 2024 FEC cycle ingestion still in `running` state — code is correct but runtime depends on external API completion
+- Senate eFD pipeline requires SENATE_EFD_ACCEPT_TERMS=1 — code exists and compiles but live execution needs operator consent
+
+Future agents should:
+- Run individual verification commands (cargo check, cargo test, pnpm typecheck, pnpm build) rather than the monolithic self-test when the build cache is cold
+- Prefer adding new route handlers that follow existing Query/Response patterns rather than inventing new conventions
+- Verify cross-module compilation after adding struct fields that are consumed in other modules
+- Check the ingestion state (source_runs, ingest_jobs) when a data-dependent endpoint returns empty — the code may be correct but the data may not be loaded

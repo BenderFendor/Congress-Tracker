@@ -1,5 +1,29 @@
 # Known Errors
 
+## Next Dev Loses Webpack Chunks During A Concurrent Production Build
+
+Symptom:
+
+```text
+Error: Cannot find module './983.js'
+Caching failed ... .next/server/vendor-chunks
+```
+
+Cause:
+
+- `next dev` and `next build` share `.next` by default. Running the production
+  build while a development server is active can replace files the server is
+  still using.
+
+Fix:
+
+1. Stop the development server before `pnpm build` or `scripts/self-test`.
+2. Restart `next dev` after the build completes.
+3. Verification scripts that need both processes should configure isolated
+   Next output directories rather than sharing `.next`.
+
+---
+
 ## Chrome MCP Has No DevToolsActivePort
 
 Symptom:
@@ -67,8 +91,32 @@ Cause:
 
 Fix:
 ```bash
-cd backend && cargo run -p backend_server
+cd backend && cargo run -p intel_backend --bin intel_backend
 ```
+
+---
+
+## Frontend API tests pass against a stale backend
+
+Symptom:
+
+- `pnpm test` passes while current Rust source and the response on port 4020
+  expose different API states.
+- CI frontend tests fail because no backend exists, even though the same command
+  passed on a developer workstation.
+
+Cause:
+
+- Populated API flows were included in the deterministic `*.test.mjs` glob and
+  defaulted to a manually managed backend on port 4020.
+- A prior backend binary could therefore satisfy assertions after source changed.
+
+Fix:
+
+1. Use `pnpm test:unit` or `pnpm verify` for deterministic frontend checks.
+2. Use `DATABASE_URL=... pnpm test:live-api` for populated API proof.
+3. Do not call `e2e-api-flows.live.mjs` directly. The wrapper builds the current
+   backend, starts it on an isolated port, and terminates that exact process.
 
 ---
 
@@ -233,3 +281,18 @@ Fix:
 - Use the canonical member, bill, committee, trade, funding, and filing routes. If a canonical
   source is not available yet, render an explicit unavailable state instead of returning fixture
   data or an empty success response.
+
+## Census Data API redirects to a missing-key HTML page
+
+**Symptom:** A county-name request returns HTTP 200 after redirects but the
+body is an HTML `Missing Key` page, so JSON parsing fails and map labels fall
+back to raw county codes.
+
+**Cause:** The Census Data API endpoint requires a key in this environment.
+HTTP status alone does not prove a JSON contract.
+
+**Fix:** Use the official Census TIGERweb `State_County` query endpoint for
+county identities and boundaries, scope each request with a supported two-digit
+state FIPS code, request simplified GeoJSON, validate the response shape, and
+cache the normalized result. The local route is
+`/api/elections/counties?state=06`.

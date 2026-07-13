@@ -18,7 +18,14 @@ impl Db {
     /// Returns `sqlx::Error` if the pool cannot be created or a connection
     /// cannot be established.
     pub async fn connect(database_url: &str) -> Result<Self, sqlx::Error> {
-        let pool = sqlx::PgPool::connect(database_url).await?;
+        use sqlx::postgres::PgPoolOptions;
+        use std::time::Duration;
+
+        let pool = PgPoolOptions::new()
+            .max_connections(20)
+            .acquire_timeout(Duration::from_secs(10))
+            .connect(database_url)
+            .await?;
         Ok(Self { pool })
     }
 

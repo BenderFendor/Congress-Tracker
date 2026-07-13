@@ -1,6 +1,7 @@
 use crate::models::{
-    BillAction, BillInfo, BillIntel, BillSponsorInfo, BillTextVersion, LobbyingMatch,
-    NetworkAmount, ProvenanceSource, ProvenanceSummary, SponsorFundingOverlay, VoteInfo,
+    BillAction, BillAmendment, BillInfo, BillIntel, BillSponsorInfo, BillTextVersion,
+    LobbyingMatch, NetworkAmount, ProvenanceSource, ProvenanceSummary, SponsorFundingOverlay,
+    VoteInfo,
 };
 use crate::repository::Repository;
 use chrono::NaiveDate;
@@ -18,6 +19,24 @@ pub struct BillUpsert<'a> {
     pub latest_action_text: Option<&'a str>,
     pub status: &'a str,
     pub url: Option<&'a str>,
+    pub source_run_id: Option<uuid::Uuid>,
+}
+
+pub struct BillAmendmentUpsert<'a> {
+    pub bill_id: &'a str,
+    pub congress: i32,
+    pub bill_type: &'a str,
+    pub bill_number: i32,
+    pub amendment_number: Option<&'a str>,
+    pub description: Option<&'a str>,
+    pub amendment_type: Option<&'a str>,
+    pub sponsor_name: Option<&'a str>,
+    pub sponsor_bioguide_id: Option<&'a str>,
+    pub introduced_date: Option<chrono::NaiveDate>,
+    pub latest_action_date: Option<chrono::NaiveDate>,
+    pub latest_action_text: Option<&'a str>,
+    pub chamber: Option<&'a str>,
+    pub status: &'a str,
     pub source_run_id: Option<uuid::Uuid>,
 }
 
@@ -121,6 +140,51 @@ impl Repository {
         .bind(action_type)
         .bind(chamber)
         .bind(source_run_id)
+        .execute(self.pool())
+        .await?;
+
+        Ok(())
+    }
+
+    /// Upsert a bill amendment row.
+    pub async fn upsert_bill_amendment(
+        &self,
+        input: BillAmendmentUpsert<'_>,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"INSERT INTO bill_amendments
+               (bill_id, congress, bill_type, bill_number, amendment_number,
+                description, amendment_type, sponsor_name, sponsor_bioguide_id,
+                introduced_date, latest_action_date, latest_action_text,
+                chamber, status, source_run_id)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+               ON CONFLICT (bill_id, amendment_number) DO UPDATE SET
+                 description        = COALESCE(EXCLUDED.description, bill_amendments.description),
+                 amendment_type     = COALESCE(EXCLUDED.amendment_type, bill_amendments.amendment_type),
+                 sponsor_name       = COALESCE(EXCLUDED.sponsor_name, bill_amendments.sponsor_name),
+                 sponsor_bioguide_id = COALESCE(EXCLUDED.sponsor_bioguide_id, bill_amendments.sponsor_bioguide_id),
+                 introduced_date    = COALESCE(EXCLUDED.introduced_date, bill_amendments.introduced_date),
+                 latest_action_date = EXCLUDED.latest_action_date,
+                 latest_action_text = EXCLUDED.latest_action_text,
+                 chamber            = COALESCE(EXCLUDED.chamber, bill_amendments.chamber),
+                 status             = EXCLUDED.status,
+                 source_run_id      = COALESCE(EXCLUDED.source_run_id, bill_amendments.source_run_id)"#,
+        )
+        .bind(input.bill_id)
+        .bind(input.congress)
+        .bind(input.bill_type)
+        .bind(input.bill_number)
+        .bind(input.amendment_number)
+        .bind(input.description)
+        .bind(input.amendment_type)
+        .bind(input.sponsor_name)
+        .bind(input.sponsor_bioguide_id)
+        .bind(input.introduced_date)
+        .bind(input.latest_action_date)
+        .bind(input.latest_action_text)
+        .bind(input.chamber)
+        .bind(input.status)
+        .bind(input.source_run_id)
         .execute(self.pool())
         .await?;
 
@@ -322,6 +386,10 @@ impl Repository {
         })
         .collect();
 
+        // Normalized Congress.gov amendments are part of the canonical bill
+        // intelligence contract, not a second page-specific data source.
+        let amendments = self.get_bill_amendments(bill_id).await?;
+
         // Funding overlay from sponsors/cosponsors
         let funding_overlay = self.build_funding_overlay(&sponsors, &cosponsors).await?;
 
@@ -329,6 +397,9 @@ impl Repository {
         let lobbying_overlay = self
             .find_lobbying_by_subject_for_bill(&row.policy_area, &subjects, bill_id)
             .await?;
+
+        // LDA-to-bill links from relationship_evidence
+        let lobbying_bill_links = self.get_bill_lobbying_links(bill_id).await?;
 
         let provenance = ProvenanceSummary {
             sources: vec![ProvenanceSource {
@@ -348,8 +419,10 @@ impl Repository {
             subjects,
             text_versions,
             related_votes,
+            amendments,
             funding_overlay,
             lobbying_overlay,
+            lobbying_bill_links,
             provenance,
         }))
     }
@@ -453,7 +526,7 @@ impl Repository {
 
             // Read total receipts from the materialized view
             let funding: Option<(f64,)> = sqlx::query_as(
-                "SELECT COALESCE(SUM(direct_receipts), 0) FROM member_funding_cycle_mv WHERE bioguide_id = $1",
+                "SELECT COALESCE(SUM(direct_receipts), 0)::float8 FROM member_funding_cycle_mv WHERE bioguide_id = $1",
             )
             .bind(bioguide_id)
             .fetch_optional(self.pool())
@@ -462,10 +535,12 @@ impl Repository {
 
             // Top networks
             let net_rows: Vec<(String, f64, String)> = sqlx::query_as(
-                "SELECT network_slug, COALESCE(SUM(direct_pac + independent_supporting + independent_opposing), 0), confidence
+                "SELECT network_slug,
+                        COALESCE(SUM(direct_amount + support_ie_amount + oppose_ie_amount), 0)::float8,
+                        'source_backed'::text
                  FROM influence_network_member_mv
                  WHERE bioguide_id = $1
-                 GROUP BY network_slug, confidence
+                 GROUP BY network_slug
                  ORDER BY 2 DESC
                  LIMIT 5",
             )
@@ -564,8 +639,27 @@ impl Repository {
                 });
             }
         }
-
         Ok(matches)
+    }
+
+    /// Query amendments for a given bill from the bill_amendments table.
+    pub async fn get_bill_amendments(
+        &self,
+        bill_id: &str,
+    ) -> Result<Vec<BillAmendment>, sqlx::Error> {
+        sqlx::query_as::<_, BillAmendment>(
+            r#"SELECT bill_id, congress, bill_type, bill_number,
+                      amendment_number, description, amendment_type,
+                      sponsor_name, sponsor_bioguide_id,
+                      introduced_date, latest_action_date, latest_action_text,
+                      chamber, status
+               FROM bill_amendments
+               WHERE bill_id = $1
+               ORDER BY latest_action_date DESC NULLS LAST, amendment_number ASC"#,
+        )
+        .bind(bill_id)
+        .fetch_all(self.pool())
+        .await
     }
 }
 
@@ -629,3 +723,5 @@ struct LobbyingMatchRow {
     issue_code: Option<String>,
     issue_display: Option<String>,
 }
+
+// ── Public row types ────────────────────────────────────────────────────

@@ -121,7 +121,7 @@ export default function LobbyingPage() {
         </button>
       </ArchiveSearch>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start">
+      <div className="archive-content grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start">
         <section className="archive-panel" aria-labelledby="lobbying-results-title">
           <div className="archive-panel-head">
             <div><div className="archive-panel-kicker">Raw public records</div><h2 id="lobbying-results-title">Recent filings</h2></div>

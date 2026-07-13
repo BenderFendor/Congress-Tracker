@@ -18,6 +18,28 @@ export type MemberFunding = {
     committee_id: string;
     committee_name: string;
     amount: number;
+    relationship_type?: string | null;
+    resolution_status?: string | null;
+    transaction_count?: number | null;
+  }>;
+  committee_relationships: Array<{
+    committee_id: string;
+    committee_name: string;
+    amount: number;
+    relationship_type?: string | null;
+    resolution_status?: string | null;
+    transaction_count?: number | null;
+  }>;
+  leadership_pacs: Array<{
+    committee_id: string;
+    committee_name: string;
+    sponsor_name?: string | null;
+    cash_on_hand?: number | null;
+    total_disbursements?: number | null;
+    total_receipts?: number | null;
+    coverage_end_date?: string | null;
+    source_url?: string | null;
+    resolution_status: string;
   }>;
   influence_networks: Array<{
     network_slug: string;

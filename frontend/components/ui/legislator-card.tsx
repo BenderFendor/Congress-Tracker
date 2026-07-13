@@ -1,10 +1,9 @@
 "use client"
 
 import { MapPin, Landmark, Calendar, TrendingUp, DollarSign, BarChart3, DatabaseZap, CakeSlice, History } from "lucide-react"
-import { useState } from "react"
 import { Legislator } from "@/lib/services/legislators"
 import Link from "next/link"
-import Image from "next/image"
+import { MemberPortrait } from "@/components/ui/member-identity"
 
 interface LegislatorCardProps {
   member: Legislator
@@ -28,24 +27,15 @@ function completedServiceYears(startDate: string | null | undefined) {
 }
 
 export function LegislatorCard({ member }: LegislatorCardProps) {
-  const [imageFailed, setImageFailed] = useState(false)
   const tradeStats = member.trade_summary?.stats
   const matchConfidence = member.trade_summary?.match_confidence === "exact_id" ? 100 : null
   const party = member.party || "Unknown"
   const isDemocrat = party.toLowerCase().includes("democrat")
   const isRepublican = party.toLowerCase().includes("republican")
   const hasTradeData = Boolean(tradeStats && (tradeStats.count_trades > 0 || tradeStats.volume > 0 || tradeStats.count_issuers > 0))
-  const portrait = member.avatar || member.depiction_url || (member.id ? `https://bioguide.congress.gov/bioguide/photo/${member.id[0]}/${member.id}.jpg` : "")
   const roleLabel = member.chamber.toLowerCase() === "senate" ? "Senator" : member.chamber.toLowerCase() === "house" ? "Representative" : member.chamber
   const serviceYears = member.years_in_office == null ? completedServiceYears(member.service_start) : Math.floor(member.years_in_office)
   
-  const initials = member.name
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase()
-
   return (
     <Link
       href={`/legislators/${member.id}`}
@@ -53,21 +43,16 @@ export function LegislatorCard({ member }: LegislatorCardProps) {
     >
       {/* Left: Avatar Section */}
       <div className="member-portrait relative aspect-[4/5] w-full shrink-0 overflow-hidden bg-[#f4ece1]">
-        {portrait && !imageFailed ? (
-          <Image
-            src={portrait}
-            alt={member.name}
-            onError={() => setImageFailed(true)}
-            width={320}
-            height={420}
-            unoptimized
-            className="member-portrait-image"
-          />
-        ) : (
-          <div className="member-portrait-fallback flex h-full w-full items-center justify-center text-[#8a7a63]">
-            <span className="font-serif text-5xl font-bold opacity-50">{initials}</span>
-          </div>
-        )}
+        <MemberPortrait
+          bioguideId={member.bioguide_id}
+          name={member.name}
+          suppliedUrls={[member.avatar, member.depiction_url]}
+          className="contents"
+          imageClassName="member-portrait-image"
+          fallbackClassName="member-portrait-fallback flex h-full w-full items-center justify-center font-serif text-5xl font-bold text-[#8a7a63] opacity-50"
+          width={320}
+          height={420}
+        />
         
         {/* Party Badge Overlay */}
         <div className="absolute top-3 left-3 z-10">

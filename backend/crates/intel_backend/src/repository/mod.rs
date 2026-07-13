@@ -5,6 +5,7 @@ pub mod influence;
 pub mod lobbying;
 pub mod members;
 pub mod organizations;
+pub mod relationships;
 pub mod search;
 pub mod source_runs;
 pub mod trades;

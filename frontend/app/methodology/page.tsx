@@ -1,24 +1,20 @@
-import { Target, AlertTriangle, CheckCircle2, Award, Sliders } from "lucide-react"
+import { Target, AlertTriangle, CheckCircle2, Award } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { ArchivePage } from "@/components/ui/archive-ui"
+import { CompactMasthead } from "@/components/ui/mockup-visuals"
 
 export default function MethodologyPage() {
   return (
-    <div className="min-h-screen bg-background py-10 px-4 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-6xl space-y-12">
-        {/* Header */}
-        <div className="space-y-4 border-b border-border pb-8">
-          <div className="flex items-center gap-2 text-accent">
-            <Sliders className="h-6 w-6" />
-            <span className="text-sm font-semibold uppercase tracking-wider">Methodology & Resolution Engine</span>
-          </div>
-          <h1 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
-            Entity Resolution & Provenance Standards
-          </h1>
-          <p className="max-w-3xl text-lg text-muted-foreground leading-relaxed">
-            To prevent misattribution across millions of disparate legislative, campaign finance, and trading records, CongressTracker implements deterministic entity resolution cascades, tiered confidence scoring, and first-class provenance envelopes.
-          </p>
-        </div>
+    <ArchivePage>
+      <div className="editorial-reference-page">
+        <CompactMasthead
+          eyebrow="Methodology / resolution standard"
+          title="How records become"
+          accent="evidence."
+          description="The deterministic identifiers, confidence thresholds, quarantine rules, and provenance envelopes used to keep public records attributable."
+        />
+        <div className="editorial-reference-content">
 
         {/* Deterministic Entity Resolution Rules */}
         <div className="space-y-6">
@@ -240,7 +236,8 @@ export default function MethodologyPage() {
             </CardContent>
           </Card>
         </div>
+        </div>
       </div>
-    </div>
+    </ArchivePage>
   )
 }

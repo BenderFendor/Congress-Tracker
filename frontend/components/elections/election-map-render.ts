@@ -8,11 +8,11 @@ import type {
   StateFeature,
   StateFips,
 } from "./election-map-helpers"
+import { createCountyPath } from "@/lib/county-map-projection.mjs"
 import {
   STATE_ABBR_BY_FIPS,
   STATE_NAME_BY_FIPS,
   countiesInState,
-  ratingLabel,
 } from "./election-map-helpers"
 
 export type MapView = "national" | "state" | "county"
@@ -36,36 +36,19 @@ export type MapRenderOptions = {
   ) => void
 }
 
-function bucketFor(row: StateAggregate | undefined, metric: Metric): string {
+function bucketFor(row: StateAggregate | undefined): string {
   if (!row || row.total === 0) return "no-data"
-  if (metric !== "rating") return "data-rich"
-  switch (ratingLabel(row)) {
-    case "Safe D": return "safe-d"
-    case "Likely D": return "likely-d"
-    case "Lean D": return "lean-d"
-    case "Tilt D": return "tilt-d"
-    case "Toss-up": return "toss-up"
-    case "Tilt R": return "tilt-r"
-    case "Lean R": return "lean-r"
-    case "Likely R": return "likely-r"
-    case "Safe R": return "safe-r"
-    case "No data": return "no-data"
-    default: return "no-data"
-  }
+  return "data-rich"
 }
 
 function fillPctFor(row: StateAggregate | undefined, metric: Metric, maxValue: number): number {
   if (!row || row.total === 0) return 0
-  if (metric === "rating") {
-    return Math.min(1, Math.abs((row.democratic - row.republican) / row.total) / 0.55)
-  }
   const value = metric === "candidates" ? row.total : metric === "incumbents" ? row.incumbents : row.open
   if (maxValue <= 0) return 0
   return Math.min(1, value / maxValue)
 }
 
 function metricMax(aggregates: Map<StateFips, StateAggregate>, metric: Metric): number {
-  if (metric === "rating") return 1
   let max = 0
   for (const row of aggregates.values()) {
     const v = metric === "candidates" ? row.total : metric === "incumbents" ? row.incumbents : row.open
@@ -94,20 +77,24 @@ export function renderStateMap(container: SVGSVGElement, opts: MapRenderOptions)
   const height = Math.max(420, rect.height)
   svg.attr("viewBox", `0 0 ${width} ${height}`).attr("preserveAspectRatio", "xMidYMid meet")
 
-  const projection = d3.geoAlbersUsa()
-  const path = d3.geoPath(projection)
-
+  const showingCounties = opts.view !== "national" && Boolean(opts.selectedState)
   const features: Feature<Geometry, { name?: string }>[] =
-    opts.view === "state" && opts.selectedState
+    showingCounties && opts.selectedState
       ? countiesInState(opts.countyFeatures, opts.selectedState)
       : opts.stateFeatures
 
-  if (features.length > 0) {
+  const path = showingCounties
+    ? createCountyPath(features, width, height)
+    : d3.geoPath(d3.geoAlbersUsa())
+
+  if (!showingCounties && features.length > 0) {
     const collection: FeatureCollection<Geometry, { name?: string }> = {
       type: "FeatureCollection",
       features,
     }
-    const margin = opts.view === "state" ? 28 : 24
+    const margin = 24
+    const projection = path.projection()
+    if (!projection || !("fitExtent" in projection)) return
     projection.fitExtent(
       [[margin, 64], [width - margin, height - 60]],
       collection,
@@ -118,7 +105,7 @@ export function renderStateMap(container: SVGSVGElement, opts: MapRenderOptions)
   const maxValue = metricMax(opts.aggregates, opts.metric)
   const search = opts.searchQuery.trim().toLowerCase()
 
-  if (opts.view === "state" && opts.selectedState) {
+  if (showingCounties && opts.selectedState) {
     const counties = countiesInState(opts.countyFeatures, opts.selectedState)
     const countiesGroup = root
       .selectAll<SVGPathElement, CountyFeature>("path.election-map-county")
@@ -130,6 +117,11 @@ export function renderStateMap(container: SVGSVGElement, opts: MapRenderOptions)
       .attr("data-state-fips", (d) => String(d.id ?? "").slice(0, 2))
       .attr("data-name", (d) => countyNameOf(String(d.id ?? ""), opts.countyNames))
       .attr("data-lean", "no-data")
+      .attr("data-search-dim", (d) => {
+        if (!search) return "false"
+        const name = countyNameOf(String(d.id ?? ""), opts.countyNames).toLowerCase()
+        return name.includes(search) ? "false" : "true"
+      })
       .attr("aria-pressed", (d) =>
         opts.selectedCounty && String(d.id ?? "") === opts.selectedCounty ? "true" : "false",
       )
@@ -164,7 +156,9 @@ export function renderStateMap(container: SVGSVGElement, opts: MapRenderOptions)
       })
       .on("blur", () => opts.onHover({ type: "county", fips: "" }, 0, 0))
 
-    countiesGroup.attr("opacity", 0).transition().duration(320).attr("opacity", 1)
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    if (reducedMotion) countiesGroup.attr("opacity", 1)
+    else countiesGroup.attr("opacity", 0).transition().duration(320).attr("opacity", 1)
     return
   }
 
@@ -183,7 +177,7 @@ export function renderStateMap(container: SVGSVGElement, opts: MapRenderOptions)
       const fips = String(d.id ?? "")
       return stateNameOf(fips, opts.aggregates)
     })
-    .attr("data-lean", (d) => bucketFor(opts.aggregates.get(String(d.id ?? "")), opts.metric))
+    .attr("data-lean", (d) => bucketFor(opts.aggregates.get(String(d.id ?? ""))))
     .attr("data-fill-pct", (d) => fillPctFor(opts.aggregates.get(String(d.id ?? "")), opts.metric, maxValue).toFixed(3))
     .attr("data-search-dim", (d) => {
       if (!search) return "false"
@@ -269,5 +263,7 @@ export function renderStateMap(container: SVGSVGElement, opts: MapRenderOptions)
     svg.transition().duration(280).call(zoom.transform, d3.zoomIdentity)
   }
 
-  statePath.attr("opacity", 0).transition().duration(360).attr("opacity", 1)
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  if (reducedMotion) statePath.attr("opacity", 1)
+  else statePath.attr("opacity", 0).transition().duration(360).attr("opacity", 1)
 }

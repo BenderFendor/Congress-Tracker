@@ -196,9 +196,9 @@ pub async fn members(
             m.current_party,
             m.current_state,
             m.current_chamber,
-            m.years_in_office,
+            m.years_in_office::double precision AS years_in_office,
             (SELECT COUNT(*) FROM committee_memberships cm WHERE cm.bioguide_id = m.bioguide_id) AS committee_count,
-            m.nominate_dim1,
+            m.nominate_dim1::double precision AS nominate_dim1,
             m.depiction_url,
             COUNT(*) OVER ()::bigint AS total
         FROM members m

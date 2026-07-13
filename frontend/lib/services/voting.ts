@@ -24,7 +24,25 @@ type MemberVotePosition = {
   position: string;
 };
 
-type MemberVotesResponse = { votes: MemberVotePosition[] };
+export type MemberVoteSummary = {
+  congress: number;
+  total_votes: number;
+  missed_votes: number;
+  missed_vote_pct: number | null;
+  party_line_votes: number;
+  party_line_eligible_votes: number;
+  party_line_pct: number | null;
+  first_vote_date: string | null;
+  last_vote_date: string | null;
+};
+
+export type MemberVotesResult = {
+  votes: Vote[];
+  summary: MemberVoteSummary | null;
+  provenance: { sources: Array<{ source: string; status: string }>; warnings: string[] };
+};
+
+type MemberVotesResponse = Omit<MemberVotesResult, "votes"> & { votes: MemberVotePosition[] };
 
 function mapMemberVote(position: MemberVotePosition): Vote {
   return {
@@ -43,7 +61,7 @@ function mapMemberVote(position: MemberVotePosition): Vote {
   };
 }
 
-export async function getMemberVotes(bioguideId: string, congress = 119): Promise<Vote[]> {
+export async function getMemberVotes(bioguideId: string, congress = 119): Promise<MemberVotesResult> {
   const params = new URLSearchParams({ congress: String(congress), limit: "100" });
   const response = await fetch(
     `${BACKEND_URL}/api/members/${encodeURIComponent(bioguideId)}/votes?${params}`,
@@ -53,5 +71,5 @@ export async function getMemberVotes(bioguideId: string, congress = 119): Promis
   }
 
   const data = (await response.json()) as MemberVotesResponse;
-  return data.votes.map(mapMemberVote);
+  return { ...data, votes: data.votes.map(mapMemberVote) };
 }

@@ -1,0 +1,27 @@
+{
+  "classification": [
+    "success"
+  ],
+  "command": [
+    "env",
+    "DATABASE_URL=postgres://congress_tracker:congress_tracker@127.0.0.1:5432/congress_tracker",
+    "FEC_ARCHIVE_DIR=/mnt/Big storage/congress-tracker/fec",
+    "cargo",
+    "run",
+    "-p",
+    "intel_backend",
+    "--bin",
+    "ingest",
+    "--",
+    "fec-bulk",
+    "--cycles",
+    "2026"
+  ],
+  "cwd": "/home/bender/classwork/congress-tracker/backend",
+  "duration_seconds": 22.882,
+  "max_rss_kb": 1086144,
+  "returncode": 0,
+  "stderr_tail": "   Compiling intel_backend v0.1.0 (/home/bender/classwork/congress-tracker/backend/crates/intel_backend)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 7.12s\n     Running `target/debug/ingest fec-bulk --cycles 2026`",
+  "stdout_tail": "2026-07-11T12:04:28.065669Z  INFO sqlx::postgres::notice: relation \"_sqlx_migrations\" already exists, skipping\n2026-07-11T12:04:31.625379Z  INFO intel_backend::fec_bulk::pipeline: FEC archives unchanged; canonical cycle already current cycle=2026\n2026-07-11T12:04:33.692615Z  INFO intel_backend::fec_bulk::download: FEC archive stored dataset=\"leadership2026\" path=/mnt/Big storage/congress-tracker/fec/raw/2026/leadership2026/b078fbe82a97ef099fc6efdad7199376238cb0a72619e4c2edb7f5597f6d5387.csv compressed_bytes=125403 sha256=\"b078fbe82a97ef099fc6efdad7199376238cb0a72619e4c2edb7f5597f6d5387\"\n2026-07-11T12:04:35.669470Z  INFO intel_backend::fec_bulk::download: FEC archive stored dataset=\"independent_expenditure_2026\" path=/mnt/Big storage/congress-tracker/fec/raw/2026/independent_expenditure_2026/191c81b40cc9feea6162652e5fb7d6c142bd52ababc58bc2c8df20caeb3d5220.csv compressed_bytes=2825829 sha256=\"191c81b40cc9feea6162652e5fb7d6c142bd52ababc58bc2c8df20caeb3d5220\"\n2026-07-11T12:04:43.668390Z  WARN sqlx::query: slow statement: execution time exceeded alert threshold summary=\"INSERT INTO fec_transactions (transaction_id, \u2026\" db.statement=\"\\n\\nINSERT INTO fec_transactions\\n           (transaction_id, transaction_type, committee_id, candidate_id,\\n            bioguide_id, contributor_name, contributor_committee_id,\\n            recipient_name, amount, transaction_date, cycle,\\n            support_oppose_indicator, purpose, source_url, raw_json, source_run_id)\\n           SELECT\\n             'fec-ie:' || ie.election_cycle::text || ':' || ie.source_key,\\n             'independent_expenditure'::fec_transaction_type,\\n             CASE WHEN committee.committee_id IS NOT NULL THEN ie.spender_id END,\\n             CASE WHEN candidate.candidate_id IS NOT NULL THEN ie.candidate_id END,\\n             COALESCE(identifier.bioguide_id, candidate.bioguide_id),\\n             ie.spender_name,\\n             ie.spender_id,\\n             ie.candidate_name,\\n             ie.amount,\\n             COALESCE(ie.expenditure_date, ie.dissemination_date),\\n             ie.election_cycle,\\n             ie.support_oppose,\\n             ie.purpose,\\n             CASE WHEN ie.image_number IS NOT NULL AND ie.image_number <> ''\\n                  THEN 'https://docquery.fec.gov/cgi-bin/fecimg/?' || ie.image_number\\n             END,\\n             ie.raw_row || jsonb_build_object(\\n                 'source_dataset', 'fec_bulk_independent_expenditure',\\n                 'canonical_source_key', ie.source_key,\\n                 'spender_resolution_status',\\n                    CASE WHEN committee.committee_id IS NULL THEN 'unresolved' ELSE 'resolved' END,\\n                 'candidate_resolution_status',\\n                    CASE WHEN candidate.candidate_id IS NULL THEN 'unresolved' ELSE 'resolved' END\\n             ),\\n             $2\\n           FROM fec_independent_expenditures ie\\n           LEFT JOIN fec_committees committee ON committee.committee_id = ie.spender_id\\n           LEFT JOIN fec_candidates candidate ON candidate.candidate_id = ie.candidate_id\\n           LEFT JOIN member_identifiers identifier\\n             ON identifier.scheme = 'fec' AND identifier.value = ie.candidate_id\\n           WHERE ie.election_cycle = $1\\n\" rows_affected=9635 rows_returned=0 elapsed=1.286304782s elapsed_secs=1.286304782 slow_threshold=1s\n2026-07-11T12:04:43.668476Z  INFO intel_backend::fec_bulk::rankings: Refreshing member_funding_cycle_mv\n2026-07-11T12:04:43.690827Z  INFO intel_backend::fec_bulk::rankings: member_funding_cycle_mv refreshed\n2026-07-11T12:04:43.754740Z  INFO ingest: FEC bulk ingest complete",
+  "timed_out": false
+}

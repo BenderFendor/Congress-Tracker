@@ -38,12 +38,26 @@ export async function getRelationships(filters: {
   return response.json();
 }
 
-export async function getOrganization(organizationId: string): Promise<{
-  organization: Record<string, unknown>;
-  identifiers: Array<Record<string, unknown>>;
+export type OrganizationIdentifier = {
+  scheme: string;
+  value: string;
+  source: string;
+};
+
+export type OrganizationProfile = {
+  organization_id: number;
+  canonical_name: string;
+  organization_type: string;
+  description?: string | null;
+  website_url?: string | null;
+  identifiers: OrganizationIdentifier[];
   relationships: RelationshipEvidence[];
-}> {
+  provenance?: ProvenanceSummary;
+};
+
+export async function getOrganization(organizationId: string): Promise<OrganizationProfile | null> {
   const response = await fetch(`${BACKEND_URL}/api/organizations/${encodeURIComponent(organizationId)}`);
+  if (response.status === 404) return null;
   if (!response.ok) throw new Error(`Organization request failed (${response.status})`);
   return response.json();
 }

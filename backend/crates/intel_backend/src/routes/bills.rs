@@ -1,11 +1,10 @@
-use crate::models::BillIntel;
+use crate::models::{BillAmendment, BillIntel};
 use crate::routes::AppState;
 use crate::schema;
 use axum::extract::{Path, Query, State};
 use axum::Json;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-
 #[derive(Debug, Deserialize)]
 pub struct ListBillsQuery {
     pub congress: Option<i32>,
@@ -204,4 +203,55 @@ pub async fn get_bill_intel(
     state.cache.set(cache_key, cache_value).await;
 
     Ok(Json(intel))
+}
+// ── Bill Amendments ──
+
+/// GET /api/bills/{congress}/{bill_type}/{bill_number}/amendments
+#[derive(Debug, Serialize)]
+pub struct BillAmendmentsResponse {
+    pub bill_id: String,
+    pub amendments: Vec<BillAmendment>,
+    pub total: usize,
+    pub provenance: crate::models::ProvenanceSummary,
+}
+
+pub async fn get_bill_amendments(
+    State(state): State<Arc<AppState>>,
+    Path((congress_str, bill_type, bill_number_str)): Path<(String, String, String)>,
+) -> Result<Json<BillAmendmentsResponse>, crate::models::AppError> {
+    let congress: i32 = congress_str.parse().map_err(|_| {
+        crate::models::AppError::BadRequest(format!("Invalid congress: {}", congress_str))
+    })?;
+    let bill_number: i32 = bill_number_str.parse().map_err(|_| {
+        crate::models::AppError::BadRequest(format!("Invalid bill_number: {}", bill_number_str))
+    })?;
+    let bill_type = bill_type.to_lowercase();
+    let bill_id = crate::schema::build_bill_id(congress, &bill_type, bill_number);
+
+    let amendments = state
+        .repo
+        .get_bill_amendments(&bill_id)
+        .await
+        .map_err(|e| crate::models::AppError::Internal(format!("database error: {}", e)))?;
+
+    let total = amendments.len();
+
+    Ok(Json(BillAmendmentsResponse {
+        bill_id,
+        amendments,
+        total,
+        provenance: crate::models::ProvenanceSummary {
+            sources: vec![crate::models::ProvenanceSource {
+                source: "congress_gov".to_string(),
+                status: if total > 0 {
+                    "loaded".to_string()
+                } else {
+                    "empty".to_string()
+                },
+                fetched_at: chrono::Utc::now().to_rfc3339().into(),
+                confidence: Some("official_api".to_string()),
+            }],
+            warnings: Vec::new(),
+        },
+    }))
 }

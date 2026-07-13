@@ -130,9 +130,29 @@ pub struct BillIntel {
     pub subjects: Vec<String>,
     pub text_versions: Vec<BillTextVersion>,
     pub related_votes: Vec<VoteInfo>,
+    pub amendments: Vec<BillAmendment>,
     pub funding_overlay: Vec<SponsorFundingOverlay>,
     pub lobbying_overlay: Vec<LobbyingMatch>,
+    pub lobbying_bill_links: Vec<LobbyingBillLink>,
     pub provenance: ProvenanceSummary,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct BillAmendment {
+    pub bill_id: String,
+    pub congress: i32,
+    pub bill_type: String,
+    pub bill_number: i32,
+    pub amendment_number: Option<String>,
+    pub description: Option<String>,
+    pub amendment_type: Option<String>,
+    pub sponsor_name: Option<String>,
+    pub sponsor_bioguide_id: Option<String>,
+    pub introduced_date: Option<NaiveDate>,
+    pub latest_action_date: Option<NaiveDate>,
+    pub latest_action_text: Option<String>,
+    pub chamber: Option<String>,
+    pub status: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -214,6 +234,15 @@ pub struct LobbyingMatch {
     pub confidence: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LobbyingBillLink {
+    pub filing_uuid: String,
+    pub registrant_name: String,
+    pub client_name: String,
+    pub matched_bill_text: Option<String>,
+    pub confidence: String,
+}
+
 // ── Funding ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -227,6 +256,10 @@ pub struct MemberFunding {
     pub independent_expenditures_opposing: f64,
     pub top_donors: Vec<DonorSummary>,
     pub top_committees: Vec<CommitteeFunding>,
+    #[serde(default)]
+    pub committee_relationships: Vec<CommitteeFunding>,
+    #[serde(default)]
+    pub leadership_pacs: Vec<LeadershipPacFunding>,
     pub influence_networks: Vec<InfluenceNetworkFunding>,
     pub has_successful_fec_run: bool,
     pub provenance: ProvenanceSummary,
@@ -244,6 +277,22 @@ pub struct CommitteeFunding {
     pub committee_id: String,
     pub committee_name: String,
     pub amount: f64,
+    pub relationship_type: Option<String>,
+    pub resolution_status: Option<String>,
+    pub transaction_count: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct LeadershipPacFunding {
+    pub committee_id: String,
+    pub committee_name: String,
+    pub sponsor_name: Option<String>,
+    pub cash_on_hand: Option<f64>,
+    pub total_disbursements: Option<f64>,
+    pub total_receipts: Option<f64>,
+    pub coverage_end_date: Option<NaiveDate>,
+    pub source_url: Option<String>,
+    pub resolution_status: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -262,6 +311,8 @@ pub struct InfluenceNetworkFunding {
 pub struct InfluenceNetwork {
     pub network_slug: String,
     pub display_name: String,
+    /// Search-only labels. Canonical names and FEC identities remain separate fields.
+    pub aliases: Vec<String>,
     pub description: String,
     pub category: String,
     pub confidence: String,
@@ -287,6 +338,8 @@ pub struct CommitteeFinancial {
     pub direct_contributions: f64,
     pub independent_supporting: f64,
     pub independent_opposing: f64,
+    /// Total reported activity across the three separate channels. This is not
+    /// an amount received by a campaign.
     pub total: f64,
 }
 
@@ -299,7 +352,13 @@ pub struct RecipientMember {
     pub party: String,
     pub chamber: String,
     pub state: String,
+    /// Money transferred directly to the member's campaign committees.
     pub total_received: f64,
+    pub direct_contributions: f64,
+    pub independent_supporting: f64,
+    pub independent_opposing: f64,
+    /// Total reported activity across direct, support, and opposition channels.
+    pub total_activity: f64,
 }
 
 /// Full financial breakdown for an influence network in a given cycle.
@@ -310,6 +369,7 @@ pub struct InfluenceNetworkFinancials {
     pub total_direct_contributions: f64,
     pub total_independent_supporting: f64,
     pub total_independent_opposing: f64,
+    /// Total reported activity across separate channels, not money received.
     pub total_all: f64,
     pub committees: Vec<CommitteeFinancial>,
     pub top_recipients: Vec<RecipientMember>,
@@ -325,7 +385,10 @@ pub struct MemberVoteSummary {
     pub missed_votes: i64,
     pub missed_vote_pct: Option<f64>,
     pub party_line_votes: i64,
+    pub party_line_eligible_votes: i64,
     pub party_line_pct: Option<f64>,
+    pub first_vote_date: Option<NaiveDate>,
+    pub last_vote_date: Option<NaiveDate>,
     pub recent_votes: Vec<VotePosition>,
 }
 

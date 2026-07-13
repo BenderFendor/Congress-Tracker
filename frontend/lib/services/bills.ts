@@ -1,4 +1,5 @@
 import { BACKEND_URL } from "@/lib/constants";
+import { DetailRequestError, classifyDetailResponse } from "@/lib/detail-request-state.mjs";
 import type { ProvenanceSummary } from "./provenance";
 
 // ---------------------------------------------------------------------------
@@ -57,20 +58,40 @@ export type BillIntel = {
         name: string;
         chamber: string;
     }>;
-    funding_overlay?: {
-        total_sponsor_receipts: number;
-        top_influence_networks: Array<{
+    amendments: Array<{
+        amendment_number?: string;
+        amendment_type?: string;
+        description?: string;
+        sponsor_name?: string;
+        introduced_date?: string;
+        latest_action_date?: string;
+        latest_action_text?: string;
+        chamber?: string;
+        status: string;
+    }>;
+    funding_overlay?: Array<{
+        bioguide_id: string;
+        name: string;
+        total_receipts: number;
+        top_networks: Array<{
             network_slug: string;
-            display_name: string;
-            total_amount: number;
+            amount: number;
+            confidence: string;
         }>;
-        data_quality: "complete" | "partial" | "missing_crosswalk";
-    };
+        data_quality: "complete" | "missing_crosswalk";
+    }>;
     lobbying_overlay?: Array<{
         issue_code: string;
         issue_display: string;
         description: string;
         confidence: string;
+    }>;
+    lobbying_bill_links: Array<{
+        filing_uuid: string;
+        registrant_name: string;
+        client_name: string;
+        matched_bill_text?: string;
+        confidence: "direct";
     }>;
     provenance?: ProvenanceSummary;
 };
@@ -124,10 +145,22 @@ export async function getRecentBills(limit = 10): Promise<Bill[]> {
     }));
 }
 
-export async function getBillIntel(congress: number, billType: string, billNumber: number): Promise<BillIntel | null> {
-    const response = await fetch(
-        `${BACKEND_URL}/api/bills/${congress}/${billType.toLowerCase()}/${billNumber}/intel`
-    );
-    if (!response.ok) throw new Error(`Failed to fetch bill intel: ${response.status} ${response.statusText}`);
+export async function getBillIntel(congress: number, billType: string, billNumber: number, signal?: AbortSignal): Promise<BillIntel | null> {
+    let response: Response;
+    try {
+        response = await fetch(
+            `${BACKEND_URL}/api/bills/${congress}/${billType.toLowerCase()}/${billNumber}/intel`,
+            { signal }
+        );
+    } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") throw error;
+        throw new DetailRequestError("Bill detail", null, "");
+    }
+
+    const responseState = classifyDetailResponse(response.status);
+    if (responseState === "not_found") return null;
+    if (responseState === "error") {
+        throw new DetailRequestError("Bill detail", response.status, response.statusText);
+    }
     return response.json();
 }

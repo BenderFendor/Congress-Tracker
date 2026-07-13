@@ -1,34 +1,17 @@
 "use client"
+/* oxlint-disable jsx-a11y/prefer-tag-over-role -- The ARIA combobox pattern requires listbox and option roles on interactive command results. */
 
 import { useEffect, useRef, useState, type KeyboardEvent } from "react"
 import { useRouter } from "next/navigation"
-import { Search, Shield, Users, FileText, Network, Landmark, TrendingUp, DollarSign, Map } from "lucide-react"
+import { Search } from "lucide-react"
+import { navigationItemMatches, navigationItems } from "@/lib/navigation"
 
-type PaletteItem = {
-  label: string
-  href: string
-  icon: typeof Search
-  hint: string
-}
-
-const NAV_ITEMS: PaletteItem[] = [
-  { label: "Home", href: "/", icon: Shield, hint: "Page" },
-  { label: "Legislators", href: "/legislators", icon: Users, hint: "Page" },
-  { label: "Bills", href: "/bills", icon: FileText, hint: "Page" },
-  { label: "Influence", href: "/influence", icon: Network, hint: "Page" },
-  { label: "Committees", href: "/committees", icon: Landmark, hint: "Page" },
-  { label: "Portfolio", href: "/portfolio", icon: TrendingUp, hint: "Page" },
-  { label: "Lobbying", href: "/lobbying", icon: DollarSign, hint: "Page" },
-  { label: "Elections", href: "/elections", icon: Map, hint: "Page" },
-  { label: "Search", href: "/search", icon: Search, hint: "Page" },
-]
-
-const SUGGESTED_ITEMS: PaletteItem[] = [
-  { label: "NVIDIA disclosure trades", href: "/portfolio?search=NVDA", icon: TrendingUp, hint: "Record" },
-  { label: "House Financial Services Committee", href: "/committees/HSBA", icon: Landmark, hint: "Committee" },
-  { label: "2026 election map", href: "/elections", icon: Map, hint: "Elections" },
-  { label: "AIPAC influence network", href: "/influence/aipac", icon: Network, hint: "Network" },
-  { label: "Lobbying filings stream", href: "/lobbying", icon: DollarSign, hint: "Lobbying" },
+const SUGGESTED_ITEMS = [
+  { label: "NVIDIA disclosure trades", href: "/portfolio?search=NVDA", hint: "Record" },
+  { label: "House Financial Services Committee", href: "/committees/HSBA", hint: "Committee" },
+  { label: "2026 election map", href: "/elections", hint: "Elections" },
+  { label: "AIPAC influence network", href: "/influence/aipac", hint: "Network" },
+  { label: "Lobbying filings stream", href: "/lobbying", hint: "Lobbying" },
 ]
 
 export function CommandPalette() {
@@ -36,41 +19,73 @@ export function CommandPalette() {
   const [query, setQuery] = useState("")
   const [activeIndex, setActiveIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
+  const dialogRef = useRef<HTMLDialogElement>(null)
+  const openerRef = useRef<HTMLElement | null>(null)
   const router = useRouter()
+
+  function openPalette() {
+    openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    setQuery("")
+    setActiveIndex(0)
+    setOpen(true)
+  }
+
+  function closePalette() {
+    setOpen(false)
+  }
 
   useEffect(() => {
     function handler(e: globalThis.KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault()
-        setOpen(true)
+        openPalette()
       }
       if (e.key === "/" && !isTypingTarget(e.target)) {
         e.preventDefault()
-        setOpen(true)
+        openPalette()
       }
       if (e.key === "Escape") {
-        setOpen(false)
+        closePalette()
       }
     }
+    function openFromNavigation() {
+      openPalette()
+    }
     document.addEventListener("keydown", handler)
-    return () => document.removeEventListener("keydown", handler)
+    window.addEventListener("congress-tracker:open-command-palette", openFromNavigation)
+    return () => {
+      document.removeEventListener("keydown", handler)
+      window.removeEventListener("congress-tracker:open-command-palette", openFromNavigation)
+    }
   }, [])
 
   useEffect(() => {
-    if (open) {
-      setQuery("")
-      setActiveIndex(0)
-      setTimeout(() => inputRef.current?.focus(), 30)
+    const dialog = dialogRef.current
+    if (!dialog) return
+    function handleCancel(event: Event) {
+      event.preventDefault()
+      setOpen(false)
     }
+    dialog.addEventListener("cancel", handleCancel)
+    if (open && !dialog.open) {
+      dialog.showModal()
+      inputRef.current?.focus()
+    } else if (!open && dialog.open) {
+      dialog.close()
+      openerRef.current?.focus()
+    }
+    return () => dialog.removeEventListener("cancel", handleCancel)
   }, [open])
 
-  const allItems = [...NAV_ITEMS, ...SUGGESTED_ITEMS]
+  const allItems = [...navigationItems, ...SUGGESTED_ITEMS]
   const filtered = query.trim() === ""
     ? allItems
-    : allItems.filter((item) => item.label.toLowerCase().includes(query.toLowerCase()))
+    : allItems.filter((item) => "keywords" in item
+      ? navigationItemMatches(item, query)
+      : item.label.toLowerCase().includes(query.toLowerCase()))
 
   function navigate(href: string) {
-    setOpen(false)
+    closePalette()
     router.push(href)
   }
 
@@ -88,20 +103,17 @@ export function CommandPalette() {
     }
   }
 
-  if (!open) return null
-
   return (
     <dialog
-      open
+      ref={dialogRef}
       className="ct-palette-overlay"
-      aria-modal="true"
       aria-label="Navigate CongressTracker"
     >
       <button
         type="button"
         className="ct-palette-backdrop"
         aria-label="Close navigation dialog"
-        onClick={() => setOpen(false)}
+        onClick={closePalette}
       />
       <div className="ct-palette-box">
         <div className="ct-palette-input">
@@ -112,28 +124,34 @@ export function CommandPalette() {
             placeholder="Search pages, legislators, bills, committees..."
             autoComplete="off"
             value={query}
+            role="combobox"
+            aria-expanded="true"
+            aria-controls="ct-palette-results"
+            aria-activedescendant={filtered[activeIndex] ? `ct-palette-option-${activeIndex}` : undefined}
             onChange={(e) => { setQuery(e.target.value); setActiveIndex(0) }}
             onKeyDown={handleKeyDown}
           />
           <span className="ct-palette-keycap">ESC</span>
         </div>
-        <div className="ct-palette-list">
+        <div className="ct-palette-list" id="ct-palette-results" role="listbox" aria-label="Research destinations">
           {filtered.length === 0 ? (
             <div className="ct-palette-item text-muted-foreground">No matching page or record</div>
           ) : (
             filtered.map((item, i) => {
-              const Icon = item.icon
               return (
                 <button
                   type="button"
                   key={`${item.label}-${i}`}
+                  id={`ct-palette-option-${i}`}
+                  role="option"
+                  aria-selected={i === activeIndex}
                   className={`ct-palette-item ${i === activeIndex ? "active" : ""}`}
                   onClick={() => navigate(item.href)}
                   onMouseEnter={() => setActiveIndex(i)}
                 >
-                  <Icon size={18} className="shrink-0" />
+                  <Search size={18} className="shrink-0" aria-hidden="true" />
                   <strong>{item.label}</strong>
-                  <span>{item.hint}</span>
+                  <span>{"section" in item ? item.section : item.hint}</span>
                 </button>
               )
             })

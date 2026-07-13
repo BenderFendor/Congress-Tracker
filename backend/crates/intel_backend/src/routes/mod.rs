@@ -1,8 +1,8 @@
-pub mod admin;
 pub mod bills;
 pub mod chambers;
 pub mod committees;
 pub mod fec;
+pub mod financial;
 pub mod funding;
 pub mod health;
 pub mod home;
@@ -16,6 +16,7 @@ pub mod search;
 pub mod sources;
 pub mod system;
 pub mod trades;
+pub mod visualizations;
 
 use crate::cache::CacheLayer;
 use crate::repository::Repository;
@@ -66,7 +67,7 @@ async fn correlation_id_middleware(
     response
 }
 
-pub fn build_router(repo: Repository, cache: Arc<CacheLayer>, openfec_api_key: String) -> Router {
+pub fn build_router(repo: Repository, cache: Arc<CacheLayer>) -> Router {
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
@@ -78,6 +79,14 @@ pub fn build_router(repo: Repository, cache: Arc<CacheLayer>, openfec_api_key: S
         .route(
             "/api/system/disclosure-coverage",
             axum::routing::get(system::coverage),
+        )
+        .route(
+            "/api/financial-snapshots",
+            axum::routing::get(financial::list_financial_snapshots),
+        )
+        .route(
+            "/api/senate-disclosures",
+            axum::routing::get(financial::list_senate_disclosures),
         )
         .route(
             "/api/system/worker-health",
@@ -124,6 +133,10 @@ pub fn build_router(repo: Repository, cache: Arc<CacheLayer>, openfec_api_key: S
         .route(
             "/api/bills/:congress/:bill_type/:bill_number/intel",
             axum::routing::get(bills::get_bill_intel),
+        )
+        .route(
+            "/api/bills/:congress/:bill_type/:bill_number/amendments",
+            axum::routing::get(bills::get_bill_amendments),
         )
         // Funding
         .route(
@@ -203,6 +216,35 @@ pub fn build_router(repo: Repository, cache: Arc<CacheLayer>, openfec_api_key: S
             "/api/lobbying/filings/:id",
             axum::routing::get(lobbying::get_filing),
         )
+        .route(
+            "/api/lobbying/clients",
+            axum::routing::get(lobbying::list_clients),
+        )
+        .route(
+            "/api/lobbying/clients/:id",
+            axum::routing::get(lobbying::get_client),
+        )
+        .route(
+            "/api/lobbying/registrants",
+            axum::routing::get(lobbying::list_registrants),
+        )
+        .route(
+            "/api/lobbying/registrants/:id",
+            axum::routing::get(lobbying::get_registrant),
+        )
+        .route(
+            "/api/lobbying/lobbyists",
+            axum::routing::get(lobbying::list_lobbyists),
+        )
+        .route(
+            "/api/lobbying/lobbyists/:id",
+            axum::routing::get(lobbying::get_lobbyist),
+        )
+        // Visualizations
+        .route(
+            "/api/visualizations/campaign-finance",
+            axum::routing::get(visualizations::campaign_finance),
+        )
         // FEC (intel-backed)
         .route(
             "/api/intel/fec/candidates",
@@ -212,14 +254,18 @@ pub fn build_router(repo: Repository, cache: Arc<CacheLayer>, openfec_api_key: S
             "/api/intel/fec/committees",
             axum::routing::get(fec::list_committees),
         )
+        .route("/api/fec/receipts", axum::routing::get(fec::list_receipts))
+        .route(
+            "/api/fec/disbursements",
+            axum::routing::get(fec::list_disbursements),
+        )
+        .route(
+            "/api/intel/fec/receipts",
+            axum::routing::get(fec::list_receipts),
+        )
         .route(
             "/api/elections/candidates",
             axum::routing::get(fec::list_candidates),
-        )
-        // Admin
-        .route(
-            "/api/admin/entity-resolution-queue",
-            axum::routing::get(admin::get_resolution_queue),
         )
         // Layers
         .layer(
@@ -247,16 +293,11 @@ pub fn build_router(repo: Repository, cache: Arc<CacheLayer>, openfec_api_key: S
         )
         .layer(axum::middleware::from_fn(correlation_id_middleware))
         .layer(cors)
-        .with_state(Arc::new(AppState {
-            repo,
-            cache,
-            openfec_api_key,
-        }))
+        .with_state(Arc::new(AppState { repo, cache }))
 }
 
 #[derive(Clone)]
 pub struct AppState {
     pub repo: Repository,
     pub cache: Arc<CacheLayer>,
-    pub openfec_api_key: String,
 }

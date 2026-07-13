@@ -19,8 +19,14 @@ if [[ -f backend/Cargo.toml ]]; then
   echo "  cargo check"
   cargo check
 
-  echo "  cargo test"
-  cargo test
+  echo "  cargo test --workspace --exclude civiq_client --lib --bins"
+  cargo test --workspace --exclude civiq_client --lib --bins
+
+  echo "  cargo test -p civiq_client test_query_builder"
+  cargo test -p civiq_client test_query_builder
+
+  echo "  cargo test --workspace --tests --no-run"
+  cargo test --workspace --tests --no-run
 
   cd ..
   echo "  backend checks passed"

@@ -12,6 +12,12 @@ pub struct EntityResolutionQueueInput<'a> {
     pub source_run_id: Option<uuid::Uuid>,
 }
 
+const MAX_RESOLUTION_QUEUE_LIMIT: i64 = 500;
+
+fn bounded_resolution_queue_limit(limit: i64) -> i64 {
+    limit.clamp(1, MAX_RESOLUTION_QUEUE_LIMIT)
+}
+
 impl Repository {
     /// Insert a new entity resolution queue entry.
     pub async fn queue_entity_resolution(
@@ -44,6 +50,7 @@ impl Repository {
         status: Option<&str>,
         limit: i64,
     ) -> Result<Vec<EntityResolutionEntry>, sqlx::Error> {
+        let limit = bounded_resolution_queue_limit(limit);
         let rows: Vec<QueueRow> = if let Some(st) = status {
             sqlx::query_as::<_, QueueRow>(
                 r#"SELECT id, entity_type, source_scheme, source_value,
@@ -187,6 +194,21 @@ impl Repository {
         }
 
         Ok(None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{bounded_resolution_queue_limit, MAX_RESOLUTION_QUEUE_LIMIT};
+
+    #[test]
+    fn resolution_queue_limit_is_positive_and_bounded() {
+        assert_eq!(bounded_resolution_queue_limit(-1), 1);
+        assert_eq!(bounded_resolution_queue_limit(50), 50);
+        assert_eq!(
+            bounded_resolution_queue_limit(i64::MAX),
+            MAX_RESOLUTION_QUEUE_LIMIT
+        );
     }
 }
 

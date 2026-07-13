@@ -3,7 +3,6 @@
 import { createLogger } from "@/lib/tracing"
 import { useState, useEffect } from "react"
 import Link from "next/link"
-import Image from "next/image"
 import {
   ArrowLeft,
   MapPin,
@@ -16,10 +15,11 @@ import { getLegislator, getMemberLegislation, Legislator } from "@/lib/services/
 import { getMemberFunding, MemberFunding } from "@/lib/services/funding"
 import { classifyFundingCoverage } from "@/lib/funding-coverage.mjs"
 import { ProvenanceSummary } from "@/lib/services/provenance"
-import { getMemberVotes, Vote } from "@/lib/services/voting"
+import { getMemberVotes, MemberVotesResult, Vote } from "@/lib/services/voting"
 import { formatAmountRange } from "@/lib/services/stocks"
 import { ArchivePage, ArchivePanel, EvidenceSpine } from "@/components/ui/archive-ui"
 import { getMemberDisclosures, getRelationships, MemberDisclosures, RelationshipEvidence } from "@/lib/services/relationships"
+import { MemberPortrait } from "@/components/ui/member-identity"
 
 function ProvenanceBadge({ provenance }: { provenance?: ProvenanceSummary }) {
   if (!provenance) return null;
@@ -85,17 +85,16 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
   const [funding, setFunding] = useState<MemberFunding | null>(null)
   const [fundingError, setFundingError] = useState<string | null>(null)
   const [votes, setVotes] = useState<Vote[]>([])
+  const [voteEvidence, setVoteEvidence] = useState<MemberVotesResult | null>(null)
   const [sponsoredBills, setSponsoredBills] = useState<BillRow[]>([])
   const [cosponsoredBills, setCosponsoredBills] = useState<BillRow[]>([])
   const [relationships, setRelationships] = useState<RelationshipEvidence[]>([])
   const [disclosures, setDisclosures] = useState<MemberDisclosures | null>(null)
   const [loading, setLoading] = useState(true)
-  const [portraitFailed, setPortraitFailed] = useState(false)
 
   useEffect(() => {
     async function loadData() {
       setLoading(true)
-      setPortraitFailed(false)
       try {
         const leg = await getLegislator(params.id)
         setLegislator(leg)
@@ -114,7 +113,10 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
             })
 
           // Background fetch votes
-          getMemberVotes(bioguideId).then(setVotes).catch(e => log.error("Background fetch failed", { error: String(e) }))
+          getMemberVotes(bioguideId).then((data) => {
+            setVotes(data.votes)
+            setVoteEvidence(data)
+          }).catch(e => log.error("Background fetch failed", { error: String(e) }))
 
           getMemberLegislation(bioguideId).then(data => {
             setSponsoredBills(data.sponsor.map(mapLegislationToBill))
@@ -191,17 +193,18 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
   const serviceYears = legislator.years_in_office == null ? completedServiceYears(legislator.service_start) : Math.floor(Number(legislator.years_in_office))
 
   const aipacNetwork = funding?.influence_networks?.find(n => n.network_slug.toLowerCase() === "aipac")
+  const committeeRelationships = funding?.committee_relationships ?? funding?.top_committees ?? []
+  const directCommitteeContributions = committeeRelationships.filter(
+    relationship => !relationship.relationship_type || relationship.relationship_type === "contribution"
+  )
+  const authorizedCommitteeTransfers = committeeRelationships.filter(
+    relationship => relationship.relationship_type === "transfer"
+  )
+  const leadershipPacs = funding?.leadership_pacs ?? []
 
-  // Vote percentages calculation
-  let missedVotePct = legislator.vote_summary?.missed_vote_pct
-  if (missedVotePct === undefined || missedVotePct === null) {
-    if (votes.length > 0) {
-      const missed = votes.filter(v => v.position === "Not Voting" || v.position === "Not Present").length
-      missedVotePct = (missed / votes.length) * 100
-    }
-  }
-
-  const partyLinePct = legislator.vote_summary?.party_line_pct
+  const voteSummary = voteEvidence?.summary
+  const missedVotePct = voteSummary?.missed_vote_pct
+  const partyLinePct = voteSummary?.party_line_pct
 
   const recentVotesList = (legislator.vote_summary?.recent_votes && legislator.vote_summary.recent_votes.length > 0)
     ? legislator.vote_summary.recent_votes.map(v => ({
@@ -229,13 +232,17 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
         <div className="bg-card border border-border p-8 md:p-10 mb-8 relative flex flex-col md:flex-row gap-8 items-start">
           <div className="relative shrink-0">
             <div className="w-32 h-32 md:w-40 md:h-40 border border-border bg-muted">
-              {(legislator.depiction_url || legislator.avatar || legislator.id) && !portraitFailed ? (
-                <Image priority src={legislator.depiction_url || legislator.avatar || `https://bioguide.congress.gov/bioguide/photo/${legislator.id[0]}/${legislator.id}.jpg`} alt={legislator.name} width={320} height={320} unoptimized onError={() => setPortraitFailed(true)} className="w-full h-full object-cover" />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-                  <span className="font-serif text-4xl font-bold opacity-60">{legislator.name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase()}</span>
-                </div>
-              )}
+              <MemberPortrait
+                bioguideId={legislator.bioguide_id}
+                name={legislator.name}
+                suppliedUrls={[legislator.avatar, legislator.depiction_url]}
+                className="block h-full w-full"
+                imageClassName="h-full w-full object-cover object-[center_20%]"
+                fallbackClassName="grid h-full w-full place-items-center font-serif text-4xl font-bold text-muted-foreground opacity-60"
+                width={320}
+                height={320}
+                priority
+              />
             </div>
             <div className={`absolute -bottom-3 -right-3 px-4 py-1 text-xs font-bold uppercase tracking-wider rounded-full shadow-sm ${partyBadgeClass}`}>
               {partyName}
@@ -469,7 +476,7 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
                     <div className="space-y-2">
                       <h3 className="font-serif text-lg font-bold text-foreground">Funding totals only</h3>
                       <p className="text-sm leading-6 text-muted-foreground">
-                        OpenFEC supplied candidate-cycle totals, but donor and committee rankings require canonical paginated FEC transaction ingestion. No rankings are inferred from these totals.
+                        OpenFEC supplied candidate-cycle totals, but the FEC bulk warehouse has no canonical rankings for this member and cycle. No rankings are inferred from totals.
                       </p>
                       <p className="font-mono text-xs uppercase tracking-wide text-amber-700 dark:text-amber-200">
                         OpenFEC · Cycle {funding?.cycle ?? "unavailable"} · Rankings unavailable
@@ -483,7 +490,7 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
                 <EvidenceSpine
                   source={funding?.provenance?.sources.map((source) => source.source).join(", ") || "OpenFEC funding endpoint"}
                   status={fundingError ? "Request failed" : fundingTotalsOnly ? "Totals only" : hasFundingTotals ? "Loaded" : "Unavailable"}
-                  coverage={fundingError ? "No funding claims rendered" : hasCanonicalFundingRankings ? "Canonical donor and committee rankings loaded" : "Candidate totals loaded; rankings require paginated FEC transactions"}
+                  coverage={fundingError ? "No funding claims rendered" : hasCanonicalFundingRankings ? "Canonical donor and committee rankings loaded" : "Candidate totals loaded; bulk rankings unavailable for this member and cycle"}
                 >
                   {funding?.provenance?.warnings.length ? (
                     <ul className="mt-3 list-disc space-y-1 pl-5 text-xs leading-5 text-muted-foreground">
@@ -519,7 +526,7 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
               )}
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <ArchivePanel title="Top Donors" kicker="Receipt Breakdown">
+                <ArchivePanel title="Top disclosed individual donors" kicker="Itemized receipt records">
                   {hasFundingTotals && (funding?.top_donors?.length ?? 0) > 0 ? (
                     <div className="space-y-4">
                       {funding?.top_donors.map((donor, idx) => (
@@ -538,20 +545,20 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
                     </div>
                   ) : (
                     <div className="text-muted-foreground font-mono italic p-6 text-center border border-border">
-                      {!hasFundingTotals ? "No verified funding totals are loaded." : "Donor rankings are unavailable until canonical paginated FEC transactions are ingested."}
+                      {!hasFundingTotals ? "No verified funding totals are loaded." : "No canonical itemized individual-donor ranking is available for this member and cycle."}
                     </div>
                   )}
                 </ArchivePanel>
 
-                <ArchivePanel title="Top Committees" kicker="PAC & Committee Transfers">
-                  {hasFundingTotals && (funding?.top_committees?.length ?? 0) > 0 ? (
+                <ArchivePanel title="Committee contributions received" kicker="Direct campaign receipts">
+                  {hasFundingTotals && directCommitteeContributions.length > 0 ? (
                     <div className="space-y-4">
-                      {funding?.top_committees.map((comm, idx) => (
-                        <div key={idx} className="flex justify-between items-center p-4 border border-border bg-muted/30">
+                      {directCommitteeContributions.map((comm) => (
+                        <div key={`${comm.committee_id}-${comm.relationship_type ?? "contribution"}`} className="flex justify-between items-center p-4 border border-border bg-muted/30">
                           <div>
                             <div className="font-serif font-bold text-foreground">{comm.committee_name}</div>
                             <div className="text-xs font-mono text-muted-foreground uppercase mt-0.5">
-                              ID: {comm.committee_id}
+                              ID: {comm.committee_id} · {comm.resolution_status ?? "resolution unknown"}
                             </div>
                           </div>
                           <div className="font-mono font-bold text-base text-foreground">
@@ -562,7 +569,73 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
                     </div>
                   ) : (
                     <div className="text-muted-foreground font-mono italic p-6 text-center border border-border">
-                      {!hasFundingTotals ? "No verified funding totals are loaded." : "Committee rankings are unavailable until canonical paginated FEC transactions are ingested."}
+                      {!hasFundingTotals ? "No verified funding totals are loaded." : "No canonical direct committee-contribution ranking is available for this member and cycle."}
+                    </div>
+                  )}
+                </ArchivePanel>
+
+                <ArchivePanel title="Authorized committee transfers" kicker="Reported separately">
+                  {hasFundingTotals && authorizedCommitteeTransfers.length > 0 ? (
+                    <div className="space-y-4">
+                      {authorizedCommitteeTransfers.map((comm) => (
+                        <div key={`${comm.committee_id}-transfer`} className="flex justify-between items-center p-4 border border-border bg-muted/30">
+                          <div>
+                            <div className="font-serif font-bold text-foreground">{comm.committee_name}</div>
+                            <div className="text-xs font-mono text-muted-foreground uppercase mt-0.5">
+                              ID: {comm.committee_id} · {comm.transaction_count ?? "Unknown"} records
+                            </div>
+                          </div>
+                          <div className="font-mono font-bold text-base text-foreground">
+                            ${(comm.amount || 0).toLocaleString()}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-muted-foreground font-mono italic p-6 text-center border border-border">
+                      {!hasFundingTotals ? "No verified funding totals are loaded." : "No canonical authorized-committee transfers are reported for this member and cycle."}
+                    </div>
+                  )}
+                </ArchivePanel>
+
+                <ArchivePanel title="Leadership PACs" kicker="Sponsored committee activity">
+                  {leadershipPacs.length > 0 ? (
+                    <div className="space-y-4">
+                      {leadershipPacs.map((pac) => (
+                        <div className="border border-border bg-muted/30 p-4" key={pac.committee_id}>
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <div className="font-serif font-bold text-foreground">{pac.committee_name}</div>
+                              <div className="mt-0.5 font-mono text-xs uppercase text-muted-foreground">
+                                {pac.committee_id} · {pac.resolution_status}
+                              </div>
+                            </div>
+                            {pac.source_url ? (
+                              <a className="font-mono text-xs font-bold uppercase text-accent hover:underline" href={pac.source_url} rel="noreferrer" target="_blank">
+                                FEC reports <ExternalLink className="inline" size={12} />
+                              </a>
+                            ) : null}
+                          </div>
+                          <dl className="mt-4 grid grid-cols-3 gap-3 text-sm">
+                            <div>
+                              <dt className="font-mono text-[10px] uppercase text-muted-foreground">PAC receipts</dt>
+                              <dd className="mt-1 font-bold">{pac.total_receipts == null ? "Unavailable" : `$${pac.total_receipts.toLocaleString()}`}</dd>
+                            </div>
+                            <div>
+                              <dt className="font-mono text-[10px] uppercase text-muted-foreground">Disbursements</dt>
+                              <dd className="mt-1 font-bold">{pac.total_disbursements == null ? "Unavailable" : `$${pac.total_disbursements.toLocaleString()}`}</dd>
+                            </div>
+                            <div>
+                              <dt className="font-mono text-[10px] uppercase text-muted-foreground">Cash on hand</dt>
+                              <dd className="mt-1 font-bold">{pac.cash_on_hand == null ? "Unavailable" : `$${pac.cash_on_hand.toLocaleString()}`}</dd>
+                            </div>
+                          </dl>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="border border-border p-6 text-center font-mono text-muted-foreground">
+                      No FEC leadership PAC is resolved to this member for cycle {funding?.cycle ?? 2026}.
                     </div>
                   )}
                 </ArchivePanel>
@@ -572,16 +645,36 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
 
           {activeTab === 'voting' && (
             <div className="space-y-8">
+              <div className="border-l-2 border-accent bg-card px-5 py-4">
+                <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-accent">119th Congress · recorded roll calls</div>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
+                  Attendance uses every loaded roll call from {voteSummary?.first_vote_date || "the start of available coverage"} through {voteSummary?.last_vote_date || "the latest loaded vote"}. Party alignment compares Yes/No votes with the majority position of this member&apos;s party on the same roll call.
+                </p>
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <ArchivePanel title="Missed-Vote Rate" kicker="Attendance">
-                  <div className="text-3xl font-serif font-bold text-foreground">
-                    {missedVotePct != null ? `${Number(missedVotePct).toFixed(1)}%` : "N/A"}
-                  </div>
+                  {missedVotePct != null && voteSummary ? <div className="space-y-4">
+                    <div className="flex items-end justify-between gap-4">
+                      <div className="text-4xl font-serif font-bold text-foreground">{Number(missedVotePct).toFixed(1)}%</div>
+                      <div className="text-right font-mono text-xs text-muted-foreground">{voteSummary.missed_votes} missed<br />of {voteSummary.total_votes} recorded</div>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-muted" aria-label={`${Number(missedVotePct).toFixed(1)} percent of recorded votes missed`}>
+                      <div className="h-full bg-accent transition-[width] duration-700 motion-reduce:transition-none" style={{ width: `${Math.min(100, missedVotePct)}%` }} />
+                    </div>
+                    <p className="text-xs leading-5 text-muted-foreground">Denominator: all loaded member positions, including present and not-voting records.</p>
+                  </div> : <p className="text-sm leading-6 text-muted-foreground">Attendance cannot be calculated because no roll-call positions are loaded for this Congress.</p>}
                 </ArchivePanel>
                 <ArchivePanel title="Party-Line Alignment" kicker="Ideological Consistency">
-                  <div className="text-3xl font-serif font-bold text-foreground">
-                    {partyLinePct != null ? `${Number(partyLinePct).toFixed(1)}%` : "N/A"}
-                  </div>
+                  {partyLinePct != null && voteSummary?.party_line_eligible_votes ? <div className="space-y-4">
+                    <div className="flex items-end justify-between gap-4">
+                      <div className="text-4xl font-serif font-bold text-foreground">{Number(partyLinePct).toFixed(1)}%</div>
+                      <div className="text-right font-mono text-xs text-muted-foreground">{voteSummary.party_line_votes} aligned<br />of {voteSummary.party_line_eligible_votes} comparable</div>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-muted" aria-label={`${Number(partyLinePct).toFixed(1)} percent aligned with the party majority`}>
+                      <div className="h-full bg-foreground transition-[width] duration-700 motion-reduce:transition-none" style={{ width: `${Math.min(100, partyLinePct)}%` }} />
+                    </div>
+                    <p className="text-xs leading-5 text-muted-foreground">Abstentions and votes without a party-majority comparison are excluded.</p>
+                  </div> : <p className="text-sm leading-6 text-muted-foreground">Party alignment is unavailable because the loaded records do not include enough party-coded Yes/No positions.</p>}
                 </ArchivePanel>
               </div>
 
@@ -655,8 +748,9 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
                     </table>
                   </div>
                 ) : (
-                  <div className="text-muted-foreground font-mono italic p-6 text-center border border-border">
-                    No sponsored legislation loaded.
+                  <div className="border border-border bg-muted/20 p-6">
+                    <div className="font-serif text-lg font-semibold text-foreground">No sponsor links loaded for the 119th Congress</div>
+                    <p className="mt-2 text-sm leading-6 text-muted-foreground">This is a Congress.gov linkage coverage gap, not evidence that this member sponsored no legislation. The page does not infer sponsorship from titles or names.</p>
                   </div>
                 )}
               </ArchivePanel>
@@ -686,8 +780,9 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
                     </table>
                   </div>
                 ) : (
-                  <div className="text-muted-foreground font-mono italic p-6 text-center border border-border">
-                    No cosponsored legislation loaded.
+                  <div className="border border-border bg-muted/20 p-6">
+                    <div className="font-serif text-lg font-semibold text-foreground">No cosponsor links loaded for the 119th Congress</div>
+                    <p className="mt-2 text-sm leading-6 text-muted-foreground">Cosponsorship is shown only when the canonical bill-to-member relation is present. Missing ingestion is reported as unavailable rather than a factual zero.</p>
                   </div>
                 )}
               </ArchivePanel>
@@ -800,6 +895,7 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
               )}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               <ArchivePanel title="Personal Profile" kicker="Biographical Information">
+                <p className="mb-5 text-xs leading-5 text-muted-foreground">Official and maintained public member records. Unavailable fields are left explicit and are not inferred from biography prose.</p>
                 <div className="space-y-4 font-mono text-sm">
                   <div className="flex justify-between border-b border-border pb-3">
                     <span className="text-muted-foreground">Birthday</span>
@@ -810,18 +906,18 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
                   <div className="flex justify-between border-b border-border pb-3">
                     <span className="text-muted-foreground">Birthplace / Hometown</span>
                     <span className="font-bold text-foreground">
-                      {legislator.birthplace || legislator.hometown || "Not listed"}
+                      {legislator.birthplace || legislator.hometown || "Unavailable in loaded sources"}
                     </span>
                   </div>
                   <div className="flex justify-between border-b border-border pb-3">
                     <span className="text-muted-foreground">Office Address</span>
                     <span className="font-bold text-foreground text-right max-w-[240px]">
-                      {legislator.office_address || "Not listed"}
+                      {legislator.office_address || "Unavailable in loaded sources"}
                     </span>
                   </div>
                   <div className="flex justify-between pt-1">
                     <span className="text-muted-foreground">Phone</span>
-                    <span className="font-bold text-foreground">{legislator.phone || "Not listed"}</span>
+                    <span className="font-bold text-foreground">{legislator.phone || "Unavailable in loaded sources"}</span>
                   </div>
                 </div>
               </ArchivePanel>
@@ -861,7 +957,7 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
                   </ul>
                 ) : (
                   <div className="text-muted-foreground font-mono italic p-6 text-center border border-border">
-                    No education records listed.
+                    Education is unavailable in the loaded official and maintained member sources. No biography text has been converted into a structured claim.
                   </div>
                 )}
               </ArchivePanel>
@@ -877,7 +973,7 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
                   </ul>
                 ) : (
                   <div className="text-muted-foreground font-mono italic p-6 text-center border border-border">
-                    No prior professional employment listed.
+                    Prior employment is unavailable in the loaded official and maintained member sources. No biography text has been converted into a structured claim.
                   </div>
                 )}
               </ArchivePanel>

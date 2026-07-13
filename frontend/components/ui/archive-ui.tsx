@@ -1,24 +1,15 @@
 "use client"
 
-import { useEffect, useState, type ReactNode } from "react"
-import { useTheme } from "next-themes"
-import { AlertTriangle, ArrowRight, Database, ExternalLink } from "lucide-react"
+// Design direction: Civic reading room. Public records feel editorial at first glance and operational at the point of investigation.
+import { useId, type ReactNode } from "react"
+import { AlertTriangle, ArrowRight, CheckCircle2, Database, ExternalLink } from "lucide-react"
 
 export function ArchivePage({ children }: { children: ReactNode }) {
-  const { resolvedTheme } = useTheme()
-  const [mounted, setMounted] = useState(false)
-
-  useEffect(() => {
-    setMounted(true)
-  }, [])
-
-  const isDark = mounted && resolvedTheme === "dark"
-
   return (
     <main
       id="main-content"
       tabIndex={-1}
-      className={`archive-page ${isDark ? "archive-page-dark" : "archive-page-light"}`}
+      className="archive-page"
     >
       {children}
     </main>
@@ -68,18 +59,18 @@ type ArchiveMetric = {
 
 export function ArchiveMetrics({ metrics }: { metrics: ArchiveMetric[] }) {
   return (
-    <section className="archive-metrics">
+    <dl className="archive-metrics" aria-label="Record summary">
       {metrics.map((metric) => (
         <div className="archive-metric" key={metric.label}>
           {metric.icon ? <div className="archive-metric-icon">{metric.icon}</div> : null}
           <div>
-            <div className="archive-metric-label">{metric.label}</div>
-            <div className="archive-metric-value">{metric.value}</div>
-            {metric.detail ? <div className="archive-metric-detail">{metric.detail}</div> : null}
+            <dt className="archive-metric-label">{metric.label}</dt>
+            <dd className="archive-metric-value">{metric.value}</dd>
+            {metric.detail ? <dd className="archive-metric-detail">{metric.detail}</dd> : null}
           </div>
         </div>
       ))}
-    </section>
+    </dl>
   )
 }
 
@@ -96,12 +87,13 @@ export function ArchivePanel({
   children: ReactNode
   className?: string
 }) {
+  const headingId = useId()
   return (
-    <section className={`archive-panel ${className}`}>
+    <section className={`archive-panel ${className}`} aria-labelledby={headingId}>
       <div className="archive-panel-head">
         <div>
           {kicker ? <div className="archive-panel-kicker">{kicker}</div> : null}
-          <h2>{title}</h2>
+          <h2 id={headingId}>{title}</h2>
         </div>
         {action ? <div>{action}</div> : null}
       </div>
@@ -121,13 +113,14 @@ export function ArchiveSearch({
   placeholder: string
   children?: ReactNode
 }) {
+  const inputId = useId()
   return (
     // React 18's JSX types do not yet include the HTML search element.
     // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role
     <div className="archive-search-row" role="search">
-      <label className="sr-only" htmlFor="archive-search-input">{placeholder}</label>
+      <label className="sr-only" htmlFor={inputId}>{placeholder}</label>
       <input
-        id="archive-search-input"
+        id={inputId}
         type="search"
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -141,7 +134,7 @@ export function ArchiveSearch({
 type DataStateProps = {
   title: string
   description: string
-  kind?: "empty" | "error" | "setup"
+  kind?: "empty" | "error" | "setup" | "success"
   action?: ReactNode
 }
 
@@ -149,7 +142,7 @@ export function DataState({ title, description, kind = "empty", action }: DataSt
   return (
     <div className={`archive-data-state archive-data-state-${kind}`} role={kind === "error" ? "alert" : "status"}>
       <div className="archive-data-state-icon" aria-hidden="true">
-        {kind === "error" ? <AlertTriangle size={18} /> : <Database size={18} />}
+        {kind === "error" ? <AlertTriangle size={18} /> : kind === "success" ? <CheckCircle2 size={18} /> : <Database size={18} />}
       </div>
       <div>
         <h3>{title}</h3>
@@ -191,8 +184,8 @@ export function EvidenceSpine({
       </dl>
       {children}
       {sourceUrl ? (
-        <a className="archive-link" href={sourceUrl} target="_blank" rel="noreferrer">
-          View source <ExternalLink size={14} />
+        <a className="archive-source-action" href={sourceUrl} target="_blank" rel="noreferrer">
+          Open official source <ExternalLink size={14} />
         </a>
       ) : null}
     </aside>

@@ -4,6 +4,7 @@ use crate::repository::Repository;
 pub struct InfluenceNetworkUpsert<'a> {
     pub network_slug: &'a str,
     pub display_name: &'a str,
+    pub aliases: &'a [&'a str],
     pub description: &'a str,
     pub category: &'a str,
     pub confidence: &'a str,
@@ -29,10 +30,11 @@ impl Repository {
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
             r#"INSERT INTO influence_networks
-               (network_slug, display_name, description, category, confidence, source_citation, source_run_id)
-               VALUES ($1, $2, $3, $4, $5::confidence_level, $6, $7)
+               (network_slug, display_name, aliases, description, category, confidence, source_citation, source_run_id)
+               VALUES ($1, $2, $3, $4, $5, $6::confidence_level, $7, $8)
                ON CONFLICT (network_slug) DO UPDATE SET
                  display_name    = EXCLUDED.display_name,
+                 aliases         = EXCLUDED.aliases,
                  description     = EXCLUDED.description,
                  category        = EXCLUDED.category,
                  confidence      = EXCLUDED.confidence,
@@ -40,6 +42,7 @@ impl Repository {
         )
         .bind(input.network_slug)
         .bind(input.display_name)
+        .bind(input.aliases)
         .bind(input.description)
         .bind(input.category)
         .bind(input.confidence)
@@ -86,7 +89,7 @@ impl Repository {
         network_slug: &str,
     ) -> Result<Option<InfluenceNetwork>, sqlx::Error> {
         let row: Option<NetRow> = sqlx::query_as::<_, NetRow>(
-            r#"SELECT network_slug, display_name, description, category, confidence::text AS confidence, source_citation
+            r#"SELECT network_slug, display_name, aliases, description, category, confidence::text AS confidence, source_citation
                FROM influence_networks
                WHERE network_slug = $1"#,
         )
@@ -123,6 +126,7 @@ impl Repository {
         Ok(Some(InfluenceNetwork {
             network_slug: net.network_slug,
             display_name: net.display_name,
+            aliases: net.aliases,
             description: net.description,
             category: net.category,
             confidence: net.confidence,
@@ -134,7 +138,7 @@ impl Repository {
     /// List all influence networks with their committees.
     pub async fn list_influence_networks(&self) -> Result<Vec<InfluenceNetwork>, sqlx::Error> {
         let net_rows: Vec<NetRow> = sqlx::query_as::<_, NetRow>(
-            r#"SELECT network_slug, display_name, description, category, confidence::text AS confidence, source_citation
+            r#"SELECT network_slug, display_name, aliases, description, category, confidence::text AS confidence, source_citation
                FROM influence_networks
                ORDER BY display_name"#,
         )
@@ -167,6 +171,7 @@ impl Repository {
             results.push(InfluenceNetwork {
                 network_slug: nr.network_slug,
                 display_name: nr.display_name,
+                aliases: nr.aliases,
                 description: nr.description,
                 category: nr.category,
                 confidence: nr.confidence,
@@ -185,6 +190,7 @@ impl Repository {
         cycle: i32,
     ) -> Result<Option<crate::models::InfluenceNetworkFinancials>, sqlx::Error> {
         use crate::models::{CommitteeFinancial, InfluenceNetworkFinancials, RecipientMember};
+        use std::collections::BTreeMap;
 
         // Check that the network exists
         let net_exists: Option<(String,)> =
@@ -197,112 +203,234 @@ impl Repository {
             return Ok(None);
         }
 
-        // Aggregated totals from the materialized view
-        let total_row: Option<(f64, f64, f64)> = sqlx::query_as(
-            r#"SELECT
-                COALESCE(SUM(direct_amount), 0)::double precision,
-                COALESCE(SUM(support_ie_amount), 0)::double precision,
-                COALESCE(SUM(oppose_ie_amount), 0)::double precision
-            FROM influence_network_member_mv
-            WHERE network_slug = $1 AND cycle = $2"#,
-        )
-        .bind(network_slug)
-        .bind(cycle)
-        .fetch_optional(self.pool())
-        .await?;
-
-        let (total_direct, total_support, total_oppose) = total_row.unwrap_or((0.0, 0.0, 0.0));
-
-        // Per-committee breakdown from MV
+        // The member materialized view intentionally aggregates at network level,
+        // so it cannot produce committee-specific totals. Build one canonical
+        // committee/member rowset and derive every response aggregate from it.
         #[derive(sqlx::FromRow)]
-        struct CommFinRow {
+        struct CommitteeMemberFinancialRow {
             committee_id: String,
             committee_name: String,
             role: String,
+            bioguide_id: Option<String>,
+            first_name: Option<String>,
+            last_name: Option<String>,
+            party: Option<String>,
+            chamber: Option<String>,
+            state: Option<String>,
             direct_amount: f64,
             support_ie_amount: f64,
             oppose_ie_amount: f64,
         }
 
-        let comm_rows: Vec<CommFinRow> = sqlx::query_as(
-            r#"SELECT
-                inc.committee_id,
-                inc.committee_name,
-                inc.role::text AS role,
-                COALESCE(SUM(inm.direct_amount), 0)::double precision AS direct_amount,
-                COALESCE(SUM(inm.support_ie_amount), 0)::double precision AS support_ie_amount,
-                COALESCE(SUM(inm.oppose_ie_amount), 0)::double precision AS oppose_ie_amount
-            FROM influence_network_committees inc
-            LEFT JOIN influence_network_member_mv inm
-                ON inc.network_slug = inm.network_slug
-                AND inc.committee_id = (SELECT ft.committee_id FROM fec_transactions ft WHERE ft.committee_id = inc.committee_id AND ft.cycle = $2 LIMIT 1)
-            WHERE inc.network_slug = $1
-            GROUP BY inc.committee_id, inc.committee_name, inc.role
-            ORDER BY COALESCE(SUM(inm.direct_amount), 0) + COALESCE(SUM(inm.support_ie_amount), 0) + COALESCE(SUM(inm.oppose_ie_amount), 0) DESC"#,
+        let rows: Vec<CommitteeMemberFinancialRow> = sqlx::query_as(
+            r#"WITH member_candidates AS (
+                   SELECT DISTINCT bioguide_id, value AS candidate_id
+                   FROM member_identifiers
+                   WHERE scheme = 'fec'
+                   UNION
+                   SELECT DISTINCT bioguide_id, candidate_id
+                   FROM fec_candidates
+                   WHERE bioguide_id IS NOT NULL
+               ), direct_receipts AS (
+                   SELECT network.network_slug,
+                          network.committee_id,
+                          member.bioguide_id,
+                          receipt.election_cycle AS cycle,
+                          SUM(receipt.amount)::double precision AS direct_amount
+                   FROM influence_network_committees network
+                   JOIN fec_canonical_committee_receipts receipt
+                     ON receipt.donor_committee_id = network.committee_id
+                    AND receipt.relationship_type = 'contribution'
+                    AND receipt.include_in_totals = true
+                    AND receipt.is_current = true
+                   JOIN fec_candidate_committees linkage
+                     ON linkage.committee_id = receipt.recipient_committee_id
+                    AND linkage.election_cycle = receipt.election_cycle
+                   JOIN member_candidates member
+                     ON member.candidate_id = linkage.candidate_id
+                   WHERE network.network_slug = $1
+                     AND receipt.election_cycle = $2
+                   GROUP BY network.network_slug, network.committee_id,
+                            member.bioguide_id, receipt.election_cycle
+               ), outside_spending AS (
+                   SELECT network.network_slug,
+                          network.committee_id,
+                          member.bioguide_id,
+                          expenditure.election_cycle AS cycle,
+                          COALESCE(SUM(expenditure.amount) FILTER (
+                              WHERE expenditure.support_oppose = 'S'
+                          ), 0)::double precision AS support_ie_amount,
+                          COALESCE(SUM(expenditure.amount) FILTER (
+                              WHERE expenditure.support_oppose = 'O'
+                          ), 0)::double precision AS oppose_ie_amount
+                   FROM influence_network_committees network
+                   JOIN fec_independent_expenditures expenditure
+                     ON expenditure.spender_id = network.committee_id
+                   JOIN member_candidates member
+                     ON member.candidate_id = expenditure.candidate_id
+                   WHERE network.network_slug = $1
+                     AND expenditure.election_cycle = $2
+                   GROUP BY network.network_slug, network.committee_id,
+                            member.bioguide_id, expenditure.election_cycle
+               ), committee_member_amounts AS (
+                   SELECT COALESCE(direct.network_slug, outside.network_slug) AS network_slug,
+                          COALESCE(direct.committee_id, outside.committee_id) AS committee_id,
+                          COALESCE(direct.bioguide_id, outside.bioguide_id) AS bioguide_id,
+                          COALESCE(direct.cycle, outside.cycle) AS cycle,
+                          COALESCE(direct.direct_amount, 0)::double precision AS direct_amount,
+                          COALESCE(outside.support_ie_amount, 0)::double precision AS support_ie_amount,
+                          COALESCE(outside.oppose_ie_amount, 0)::double precision AS oppose_ie_amount
+                   FROM direct_receipts direct
+                   FULL OUTER JOIN outside_spending outside
+                     ON outside.network_slug = direct.network_slug
+                    AND outside.committee_id = direct.committee_id
+                    AND outside.bioguide_id = direct.bioguide_id
+                    AND outside.cycle = direct.cycle
+               )
+               SELECT network.committee_id,
+                      network.committee_name,
+                      network.role::text AS role,
+                      amounts.bioguide_id,
+                      member.first_name,
+                      member.last_name,
+                      member.current_party AS party,
+                      member.current_chamber AS chamber,
+                      member.current_state AS state,
+                      COALESCE(amounts.direct_amount, 0)::double precision AS direct_amount,
+                      COALESCE(amounts.support_ie_amount, 0)::double precision AS support_ie_amount,
+                      COALESCE(amounts.oppose_ie_amount, 0)::double precision AS oppose_ie_amount
+               FROM influence_network_committees network
+               LEFT JOIN committee_member_amounts amounts
+                 ON amounts.network_slug = network.network_slug
+                AND amounts.committee_id = network.committee_id
+                AND amounts.cycle = $2
+               LEFT JOIN members member ON member.bioguide_id = amounts.bioguide_id
+               WHERE network.network_slug = $1
+               ORDER BY network.committee_id, amounts.bioguide_id"#,
         )
         .bind(network_slug)
         .bind(cycle)
         .fetch_all(self.pool())
         .await?;
 
-        let committees: Vec<CommitteeFinancial> = comm_rows
-            .into_iter()
-            .map(|r| CommitteeFinancial {
-                committee_id: r.committee_id,
-                committee_name: r.committee_name,
-                role: r.role,
-                direct_contributions: r.direct_amount,
-                independent_supporting: r.support_ie_amount,
-                independent_opposing: r.oppose_ie_amount,
-                total: r.direct_amount + r.support_ie_amount + r.oppose_ie_amount,
-            })
-            .collect();
-
-        // Top recipient members from MV (join to members for name/party/chamber)
-        #[derive(sqlx::FromRow)]
-        struct RecipRow {
-            bioguide_id: String,
+        struct RecipientAccumulator {
             first_name: String,
             last_name: String,
             party: String,
             chamber: String,
             state: String,
-            total_received: f64,
+            direct_contributions: f64,
+            independent_supporting: f64,
+            independent_opposing: f64,
         }
 
-        let recip_rows: Vec<RecipRow> = sqlx::query_as(
-            r#"SELECT
-                inm.bioguide_id,
-                m.first_name,
-                m.last_name,
-                m.current_party AS party,
-                m.current_chamber AS chamber,
-                m.current_state AS state,
-                COALESCE(SUM(inm.direct_amount + inm.support_ie_amount + inm.oppose_ie_amount), 0)::double precision AS total_received
-            FROM influence_network_member_mv inm
-            JOIN members m ON inm.bioguide_id = m.bioguide_id
-            WHERE inm.network_slug = $1 AND inm.cycle = $2
-            GROUP BY inm.bioguide_id, m.first_name, m.last_name, m.current_party, m.current_chamber, m.current_state
-            ORDER BY total_received DESC
-            LIMIT 20"#,
-        )
-        .bind(network_slug)
-        .bind(cycle)
-        .fetch_all(self.pool())
-        .await?;
+        let mut committee_totals = BTreeMap::<String, CommitteeFinancial>::new();
+        let mut recipient_totals = BTreeMap::<String, RecipientAccumulator>::new();
+        for row in rows {
+            let committee = committee_totals
+                .entry(row.committee_id.clone())
+                .or_insert_with(|| CommitteeFinancial {
+                    committee_id: row.committee_id,
+                    committee_name: row.committee_name,
+                    role: row.role,
+                    direct_contributions: 0.0,
+                    independent_supporting: 0.0,
+                    independent_opposing: 0.0,
+                    total: 0.0,
+                });
+            committee.direct_contributions += row.direct_amount;
+            committee.independent_supporting += row.support_ie_amount;
+            committee.independent_opposing += row.oppose_ie_amount;
+            committee.total = committee.direct_contributions
+                + committee.independent_supporting
+                + committee.independent_opposing;
 
-        let top_recipients: Vec<RecipientMember> = recip_rows
+            let Some(bioguide_id) = row.bioguide_id else {
+                continue;
+            };
+            let metadata = (
+                row.first_name,
+                row.last_name,
+                row.party,
+                row.chamber,
+                row.state,
+            );
+            let (Some(first_name), Some(last_name), Some(party), Some(chamber), Some(state)) =
+                metadata
+            else {
+                return Err(sqlx::Error::Protocol(format!(
+                    "influence financial row references missing member {bioguide_id}"
+                )));
+            };
+            let recipient =
+                recipient_totals
+                    .entry(bioguide_id)
+                    .or_insert_with(|| RecipientAccumulator {
+                        first_name,
+                        last_name,
+                        party,
+                        chamber,
+                        state,
+                        direct_contributions: 0.0,
+                        independent_supporting: 0.0,
+                        independent_opposing: 0.0,
+                    });
+            recipient.direct_contributions += row.direct_amount;
+            recipient.independent_supporting += row.support_ie_amount;
+            recipient.independent_opposing += row.oppose_ie_amount;
+        }
+
+        let mut committees: Vec<CommitteeFinancial> = committee_totals.into_values().collect();
+        committees.sort_by(|left, right| {
+            right
+                .total
+                .total_cmp(&left.total)
+                .then_with(|| left.committee_name.cmp(&right.committee_name))
+                .then_with(|| left.committee_id.cmp(&right.committee_id))
+        });
+        let total_direct = committees
+            .iter()
+            .map(|committee| committee.direct_contributions)
+            .sum();
+        let total_support = committees
+            .iter()
+            .map(|committee| committee.independent_supporting)
+            .sum();
+        let total_oppose = committees
+            .iter()
+            .map(|committee| committee.independent_opposing)
+            .sum();
+
+        let mut top_recipients: Vec<RecipientMember> = recipient_totals
             .into_iter()
-            .map(|r| RecipientMember {
-                bioguide_id: r.bioguide_id,
-                first_name: r.first_name,
-                last_name: r.last_name,
-                party: r.party,
-                chamber: r.chamber,
-                state: r.state,
-                total_received: r.total_received,
+            .map(|(bioguide_id, recipient)| {
+                let total_activity = recipient.direct_contributions
+                    + recipient.independent_supporting
+                    + recipient.independent_opposing;
+                RecipientMember {
+                    bioguide_id,
+                    first_name: recipient.first_name,
+                    last_name: recipient.last_name,
+                    party: recipient.party,
+                    chamber: recipient.chamber,
+                    state: recipient.state,
+                    // Independent expenditures are never received by a campaign.
+                    total_received: recipient.direct_contributions,
+                    direct_contributions: recipient.direct_contributions,
+                    independent_supporting: recipient.independent_supporting,
+                    independent_opposing: recipient.independent_opposing,
+                    total_activity,
+                }
             })
             .collect();
+        top_recipients.sort_by(|left, right| {
+            right
+                .total_received
+                .total_cmp(&left.total_received)
+                .then_with(|| right.total_activity.total_cmp(&left.total_activity))
+                .then_with(|| left.bioguide_id.cmp(&right.bioguide_id))
+        });
+        top_recipients.truncate(20);
 
         Ok(Some(InfluenceNetworkFinancials {
             network_slug: network_slug.to_string(),
@@ -323,6 +451,7 @@ impl Repository {
 struct NetRow {
     network_slug: String,
     display_name: String,
+    aliases: Vec<String>,
     description: String,
     category: String,
     confidence: String,

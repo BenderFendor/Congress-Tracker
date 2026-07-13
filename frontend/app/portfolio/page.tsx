@@ -3,6 +3,7 @@
 import { createLogger } from "@/lib/tracing"
 
 import { useEffect, useMemo, useState } from "react"
+import Link from "next/link"
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -27,6 +28,7 @@ import { EvidenceRow } from "@/components/evidence/EvidenceRow"
 import { OverlapCard } from "@/components/evidence/OverlapCard"
 import { SourceProvenancePill } from "@/components/evidence/SourceProvenancePill"
 import { FilingTimeline } from "./_components/FilingTimeline"
+import { MemberPortrait } from "@/components/ui/member-identity"
 import {
   fetchPortfolioSummary,
   fetchTopMembers,
@@ -262,7 +264,7 @@ export default function PortfolioPage() {
       />
 
       {/* ---- Tab bar ---- */}
-      <div className="flex gap-0 overflow-x-auto border-b border-border" role="tablist" aria-label="Portfolio views">
+      <div className="portfolio-tablist" role="tablist" aria-label="Portfolio views">
         {(["ledger", "overview", "evidence"] as const).map((tab) => (
           <button
             key={tab}
@@ -271,7 +273,7 @@ export default function PortfolioPage() {
             aria-selected={activeTab === tab}
             aria-controls={`portfolio-panel-${tab}`}
             onClick={() => setActiveTab(tab)}
-            className={`min-h-11 whitespace-nowrap px-4 py-3 text-sm font-semibold border-b-2 transition-colors ${
+            className={`min-h-12 px-3 py-3 text-sm font-semibold border-b-2 transition-colors ${
               activeTab === tab
                 ? "border-accent text-accent"
                 : "border-transparent text-muted-foreground hover:text-foreground"
@@ -459,28 +461,17 @@ export default function PortfolioPage() {
       {/* TAB 2: Portfolio Overview                                          */}
       {/* ================================================================= */}
       {activeTab === "overview" && (
-        <section id="portfolio-panel-overview" role="tabpanel" aria-labelledby="portfolio-tab-overview">
-          {/* KPI Strip */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mt-8">
-            {[
-              { title: "Tracked Members", value: loading ? "..." : summaryFailed ? "Unavailable" : (summary?.total_members?.toLocaleString() ?? "Not loaded"), sub: "NORMALIZED ROWS", icon: <Users className="text-muted-foreground w-5 h-5" /> },
-              { title: "In Office", value: loading ? "..." : summaryFailed ? "Unavailable" : (summary?.in_office_count?.toLocaleString() ?? "Not loaded"), sub: "CURRENT MEMBERS", icon: <TrendingUp className="text-blue-500 w-5 h-5" /> },
-              { title: "House", value: loading ? "..." : summaryFailed ? "Unavailable" : (summary?.house_count?.toLocaleString() ?? "Not loaded"), sub: "CURRENT CHAMBER", icon: <Building className="text-emerald-500 w-5 h-5" /> },
-              { title: "Senate", value: loading ? "..." : summaryFailed ? "Unavailable" : (summary?.senate_count?.toLocaleString() ?? "Not loaded"), sub: "CURRENT CHAMBER", icon: <Building className="text-red-500 w-5 h-5" /> },
-              { title: "Disclosed trades", value: loading ? "..." : disclosuresFailed ? "Unavailable" : trades.length.toLocaleString(), sub: "OFFICIAL DISCLOSURES", icon: <TrendingUp className="text-purple-500 w-5 h-5" /> },
-            ].map((metric) => (
-              <div key={metric.title} className="bg-card border border-border rounded-xl p-4 flex flex-col gap-3 shadow-sm">
-                <div className="flex justify-between items-start">
-                  <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">{metric.title}</span>
-                  {metric.icon}
-                </div>
-                <div>
-                  <div className="text-3xl font-extrabold text-foreground">{metric.value}</div>
-                  <div className="text-[10px] text-gray-500 font-mono font-medium tracking-wider mt-1">{metric.sub}</div>
-                </div>
-              </div>
-            ))}
+        <section className="portfolio-overview" id="portfolio-panel-overview" role="tabpanel" aria-labelledby="portfolio-tab-overview">
+          <div className="portfolio-overview-intro">
+            <div><span className="archive-panel-kicker">Context, not valuation</span><h2>Portfolio overview</h2></div>
+            <p>This view joins congressional roster coverage, committee-jurisdiction context, and the currently loaded disclosure window. Sector weights describe committee exposure, not security holdings or investment performance.</p>
           </div>
+          <ArchiveMetrics metrics={[
+            { label: "Tracked members", value: loading ? "…" : summaryFailed ? "Unavailable" : (summary?.total_members?.toLocaleString() ?? "Not loaded"), detail: "Normalized roster rows", icon: <Users size={19} /> },
+            { label: "Currently in office", value: loading ? "…" : summaryFailed ? "Unavailable" : (summary?.in_office_count?.toLocaleString() ?? "Not loaded"), detail: "Source-designated status", icon: <CheckCircle2 size={19} /> },
+            { label: "Chamber coverage", value: loading ? "…" : summaryFailed ? "Unavailable" : `${summary?.house_count ?? 0} H · ${summary?.senate_count ?? 0} S`, detail: "House and Senate rows", icon: <Building size={19} /> },
+            { label: "Disclosure rows", value: loading ? "…" : disclosuresFailed ? "Unavailable" : trades.length.toLocaleString(), detail: "Current official filing window", icon: <FileText size={19} /> },
+          ]} />
 
           {/* Main Cards Row */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-8">
@@ -597,7 +588,7 @@ export default function PortfolioPage() {
             </ArchivePanel>
 
             {/* Top Active Members */}
-            <div className="col-span-1 lg:col-span-3">
+            <div className="col-span-1 lg:col-span-3 portfolio-member-ranking">
               <ArchivePanel title="Members by committee coverage" kicker="Rankings">
                 {/* Member search */}
                 <div className="mb-4">
@@ -618,39 +609,29 @@ export default function PortfolioPage() {
                     )}
                   </div>
                 </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm text-left">
-                    <thead>
-                      <tr className="text-muted-foreground border-b border-border">
-                        <th className="pb-3 font-semibold text-[10px] tracking-wider uppercase">Rank</th>
-                        <th className="pb-3 font-semibold text-[10px] tracking-wider uppercase">Member</th>
-                        <th className="pb-3 font-semibold text-[10px] tracking-wider uppercase text-right">Committees</th>
-                        <th className="pb-3 font-semibold text-[10px] tracking-wider uppercase text-right">Years</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {loading ? (
-                        <tr><td colSpan={4} className="py-4 text-center text-muted-foreground">Loading...</td></tr>
-                      ) : membersFailed ? (
-                        <tr><td colSpan={4} className="py-4 text-center text-red-500">Member ranking request failed. No ranking is shown.</td></tr>
-                      ) : filteredMembers.length === 0 ? (
-                        <tr><td colSpan={4} className="py-4 text-center text-muted-foreground">{memberSearch ? "No members match this search." : "No member ranking is loaded."}</td></tr>
-                      ) : (
-                        filteredMembers.map((m) => (
-                          <tr key={m.bioguide_id} className="hover:bg-muted/30 transition-colors">
-                            <td className="py-4 font-mono text-muted-foreground text-xs">{m.rank}</td>
-                            <td className="py-4 font-semibold text-foreground whitespace-nowrap pr-2 truncate max-w-[120px]" title={m.name}>
-                              {m.name}
-                              <div className="text-[10px] text-muted-foreground">{m.party} - {m.state}</div>
-                            </td>
-                            <td className="py-4 text-right font-mono font-medium text-foreground">{m.committee_count.toLocaleString()}</td>
-                            <td className="py-4 text-right font-mono text-muted-foreground">{m.years_in_office > 0 ? m.years_in_office.toFixed(1) : "N/A"}</td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                {loading ? <DataState kind="setup" title="Loading member coverage" description="Requesting roster and committee assignment context." />
+                  : membersFailed ? <DataState kind="error" title="Member ranking unavailable" description="The ranking request failed, so no inferred order is shown." />
+                    : filteredMembers.length === 0 ? <DataState title="No members match" description={memberSearch ? "Clear the member search or try a state or party abbreviation." : "No member ranking is loaded."} />
+                      : <div className="portfolio-member-list">{filteredMembers.map((member) => (
+                        <Link href={`/legislators/${member.bioguide_id}`} className="portfolio-member-row" key={member.bioguide_id}>
+                          <span className="portfolio-member-rank">{String(member.rank).padStart(2, "0")}</span>
+                          <MemberPortrait
+                            bioguideId={member.bioguide_id}
+                            name={member.name}
+                            suppliedUrls={[member.depiction_url]}
+                            className="portfolio-member-photo"
+                            imageClassName="h-full w-full object-cover object-[center_20%]"
+                            fallbackClassName="grid h-full w-full place-items-center"
+                            width={52}
+                            height={52}
+                            ariaHidden
+                          />
+                          <span className="portfolio-member-name"><strong>{member.name}</strong><small>{member.party} · {member.state} · {member.chamber}</small></span>
+                          <span><strong>{member.committee_count.toLocaleString()}</strong><small>committees</small></span>
+                          <span><strong>{member.years_in_office > 0 ? member.years_in_office.toFixed(1) : "N/A"}</strong><small>years served</small></span>
+                          <ArrowUpRight size={16} aria-hidden="true" />
+                        </Link>
+                      ))}</div>}
               </ArchivePanel>
             </div>
           </div>

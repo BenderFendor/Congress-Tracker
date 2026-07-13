@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# Builds the current canonical backend, starts that exact binary on an isolated
+# port, and runs populated read-only API flows against it.
+set -euo pipefail
+
+if [[ "${1:-}" == "--help" ]]; then
+  cat <<'EOF'
+Usage: DATABASE_URL=postgres://... scripts/verify-live-api-flows
+
+Builds intel_backend from the current worktree, refuses to reuse the normal
+port, starts the built binary on LIVE_API_TEST_PORT (isolated by default), and
+runs frontend/scripts/e2e-api-flows.live.mjs. The database must already contain
+the representative populated records asserted by that suite.
+EOF
+  exit 0
+fi
+
+: "${DATABASE_URL:?DATABASE_URL must name the populated read-only verification database}"
+command -v cargo >/dev/null || { echo "cargo is required" >&2; exit 1; }
+command -v curl >/dev/null || { echo "curl is required" >&2; exit 1; }
+command -v node >/dev/null || { echo "node is required" >&2; exit 1; }
+command -v git >/dev/null || { echo "git is required" >&2; exit 1; }
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PORT="${LIVE_API_TEST_PORT:-$((42000 + ($$ % 1000)))}"
+LOG="${TMPDIR:-/tmp}/congress-tracker-live-api-${PORT}.log"
+BACKEND_PID=""
+
+if [[ "$PORT" == "4020" ]]; then
+  echo "LIVE_API_TEST_PORT must not be the normal development port 4020" >&2
+  exit 1
+fi
+
+if (echo >/dev/tcp/127.0.0.1/"$PORT") >/dev/null 2>&1; then
+  echo "LIVE_API_TEST_PORT $PORT is already occupied; refusing to reuse an unidentified process" >&2
+  exit 1
+fi
+
+cleanup() {
+  if [[ -n "$BACKEND_PID" ]]; then
+    kill "$BACKEND_PID" 2>/dev/null || true
+    wait "$BACKEND_PID" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT INT TERM
+
+echo "Building the current intel_backend binary..."
+(cd "$ROOT/backend" && cargo build -p intel_backend --bin intel_backend)
+BINARY="$ROOT/backend/target/debug/intel_backend"
+[[ -x "$BINARY" ]] || { echo "built intel_backend binary is missing" >&2; exit 1; }
+
+COMMIT="$(git -C "$ROOT" rev-parse HEAD)"
+WORKTREE_STATE="clean"
+if ! git -C "$ROOT" diff --quiet || ! git -C "$ROOT" diff --cached --quiet; then
+  WORKTREE_STATE="dirty"
+fi
+echo "Git revision: $COMMIT ($WORKTREE_STATE worktree)"
+
+if command -v sha256sum >/dev/null; then
+  echo "Backend binary SHA-256: $(sha256sum "$BINARY" | awk '{print $1}')"
+fi
+
+echo "Starting the built backend on isolated port $PORT..."
+DATABASE_URL="$DATABASE_URL" PORT="$PORT" RUST_LOG="${RUST_LOG:-warn}" \
+  "$BINARY" >"$LOG" 2>&1 &
+BACKEND_PID=$!
+
+ready=0
+for _ in $(seq 1 120); do
+  if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
+    echo "The newly built backend exited before becoming healthy" >&2
+    tail -80 "$LOG" >&2
+    exit 1
+  fi
+  if curl -fsS --max-time 1 "http://127.0.0.1:${PORT}/api/health" >/dev/null 2>&1; then
+    ready=1
+    break
+  fi
+  sleep 0.25
+done
+
+if [[ "$ready" -ne 1 ]]; then
+  echo "The newly built backend did not become healthy on port $PORT" >&2
+  tail -80 "$LOG" >&2
+  exit 1
+fi
+
+echo "Running populated live API flows against PID $BACKEND_PID..."
+(cd "$ROOT/frontend" && \
+  BACKEND_URL="http://127.0.0.1:${PORT}" node --test scripts/e2e-api-flows.live.mjs)

@@ -99,48 +99,50 @@ impl Repository {
         bioguide_id: &str,
         congress: i32,
     ) -> Result<Option<MemberVoteSummary>, sqlx::Error> {
-        // Try materialized view first
-        let mv_row: Option<MvSummaryRow> = sqlx::query_as::<_, MvSummaryRow>(
-            r#"SELECT total_votes, missed_votes, party_line_votes
-               FROM member_vote_summary_mv
-               WHERE bioguide_id = $1 AND congress = $2"#,
+        let counts: VoteSummaryRow = sqlx::query_as(
+            r#"WITH party_positions AS (
+                   SELECT mv.vote_id, m.current_party AS party, mv.position, COUNT(*)::bigint AS members
+                   FROM member_votes mv
+                   JOIN roll_call_votes rcv ON rcv.vote_id = mv.vote_id
+                   JOIN members m ON m.bioguide_id = mv.bioguide_id
+                   WHERE rcv.congress = $2
+                     AND m.current_party IS NOT NULL
+                     AND mv.position IN ('Yes', 'No')
+                   GROUP BY mv.vote_id, m.current_party, mv.position
+               ), party_majorities AS (
+                   SELECT vote_id, party, position,
+                          ROW_NUMBER() OVER (PARTITION BY vote_id, party ORDER BY members DESC, position) AS rank
+                   FROM party_positions
+               )
+               SELECT COUNT(*)::bigint AS total_votes,
+                      COUNT(*) FILTER (WHERE mv.position IN ('Not Voting', 'Not Present'))::bigint AS missed_votes,
+                      COUNT(*) FILTER (WHERE pm.rank = 1 AND mv.position = pm.position)::bigint AS party_line_votes,
+                      COUNT(*) FILTER (WHERE pm.rank = 1 AND mv.position IN ('Yes', 'No'))::bigint AS party_line_eligible_votes,
+                      MIN(rcv.vote_date) AS first_vote_date,
+                      MAX(rcv.vote_date) AS last_vote_date
+               FROM member_votes mv
+               JOIN roll_call_votes rcv ON rcv.vote_id = mv.vote_id
+               JOIN members target_member ON target_member.bioguide_id = mv.bioguide_id
+               LEFT JOIN party_majorities pm
+                 ON pm.vote_id = mv.vote_id AND pm.party = target_member.current_party AND pm.rank = 1
+               WHERE mv.bioguide_id = $1 AND rcv.congress = $2"#,
         )
         .bind(bioguide_id)
         .bind(congress)
-        .fetch_optional(self.pool())
+        .fetch_one(self.pool())
         .await?;
 
-        let (total_votes, missed_votes, party_line_votes) = if let Some(mv) = &mv_row {
-            (mv.total_votes, mv.missed_votes, mv.party_line_votes)
-        } else {
-            // Compute directly from member_votes and roll_call_votes
-            let counts: Option<(i64, i64, i64)> = sqlx::query_as(
-                r#"SELECT
-                    COUNT(*)::bigint,
-                    COUNT(*) FILTER (WHERE mv.position IN ('Not Voting', 'Not Present'))::bigint,
-                    COUNT(*) FILTER (WHERE mv.position = mv.party)::bigint
-                 FROM member_votes mv
-                 JOIN roll_call_votes rcv ON rcv.vote_id = mv.vote_id
-                 WHERE mv.bioguide_id = $1 AND rcv.congress = $2"#,
-            )
-            .bind(bioguide_id)
-            .bind(congress)
-            .fetch_optional(self.pool())
-            .await?;
-
-            match counts {
-                Some(c) => c,
-                None => return Ok(None),
-            }
-        };
+        let total_votes = counts.total_votes;
+        let missed_votes = counts.missed_votes;
+        let party_line_votes = counts.party_line_votes;
 
         if total_votes == 0 {
             return Ok(None);
         }
 
         let missed_vote_pct = Some(missed_votes as f64 / total_votes as f64 * 100.0);
-        let party_line_pct = if total_votes > 0 {
-            Some(party_line_votes as f64 / total_votes as f64 * 100.0)
+        let party_line_pct = if counts.party_line_eligible_votes > 0 {
+            Some(party_line_votes as f64 / counts.party_line_eligible_votes as f64 * 100.0)
         } else {
             None
         };
@@ -157,7 +159,10 @@ impl Repository {
             missed_votes,
             missed_vote_pct,
             party_line_votes,
+            party_line_eligible_votes: counts.party_line_eligible_votes,
             party_line_pct,
+            first_vote_date: counts.first_vote_date,
+            last_vote_date: counts.last_vote_date,
             recent_votes,
         }))
     }
@@ -247,10 +252,13 @@ impl Repository {
 // ── Private row types ───────────────────────────────────────────────────
 
 #[derive(sqlx::FromRow)]
-struct MvSummaryRow {
+struct VoteSummaryRow {
     total_votes: i64,
     missed_votes: i64,
     party_line_votes: i64,
+    party_line_eligible_votes: i64,
+    first_vote_date: Option<NaiveDate>,
+    last_vote_date: Option<NaiveDate>,
 }
 
 #[derive(sqlx::FromRow)]

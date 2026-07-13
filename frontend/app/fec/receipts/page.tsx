@@ -1,178 +1,330 @@
-"use client"
+import Link from "next/link"
+import { Calendar, ExternalLink, FileWarning, Search, User } from "lucide-react"
 
-import { useState, useEffect } from "react"
-import { Search, Calendar, DollarSign, User, Filter } from "lucide-react"
-import { getAllReceipts, FECReceipt } from "@/lib/services/fec"
-import { useSearchParams } from "next/navigation"
-import { createLogger } from "@/lib/tracing"
+import { buildFecReceiptQuery, parseOptionalReceiptNumber } from "@/lib/fec-receipts.mjs"
+import { getFecReceipts, type FECReceipt, type FECReceiptQuery } from "@/lib/services/fec"
 
-const log = createLogger("FecReceiptsPage")
+type SearchValue = string | string[] | undefined
+type ReceiptsPageProps = {
+  searchParams: Record<string, SearchValue>
+}
 
-export default function ReceiptsPage() {
-    const searchParams = useSearchParams();
-    const committeeId = searchParams.get("committee");
+function first(value: SearchValue): string {
+  return Array.isArray(value) ? value[0] ?? "" : value ?? ""
+}
 
-    const [receipts, setReceipts] = useState<FECReceipt[]>([])
-    const [loading, setLoading] = useState(true)
-    const [searchTerm, setSearchTerm] = useState("")
-    const [filterCommittee, setFilterCommittee] = useState(committeeId || "all")
+function formatCurrency(value: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(value)
+}
 
-    useEffect(() => {
-        async function loadReceipts() {
-            try {
-                const data = await getAllReceipts(committeeId || undefined);
-                setReceipts(data);
-            } catch (error) {
-                log.error("Failed to load receipts", { error: String(error) })
-            } finally {
-                setLoading(false);
-            }
-        }
-        loadReceipts();
-    }, [committeeId]);
+function formatDate(value?: string | null): string {
+  if (!value) return "Date unavailable"
+  return new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${value}T00:00:00Z`))
+}
 
-    // Filter receipts
-    const filteredReceipts = receipts.filter(receipt => {
-        const matchesSearch = !searchTerm ||
-            receipt.contributor_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            receipt.committee_name?.toLowerCase().includes(searchTerm.toLowerCase());
+function kindLabel(value: string): string {
+  return value.replaceAll("_", " ")
+}
 
-        const matchesCommittee = filterCommittee === "all" || receipt.committee_id === filterCommittee;
+function pageHref(query: FECReceiptQuery, page: number): string {
+  return `/fec/receipts?${buildFecReceiptQuery({ ...query, page })}`
+}
 
-        return matchesSearch && matchesCommittee;
-    });
+function ReceiptSource({ receipt }: { receipt: FECReceipt }) {
+  if (!receipt.source_url) {
+    return <span className="font-mono text-[10px] uppercase text-muted-foreground">Source link unavailable</span>
+  }
+  return (
+    <a
+      className="inline-flex items-center gap-1 font-mono text-[10px] font-bold uppercase tracking-wide text-accent hover:underline"
+      href={receipt.source_url}
+      rel="noreferrer"
+      target="_blank"
+    >
+      FEC filing <ExternalLink size={11} />
+    </a>
+  )
+}
 
-    // Get unique committees
-    const committees = [...new Set(receipts.map(r => r.committee_id))].sort();
+export default async function ReceiptsPage({ searchParams }: ReceiptsPageProps) {
+  const cycle = parseOptionalReceiptNumber(searchParams.cycle) ?? 2026
+  const committeeId = first(searchParams.committee_id) || first(searchParams.committee)
+  const search = first(searchParams.q)
+  const recordKind = first(searchParams.record_kind)
+  const query: FECReceiptQuery = {
+    committeeId,
+    cycle,
+    search,
+    recordKind,
+    minAmount: parseOptionalReceiptNumber(searchParams.min_amount),
+    maxAmount: parseOptionalReceiptNumber(searchParams.max_amount),
+    page: parseOptionalReceiptNumber(searchParams.page) ?? 1,
+    perPage: parseOptionalReceiptNumber(searchParams.per_page) ?? 50,
+  }
 
-    return (
-        <div className="min-h-screen bg-background text-foreground font-sans selection:bg-accent text-accent-foreground selection:text-foreground pb-20">
-            <div className="max-w-[1600px] mx-auto px-6 md:px-12 pt-12">
-                {/* Header */}
-                <div className="mb-12">
-                    <h2 className="font-serif text-5xl md:text-6xl font-bold text-foreground mb-4 leading-none tracking-tight">
-                        CAMPAIGN <span className="text-accent">RECEIPTS</span>
-                    </h2>
-                    <p className="font-mono text-muted-foreground max-w-xl text-sm uppercase tracking-wide">
-                        Track campaign contributions and donor information from federal election filings.
-                    </p>
-                </div>
+  let response: Awaited<ReturnType<typeof getFecReceipts>> | null = null
+  let errorMessage = ""
+  try {
+    response = await getFecReceipts(query)
+  } catch (error) {
+    errorMessage = error instanceof Error ? error.message : "The receipts service failed"
+  }
 
-                {/* Search and Filters */}
-                <div className="mb-12 animate-stagger-item delay-1">
-                    <div className="flex flex-col lg:flex-row gap-6 mb-8">
-                        <div className="flex-1 relative">
-                            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-accent" size={20} />
-                            <input
-                                type="text"
-                                placeholder="SEARCH BY DONOR OR COMMITTEE..."
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                className="w-full bg-card border-2 border-border px-12 py-4 text-foreground font-mono font-bold placeholder:text-muted-foreground focus:outline-none focus:border-accent transition-all uppercase tracking-wider"
-                            />
-                        </div>
-                        <button className="flex items-center justify-center gap-2 bg-muted border-2 border-border px-8 py-4 font-mono font-bold uppercase hover:bg-muted/50 hover:border-accent transition-all text-accent">
-                            <Filter size={16} />
-                            Advanced Filters
-                        </button>
-                    </div>
+  const receipts = response?.data ?? []
+  const paging = response?.meta.paging
+  const coverage = response?.meta.coverage_status ?? "not_ingested"
+  const linkageIssues = response?.meta.unresolved_linkage_issues ?? 0
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <select
-                            value={filterCommittee}
-                            onChange={(e) => setFilterCommittee(e.target.value)}
-                            className="bg-card border-2 border-border px-4 py-3 text-foreground font-mono text-sm uppercase focus:border-accent outline-none appearance-none"
-                        >
-                            <option value="all">All Committees</option>
-                            {committees.map(committee => (
-                                <option key={committee} value={committee}>{committee}</option>
-                            ))}
-                        </select>
+  return (
+    <main className="min-h-screen bg-background pb-20 text-foreground">
+      <div className="mx-auto max-w-[1500px] px-4 pt-10 sm:px-6 md:px-12">
+        <header className="border-b-2 border-border pb-8">
+          <p className="mb-3 font-mono text-xs font-bold uppercase tracking-[0.24em] text-accent">
+            Federal Election Commission warehouse
+          </p>
+          <h1 className="font-serif text-4xl font-bold leading-none tracking-tight sm:text-5xl md:text-6xl">
+            Disclosed campaign receipts
+          </h1>
+          <p className="mt-5 max-w-3xl text-sm leading-6 text-muted-foreground">
+            Canonical itemized receipts for House and Senate candidate committees. Amendments supersede earlier rows;
+            memo allocations, refunds, transfers, and outside spending remain visible without entering direct-receipt totals.
+          </p>
+          <Link className="mt-4 inline-block font-mono text-xs font-bold uppercase text-accent hover:underline" href="/fec/disbursements">
+            Browse operating disbursements
+          </Link>
+        </header>
 
-                        <button className="bg-accent text-accent-foreground text-black font-mono font-bold uppercase hover:bg-card hover:text-black transition-all px-4 py-3">
-                            Apply Filters
-                        </button>
-                    </div>
-                </div>
-
-                {/* Results Summary */}
-                <div className="mb-6 flex items-center gap-2 text-muted-foreground font-sans text-xs text-muted-foreground tracking-wide">
-                    <div className="w-2 h-2 bg-accent text-accent-foreground rounded-full animate-pulse"></div>
-                    Showing {filteredReceipts.length} of {receipts.length} receipts
-                </div>
-
-                {/* Receipts Table */}
-                {loading ? (
-                    <div className="flex items-center justify-center h-64">
-                        <div className="w-12 h-12 border-4 border-accent border-t-transparent rounded-full animate-spin"></div>
-                    </div>
-                ) : (
-                    <div className="bg-card border-2 border-border overflow-hidden">
-                        {/* Table Header */}
-                        <div className="grid grid-cols-12 gap-4 p-4 bg-muted border-b border-border font-mono text-[10px] font-bold uppercase text-muted-foreground tracking-wide">
-                            <div className="col-span-3">Donor</div>
-                            <div className="col-span-3">Committee</div>
-                            <div className="col-span-2">Date</div>
-                            <div className="col-span-2">Amount</div>
-                            <div className="col-span-2 text-right">Employer</div>
-                        </div>
-
-                        {/* Table Rows */}
-                        <div className="divide-y divide-border">
-                            {filteredReceipts.map((receipt, idx) => (
-                                <div key={idx} className="grid grid-cols-12 gap-4 p-4 hover:bg-muted/50 transition-colors group">
-                                    <div className="col-span-3 flex items-center gap-3">
-                                        <div className="w-8 h-8 bg-muted border border-border flex items-center justify-center text-muted-foreground">
-                                            <User size={14} />
-                                        </div>
-                                        <div>
-                                            <div className="font-sans text-sm font-medium text-foreground group-hover:text-accent transition-colors truncate max-w-[200px]">
-                                                {receipt.contributor_name}
-                                            </div>
-                                            {receipt.occupation && (
-                                                <div className="text-[10px] font-mono text-muted-foreground uppercase">
-                                                    {receipt.occupation}
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    <div className="col-span-3">
-                                        <div className="font-mono text-xs text-foreground truncate" title={receipt.committee_name}>
-                                            {receipt.committee_name}
-                                        </div>
-                                        <div className="text-[10px] font-mono text-muted-foreground uppercase mt-0.5">
-                                            {receipt.committee_id}
-                                        </div>
-                                    </div>
-
-                                    <div className="col-span-2 flex items-center gap-2 text-xs font-mono text-muted-foreground">
-                                        <Calendar size={12} />
-                                        {receipt.contribution_date}
-                                    </div>
-
-                                    <div className="col-span-2 flex items-center gap-1 font-mono text-sm font-bold text-foreground">
-                                        <DollarSign size={12} className="text-accent" />
-                                        {receipt.amount.toLocaleString()}
-                                    </div>
-
-                                    <div className="col-span-2 flex items-center justify-end">
-                                        <div className="text-[10px] font-mono text-muted-foreground uppercase truncate max-w-[100px]">
-                                            {receipt.employer || "N/A"}
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
-                {filteredReceipts.length === 0 && !loading && (
-                    <div className="text-center py-12 text-muted-foreground font-mono">
-                        No receipts found matching your criteria.
-                    </div>
-                )}
+        <section className="my-8 border-2 border-border bg-card p-5 md:p-7" aria-labelledby="receipt-filters">
+          <h2 id="receipt-filters" className="mb-5 font-mono text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground">
+            Search canonical records
+          </h2>
+          <form action="/fec/receipts" className="grid gap-4 lg:grid-cols-12" method="get">
+            <label className="relative lg:col-span-4">
+              <span className="sr-only">Donor or committee</span>
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-accent" size={18} />
+              <input
+                className="w-full border-2 border-border bg-background py-3 pl-11 pr-4 font-mono text-sm outline-none focus:border-accent"
+                defaultValue={search}
+                name="q"
+                placeholder="Donor or committee"
+                type="search"
+              />
+            </label>
+            <label className="lg:col-span-3">
+              <span className="sr-only">Committee ID</span>
+              <input
+                className="w-full border-2 border-border bg-background px-4 py-3 font-mono text-sm uppercase outline-none focus:border-accent"
+                defaultValue={committeeId}
+                name="committee_id"
+                placeholder="Committee ID"
+              />
+            </label>
+            <label className="lg:col-span-2">
+              <span className="sr-only">Election cycle</span>
+              <select
+                className="w-full border-2 border-border bg-background px-4 py-3 font-mono text-sm outline-none focus:border-accent"
+                defaultValue={String(cycle)}
+                name="cycle"
+              >
+                <option value="2026">2025–2026</option>
+                <option value="2024">2023–2024</option>
+                <option value="2022">2021–2022</option>
+              </select>
+            </label>
+            <label className="lg:col-span-3">
+              <span className="sr-only">Record kind</span>
+              <select
+                className="w-full border-2 border-border bg-background px-4 py-3 font-mono text-sm capitalize outline-none focus:border-accent"
+                defaultValue={recordKind}
+                name="record_kind"
+              >
+                <option value="">All record kinds</option>
+                <option value="contribution">Contributions</option>
+                <option value="transfer">Transfers</option>
+                <option value="memo">Memo records</option>
+                <option value="refund_or_return">Refunds and returns</option>
+                <option value="independent_expenditure">Independent expenditures</option>
+              </select>
+            </label>
+            <label className="lg:col-span-2">
+              <span className="sr-only">Minimum amount</span>
+              <input
+                className="w-full border-2 border-border bg-background px-4 py-3 font-mono text-sm outline-none focus:border-accent"
+                defaultValue={first(searchParams.min_amount)}
+                min="0"
+                name="min_amount"
+                placeholder="Minimum $"
+                step="1"
+                type="number"
+              />
+            </label>
+            <label className="lg:col-span-2">
+              <span className="sr-only">Maximum amount</span>
+              <input
+                className="w-full border-2 border-border bg-background px-4 py-3 font-mono text-sm outline-none focus:border-accent"
+                defaultValue={first(searchParams.max_amount)}
+                min="0"
+                name="max_amount"
+                placeholder="Maximum $"
+                step="1"
+                type="number"
+              />
+            </label>
+            <input name="per_page" type="hidden" value="50" />
+            <div className="flex gap-3 lg:col-span-8 lg:justify-end">
+              <Link className="border-2 border-border px-5 py-3 font-mono text-xs font-bold uppercase hover:border-accent" href="/fec/receipts?cycle=2026&page=1&per_page=50">
+                Reset
+              </Link>
+              <button className="bg-accent px-6 py-3 font-mono text-xs font-bold uppercase text-accent-foreground" type="submit">
+                Apply filters
+              </button>
             </div>
-        </div>
-    );
+          </form>
+        </section>
+
+        <section className="mb-6 grid gap-4 md:grid-cols-[1fr_auto] md:items-start" aria-live="polite">
+          <div className={`border-l-4 p-4 ${coverage === "loaded" ? "border-accent bg-accent/10" : "border-amber-500 bg-amber-500/10"}`}>
+            <p className="font-mono text-xs font-bold uppercase tracking-wide">
+              Coverage: {kindLabel(coverage)}
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {coverage === "loaded"
+                ? `${paging?.total_is_exact ? "" : "At least "}${paging?.total_items.toLocaleString() ?? "0"} canonical itemized records match this query.`
+                : linkageIssues > 0
+                  ? `${paging?.total_items.toLocaleString() ?? "0"} canonical records match. ${linkageIssues.toLocaleString()} official candidate-committee links could not be joined to the cycle master files.`
+                : `Cycle ${cycle} is not fully ingested. Empty results do not mean a committee received no money.`}
+            </p>
+            {response?.meta.source_updated_at ? (
+              <p className="mt-2 font-mono text-[10px] uppercase text-muted-foreground">
+                Canonicalized {new Date(response.meta.source_updated_at).toLocaleString("en-US")}
+              </p>
+            ) : null}
+          </div>
+          <a
+            className="inline-flex items-center gap-2 border-2 border-border px-4 py-3 font-mono text-xs font-bold uppercase hover:border-accent"
+            href={response?.provenance.source_url ?? "https://www.fec.gov/data/browse-data/"}
+            rel="noreferrer"
+            target="_blank"
+          >
+            FEC bulk source <ExternalLink size={13} />
+          </a>
+        </section>
+
+        {response?.provenance.warnings.map((warning) => (
+          <p className="mb-2 flex items-start gap-2 text-xs leading-5 text-muted-foreground" key={warning}>
+            <FileWarning className="mt-0.5 shrink-0 text-accent" size={14} />
+            {warning}
+          </p>
+        ))}
+
+        {errorMessage ? (
+          <div className="my-8 border-2 border-red-500 bg-red-500/10 p-5">
+            <p className="font-mono text-xs font-bold uppercase text-red-500">Receipts unavailable</p>
+            <p className="mt-2 text-sm text-muted-foreground">{errorMessage}</p>
+          </div>
+        ) : null}
+
+        {!errorMessage && receipts.length === 0 ? (
+          <div className="my-8 border-2 border-border bg-card p-10 text-center">
+            <p className="font-serif text-2xl font-bold">No canonical records match</p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Adjust the filters, or check the coverage state above before interpreting this as no activity.
+            </p>
+          </div>
+        ) : null}
+
+        {receipts.length > 0 ? (
+          <>
+            <div className="space-y-3 lg:hidden">
+              {receipts.map((receipt) => (
+                <article className="border-2 border-border bg-card p-4" key={receipt.source_record_id}>
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="font-sans text-sm font-semibold">{receipt.contributor_name}</p>
+                      <p className="mt-1 font-mono text-[10px] uppercase text-muted-foreground">{receipt.committee_name}</p>
+                    </div>
+                    <p className="font-mono text-sm font-bold">{formatCurrency(receipt.amount)}</p>
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2 font-mono text-[10px] uppercase">
+                    <span className="border border-border px-2 py-1">{kindLabel(receipt.record_kind)}</span>
+                    {!receipt.include_in_totals ? <span className="border border-amber-500 px-2 py-1 text-amber-600">Excluded from totals</span> : null}
+                  </div>
+                  <p className="mt-3 flex items-center gap-2 text-xs text-muted-foreground"><Calendar size={12} /> {formatDate(receipt.contribution_date)}</p>
+                  {receipt.memo_text ? <p className="mt-3 text-xs leading-5 text-muted-foreground">{receipt.memo_text}</p> : null}
+                  <div className="mt-4"><ReceiptSource receipt={receipt} /></div>
+                </article>
+              ))}
+            </div>
+
+            <div className="hidden overflow-hidden border-2 border-border bg-card lg:block">
+              <table className="w-full table-fixed border-collapse">
+                <thead className="border-b-2 border-border bg-muted font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+                  <tr>
+                    <th className="w-[25%] p-4 text-left" scope="col">Contributor</th>
+                    <th className="w-[25%] p-4 text-left" scope="col">Recipient committee</th>
+                    <th className="w-[14%] p-4 text-left" scope="col">Date</th>
+                    <th className="w-[12%] p-4 text-right" scope="col">Amount</th>
+                    <th className="w-[14%] p-4 text-left" scope="col">Classification</th>
+                    <th className="w-[10%] p-4 text-right" scope="col">Evidence</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {receipts.map((receipt) => (
+                    <tr className="align-top hover:bg-muted/40" key={receipt.source_record_id}>
+                      <th aria-label={`Contributor ${receipt.contributor_name}`} className="p-4 text-left font-normal" scope="row">
+                        <div className="flex gap-3">
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center border border-border bg-muted text-muted-foreground"><User aria-hidden="true" size={14} /></span>
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold" title={receipt.contributor_name}>{receipt.contributor_name}</p>
+                            <p className="mt-1 truncate font-mono text-[10px] uppercase text-muted-foreground">{receipt.employer || receipt.contributor_type}</p>
+                          </div>
+                        </div>
+                      </th>
+                      <td className="p-4">
+                        <p className="truncate text-xs" title={receipt.committee_name}>{receipt.committee_name}</p>
+                        <p className="mt-1 font-mono text-[10px] text-muted-foreground">{receipt.committee_id}</p>
+                      </td>
+                      <td className="p-4 text-xs text-muted-foreground">{formatDate(receipt.contribution_date)}</td>
+                      <td className="p-4 text-right font-mono text-sm font-bold">{formatCurrency(receipt.amount)}</td>
+                      <td className="p-4">
+                        <p className="font-mono text-[10px] font-bold uppercase">{kindLabel(receipt.record_kind)}</p>
+                        {!receipt.include_in_totals ? <p className="mt-1 font-mono text-[9px] uppercase text-amber-600">Excluded from totals</p> : null}
+                        {receipt.memo_text ? <p className="mt-2 line-clamp-2 text-[10px] leading-4 text-muted-foreground" title={receipt.memo_text}>{receipt.memo_text}</p> : null}
+                      </td>
+                      <td className="p-4 text-right"><ReceiptSource receipt={receipt} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        ) : null}
+
+        {paging && paging.total_pages > 1 ? (
+          <nav className="mt-8 flex items-center justify-between gap-4 border-t-2 border-border pt-6" aria-label="Receipt pages">
+            {paging.page > 1 ? (
+              <Link className="border-2 border-border px-4 py-3 font-mono text-xs font-bold uppercase hover:border-accent" href={pageHref(query, paging.page - 1)}>
+                Previous
+              </Link>
+            ) : <span />}
+            <p className="font-mono text-xs text-muted-foreground">Page {paging.page.toLocaleString()} of {paging.total_pages.toLocaleString()}</p>
+            {paging.page < paging.total_pages ? (
+              <Link className="border-2 border-border px-4 py-3 font-mono text-xs font-bold uppercase hover:border-accent" href={pageHref(query, paging.page + 1)}>
+                Next
+              </Link>
+            ) : <span />}
+          </nav>
+        ) : null}
+      </div>
+    </main>
+  )
 }

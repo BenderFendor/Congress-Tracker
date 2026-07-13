@@ -22,7 +22,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cache = Arc::new(CacheLayer::new(config.intel_cache_ttl_seconds));
     let repo = Repository::new(db, cache.clone());
 
-    let app = routes::build_router(repo, cache, config.openfec_api_key);
+    let app = routes::build_router(repo, cache);
     let addr = format!("0.0.0.0:{}", config.port);
     tracing::info!("Intel backend serving on {}", addr);
 

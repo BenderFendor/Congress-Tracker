@@ -17,25 +17,27 @@ export interface LobbyingFiling {
   client_id: number | null;
   client_name: string | null;
   issue_codes: string[];
+  source_url: string | null;
 }
 
-export interface Registrant {
-    id: number
-    name: string
-    description?: string
-    address_1?: string
-    address_2?: string
-    city?: string
-    state?: string
-    state_display?: string
-    zip?: string
-    country?: string
-    country_display?: string
-    contact_name?: string
-    contact_telephone?: string
-    url: string
-    dt_updated: string
-}
+export type LobbyingEntityKind = "clients" | "registrants" | "lobbyists";
+
+export type LobbyingEntity = {
+  id: number;
+  name: string;
+  description?: string | null;
+  state?: string | null;
+  country?: string | null;
+  filing_count: number | null;
+  filings?: LobbyingFiling[];
+};
+
+export type Registrant = {
+  id: number;
+  name: string;
+  url: string;
+  dt_updated: string;
+};
 
 export interface Filing {
     filing_uuid: string
@@ -75,69 +77,52 @@ export async function getRecentFilings(page = 1, pageSize = 25): Promise<{ count
     return { count: data.total, results: data.filings };
 }
 
-export async function getRegistrants(page = 1, pageSize = 25): Promise<{ count: number, results: Registrant[] }> {
-    void page;
-    void pageSize;
-    throw new Error("Lobbying registrant list endpoint is not implemented yet. Use /api/lobbying/filings for LDA-backed filings.");
+export async function getLobbyingEntities(
+  kind: LobbyingEntityKind,
+  search = "",
+  limit = 50,
+  offset = 0,
+): Promise<{ total: number; entities: LobbyingEntity[] }> {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  if (search.trim()) params.set("search", search.trim());
+  const response = await fetch(`${BACKEND_URL}/api/lobbying/${kind}?${params}`);
+  if (!response.ok) throw new Error(`Lobbying ${kind} request failed (${response.status})`);
+  const payload = await response.json();
+  const rows = payload[kind] as Array<Record<string, unknown>>;
+  return {
+    total: payload.total,
+    entities: rows.map((row) => ({
+      id: Number(row.id),
+      name: kind === "lobbyists"
+        ? [row.first_name, row.middle_name, row.last_name, row.suffix].filter(Boolean).join(" ")
+        : String(row.name),
+      description: row.description as string | null | undefined,
+      state: row.state as string | null | undefined,
+      country: row.country as string | null | undefined,
+      filing_count: row.filing_count as number | null,
+    })),
+  };
 }
 
-export interface LobbyingClient {
-  id: number;
-  name: string;
-  description?: string;
-  state?: string;
-  country?: string;
-  url: string;
-}
-
-export async function getLobbyingClients(params: {
-  client_name?: string;
-  page?: number;
-  page_size?: number;
-}): Promise<{ count: number; results: LobbyingClient[] } | null> {
-  const searchParams = new URLSearchParams();
-  if (params.client_name) searchParams.set('client_name', params.client_name);
-  searchParams.set('page_size', String(params.page_size ?? 25));
-  if (params.page) searchParams.set('page', String(params.page));
-
-  void searchParams;
-  throw new Error("Lobbying client search endpoint is not implemented yet. Use /api/lobbying/filings with client filters.");
-}
-
-export async function getLobbyingRegistrants(params: {
-  registrant_name?: string;
-  page?: number;
-  page_size?: number;
-}): Promise<{ count: number; results: Registrant[] } | null> {
-  const searchParams = new URLSearchParams();
-  if (params.registrant_name) searchParams.set('registrant_name', params.registrant_name);
-  searchParams.set('page_size', String(params.page_size ?? 25));
-  if (params.page) searchParams.set('page', String(params.page));
-
-  void searchParams;
-  throw new Error("Lobbying registrant search endpoint is not implemented yet. Use /api/lobbying/filings with registrant filters.");
-}
-
-export interface Lobbyist {
-  id: number;
-  name: string;
-  position?: string;
-  former_government?: boolean;
-  url: string;
-}
-
-export async function getLobbyingLobbyists(params: {
-  name?: string;
-  page?: number;
-  page_size?: number;
-}): Promise<{ count: number; results: Lobbyist[] } | null> {
-  const searchParams = new URLSearchParams();
-  if (params.name) searchParams.set('registrant_name', params.name);
-  searchParams.set('page_size', String(params.page_size ?? 25));
-  if (params.page) searchParams.set('page', String(params.page));
-
-  void searchParams;
-  throw new Error("Lobbyist endpoint is not implemented yet. LDA filings are available through /api/lobbying/filings.");
+export async function getLobbyingEntity(
+  kind: LobbyingEntityKind,
+  id: string,
+): Promise<LobbyingEntity | null> {
+  const response = await fetch(`${BACKEND_URL}/api/lobbying/${kind}/${encodeURIComponent(id)}`);
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`Lobbying ${kind} detail request failed (${response.status})`);
+  const row = await response.json();
+  return {
+    id: Number(row.id),
+    name: kind === "lobbyists"
+      ? [row.first_name, row.middle_name, row.last_name, row.suffix].filter(Boolean).join(" ")
+      : String(row.name),
+    description: row.description,
+    state: row.state,
+    country: row.country,
+    filing_count: row.filing_count,
+    filings: row.filings ?? [],
+  };
 }
 
 export async function getFilingDetail(uuid: string): Promise<LobbyingFiling | null> {
@@ -273,7 +258,7 @@ export async function fetchLobbyingFilings(
 ): Promise<FilingsListResponse> {
   const params = new URLSearchParams();
   if (year) params.set('year', String(year));
-  if (q) params.set('registrant', q);
+  if (q) params.set('search', q);
   if (limit) params.set('limit', String(limit));
   if (offset) params.set('offset', String(offset));
   const res = await fetch(`${BACKEND_URL}/api/lobbying/filings?${params}`);

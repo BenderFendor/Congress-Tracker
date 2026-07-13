@@ -28,3 +28,19 @@ than the configured threshold as failed and records an explicit reconciliation
 message. The minimum threshold is three hours so normal two-hour worker
 subprocess limits are not classified as stale. `DATABASE_URL` must already be
 present in the command environment.
+
+## `scripts/verify-rendered-critical-pages`
+
+`scripts/verify-rendered-critical-pages` starts Next on an isolated port with an
+intentionally unreachable backend, then verifies deterministic server-rendered
+guidance, loading, and failure states for ten critical research routes. Override
+the port with `RENDERED_TEST_PORT`. This tool does not replace Chrome screenshots
+or loaded-data API flows.
+
+## `scripts/verify-live-api-flows`
+
+Builds the current canonical backend, starts that exact executable on an isolated
+non-4020 port, and runs populated read-only frontend API flows. It requires an
+explicit `DATABASE_URL` naming a representative populated database, refuses to
+reuse the normal development port, records the executable hash, and cleans up
+only its own process.

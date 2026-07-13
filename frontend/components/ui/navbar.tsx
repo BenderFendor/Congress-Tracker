@@ -2,9 +2,18 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Menu, Search, X } from "lucide-react"
+import { ChevronDown, Menu, Search, X } from "lucide-react"
 import { useState } from "react"
 import { ThemeToggle } from "@/components/theme-toggle"
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { exploreNavigationItems, navigationSections, primaryNavigationItems } from "@/lib/navigation"
 
 export function Navbar() {
     const pathname = usePathname()
@@ -16,17 +25,11 @@ export function Navbar() {
         return false
     }
 
-    const navLinks = [
-        { href: "/", label: "Home" },
-        { href: "/legislators", label: "Legislators" },
-        { href: "/bills", label: "Bills" },
-        { href: "/influence", label: "Influence" },
-        { href: "/committees", label: "Committees" },
-        { href: "/portfolio", label: "Portfolio" },
-        { href: "/lobbying", label: "Lobbying" },
-        { href: "/elections", label: "Elections" },
-        { href: "/search", label: "Search" },
-    ]
+    const exploreActive = exploreNavigationItems.some((item) => isActive(item.href))
+
+    function openCommandPalette() {
+        window.dispatchEvent(new Event("congress-tracker:open-command-palette"))
+    }
 
     return (
         <header className="civic-header">
@@ -42,7 +45,7 @@ export function Navbar() {
                 </span>
             </Link>
             <nav aria-label="Primary navigation" className="civic-nav hidden xl:flex">
-                {navLinks.map((link) => (
+                {primaryNavigationItems.map((link) => (
                     <Link
                         key={link.href}
                         href={link.href}
@@ -52,7 +55,34 @@ export function Navbar() {
                         {link.label}
                     </Link>
                 ))}
-                <Link href="/search" className="civic-search" aria-label="Search records"><Search size={15} /></Link>
+                <DropdownMenu>
+                    <DropdownMenuTrigger className={`civic-nav-link inline-flex items-center gap-1 ${exploreActive ? "active" : ""}`}>
+                        Explore <ChevronDown size={13} aria-hidden="true" />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="civic-explore-menu w-[22rem] p-2">
+                        {navigationSections.map((section, sectionIndex) => {
+                            const items = exploreNavigationItems.filter((item) => item.section === section)
+                            if (items.length === 0) return null
+                            return (
+                                <div key={section}>
+                                    {sectionIndex > 0 ? <DropdownMenuSeparator /> : null}
+                                    <DropdownMenuLabel className="text-[0.65rem] uppercase tracking-[0.14em] text-muted-foreground">{section}</DropdownMenuLabel>
+                                    {items.map((item) => (
+                                        <DropdownMenuItem key={item.href} asChild className="cursor-pointer items-start px-3 py-2.5">
+                                            <Link href={item.href}>
+                                                <span className="grid gap-0.5">
+                                                    <strong className="text-xs font-semibold text-foreground">{item.label}</strong>
+                                                    <span className="text-[0.68rem] leading-4 text-muted-foreground">{item.description}</span>
+                                                </span>
+                                            </Link>
+                                        </DropdownMenuItem>
+                                    ))}
+                                </div>
+                            )
+                        })}
+                    </DropdownMenuContent>
+                </DropdownMenu>
+                <button type="button" onClick={openCommandPalette} className="civic-search" aria-label="Open record navigator" aria-keyshortcuts="Control+K Meta+K"><Search size={15} /></button>
                 <ThemeToggle />
             </nav>
             <div className="flex items-center gap-2 xl:hidden">
@@ -70,15 +100,22 @@ export function Navbar() {
             </div>
             {menuOpen ? (
                 <nav aria-label="Mobile navigation" className="civic-mobile-nav">
-                    {navLinks.map((link) => (
-                        <Link
-                            key={link.href}
-                            href={link.href}
-                            onClick={() => setMenuOpen(false)}
-                            className={`border-b border-border/60 py-3 text-sm font-medium ${isActive(link.href) ? "text-accent" : "text-muted-foreground hover:text-primary dark:hover:text-foreground"}`}
-                        >
-                            {link.label}
-                        </Link>
+                    {navigationSections.map((section) => (
+                        <div className="civic-mobile-nav-section" key={section}>
+                            <p>{section}</p>
+                            {[...primaryNavigationItems, ...exploreNavigationItems]
+                                .filter((item) => item.section === section)
+                                .map((item) => (
+                                    <Link
+                                        key={item.href}
+                                        href={item.href}
+                                        onClick={() => setMenuOpen(false)}
+                                        className={isActive(item.href) ? "active" : ""}
+                                    >
+                                        {item.label}
+                                    </Link>
+                                ))}
+                        </div>
                     ))}
                 </nav>
             ) : null}

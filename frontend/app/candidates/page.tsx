@@ -1,341 +1,179 @@
 "use client"
 
-import { useState, useEffect } from "react"
+// Design direction: Campaign record desk. A compact filter rail opens directly into source-identified records.
+import { useCallback, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
+import { Building2, ChevronDown, ExternalLink, FileSearch, MapPin, RotateCcw, Search, ShieldCheck, UserRound } from "lucide-react"
+
+import { ArchiveHero, ArchiveMetrics, ArchivePage, DataState, EvidenceSpine } from "@/components/ui/archive-ui"
+import { candidateMatches, committeeMatches, INITIAL_DIRECTORY_ROWS } from "@/lib/financial-ui.mjs"
+import { buildFecReceiptHref } from "@/lib/fec-receipts.mjs"
+import { getAllCandidates, getCommittees, type FECandidate, type FECCommittee } from "@/lib/services/fec"
 import { createLogger } from "@/lib/tracing"
-import { Search, MapPin, Users, Filter, ExternalLink, Building } from "lucide-react"
-import { getAllCandidates, FECandidate, getCommittees, FECCommittee } from "@/lib/services/fec"
+import { requestTruthState } from "@/lib/truth-states.mjs"
 
 const log = createLogger("CandidatesPage")
 
+function officeLabel(office?: string) {
+  if (office === "H") return "U.S. House"
+  if (office === "S") return "U.S. Senate"
+  if (office === "P") return "President"
+  return office || "Office unavailable"
+}
+
+function partyClass(party?: string) {
+  const value = party?.toLowerCase() || ""
+  if (value.includes("dem")) return "candidate-party-dem"
+  if (value.includes("rep")) return "candidate-party-rep"
+  return "candidate-party-other"
+}
+
 export default function CandidatesPage() {
-    const [candidates, setCandidates] = useState<FECandidate[]>([])
-    const [committees, setCommittees] = useState<FECCommittee[]>([])
-    const [loading, setLoading] = useState(true)
-    const [searchTerm, setSearchTerm] = useState("")
-    const [selectedState, setSelectedState] = useState("all")
-    const [selectedOffice, setSelectedOffice] = useState("all")
-    const [committeeSearch, setCommitteeSearch] = useState("")
-    const [activeTab, setActiveTab] = useState<"candidates" | "committees">("candidates")
+  const [candidates, setCandidates] = useState<FECandidate[]>([])
+  const [committees, setCommittees] = useState<FECCommittee[]>([])
+  const [candidatesLoading, setCandidatesLoading] = useState(true)
+  const [committeesLoading, setCommitteesLoading] = useState(true)
+  const [candidatesError, setCandidatesError] = useState<string | null>(null)
+  const [committeesError, setCommitteesError] = useState<string | null>(null)
+  const [query, setQuery] = useState("")
+  const [state, setState] = useState("all")
+  const [office, setOffice] = useState("all")
+  const [committeeQuery, setCommitteeQuery] = useState("")
+  const [activeTab, setActiveTab] = useState<"candidates" | "committees">("candidates")
+  const [visibleCount, setVisibleCount] = useState(INITIAL_DIRECTORY_ROWS)
 
-    useEffect(() => {
-        async function loadData() {
-            try {
-                const [candidatesData, committeesData] = await Promise.all([
-                    getAllCandidates(),
-                    getCommittees()
-                ]);
-                setCandidates(candidatesData);
-                setCommittees(committeesData);
-            } catch (error) {
-                log.error("Failed to load data", { error: String(error) })
-            } finally {
-                setLoading(false);
-            }
-        }
-        loadData();
-    }, []);
+  const loadCandidates = useCallback(async () => {
+    setCandidatesLoading(true)
+    setCandidatesError(null)
+    try {
+      setCandidates(await getAllCandidates())
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "The candidate directory request failed"
+      setCandidatesError(message)
+      log.error("Failed to load candidates", { error: String(error) })
+    } finally {
+      setCandidatesLoading(false)
+    }
+  }, [])
 
-    // Filter candidates
-    const filteredCandidates = candidates.filter(candidate => {
-        const matchesSearch = !searchTerm ||
-            candidate.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            candidate.candidate_id?.toLowerCase().includes(searchTerm.toLowerCase());
+  const loadCommittees = useCallback(async () => {
+    setCommitteesLoading(true)
+    setCommitteesError(null)
+    try {
+      setCommittees(await getCommittees())
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "The committee directory request failed"
+      setCommitteesError(message)
+      log.error("Failed to load committees", { error: String(error) })
+    } finally {
+      setCommitteesLoading(false)
+    }
+  }, [])
 
-        const matchesState = selectedState === "all" || candidate.state === selectedState;
-        const matchesOffice = selectedOffice === "all" || candidate.office_sought === selectedOffice;
+  useEffect(() => {
+    void loadCandidates()
+    void loadCommittees()
+  }, [loadCandidates, loadCommittees])
 
-        return matchesSearch && matchesState && matchesOffice;
-    });
+  const states = useMemo(() => [...new Set(candidates.map((candidate) => candidate.state).filter(Boolean))].sort(), [candidates])
+  const offices = useMemo(() => [...new Set(candidates.map((candidate) => candidate.office_sought).filter(Boolean))].sort(), [candidates])
+  const filteredCandidates = useMemo(
+    () => candidates.filter((candidate) => candidateMatches(candidate, { query, state, office })),
+    [candidates, office, query, state],
+  )
+  const filteredCommittees = useMemo(
+    () => committees.filter((committee) => committeeMatches(committee, committeeQuery)).sort((a, b) => (a.committee_name || "").localeCompare(b.committee_name || "")),
+    [committees, committeeQuery],
+  )
+  const activeRows = activeTab === "candidates" ? filteredCandidates : filteredCommittees
+  const candidateState = requestTruthState({ loading: candidatesLoading, error: candidatesError, responseLoaded: true, count: filteredCandidates.length })
+  const committeeState = requestTruthState({ loading: committeesLoading, error: committeesError, responseLoaded: true, count: filteredCommittees.length })
+  const activeFilters = Number(Boolean(query.trim())) + Number(state !== "all") + Number(office !== "all")
 
-    // Filter committees
-    const filteredCommittees = committees
-        .filter(c => !committeeSearch ||
-            c.committee_name?.toLowerCase().includes(committeeSearch.toLowerCase()) ||
-            c.committee_id?.toLowerCase().includes(committeeSearch.toLowerCase()))
-        .sort((a, b) => (a.committee_name || "").localeCompare(b.committee_name || ""));
+  function clearCandidateFilters() {
+    setQuery("")
+    setState("all")
+    setOffice("all")
+    setVisibleCount(INITIAL_DIRECTORY_ROWS)
+  }
 
-    // Get unique states and offices
-    const states = [...new Set(candidates.map(c => c.state).filter(Boolean))].sort();
-    const offices = [...new Set(candidates.map(c => c.office_sought).filter(Boolean))].sort();
+  return (
+    <ArchivePage>
+      <ArchiveHero
+        eyebrow="Federal campaign records"
+        title="Candidate"
+        accent="directory"
+        description="Search federal candidates and political committees by the identifiers published in FEC records. Candidate and committee requests remain independently reported."
+        mode="capitol"
+        aside={(
+          <EvidenceSpine
+            source="Federal Election Commission"
+            status={candidatesError || committeesError ? "Partial request failure" : candidatesLoading || committeesLoading ? "Loading source records" : "Source records loaded"}
+            coverage={`${candidates.length.toLocaleString()} candidates · ${committees.length.toLocaleString()} committees`}
+            sourceUrl="https://www.fec.gov/data/"
+          >
+            <p className="text-sm leading-6 text-muted-foreground">A directory record identifies a filing entity. It does not imply current ballot qualification or electoral viability.</p>
+          </EvidenceSpine>
+        )}
+      />
 
-    return (
-        <div className="min-h-screen bg-background text-foreground font-sans selection:bg-accent text-accent-foreground selection:text-foreground pb-20">
-            <div className="max-w-[1600px] mx-auto px-6 md:px-12 pt-12">
-                {/* Header */}
-                <div className="mb-12">
-                    <h2 className="font-serif text-5xl md:text-6xl font-bold text-foreground mb-4 leading-none tracking-tight">
-                        CANDIDATES <span className="text-accent">DIRECTORY</span>
-                    </h2>
-                    <p className="font-mono text-muted-foreground max-w-xl text-sm uppercase tracking-wide">
-                        Track federal election candidates and their campaign finance data.
-                    </p>
-                </div>
+      <ArchiveMetrics metrics={[
+        { label: "Candidates loaded", value: candidatesLoading ? "…" : candidatesError ? "Unavailable" : candidates.length, detail: "Independent API request", icon: <UserRound size={19} /> },
+        { label: "Committees loaded", value: committeesLoading ? "…" : committeesError ? "Unavailable" : committees.length, detail: "PAC and committee records", icon: <Building2 size={19} /> },
+        { label: "States in response", value: candidatesError ? "Unavailable" : states.length, detail: "Derived from loaded rows", icon: <MapPin size={19} /> },
+        { label: "Official identifiers", value: "Preserved", detail: "Candidate and committee IDs", icon: <ShieldCheck size={19} /> },
+      ]} />
 
-                {/* Tabs */}
-                <div className="flex gap-0 mb-12 border-b-2 border-border">
-                    <button
-                        onClick={() => setActiveTab("candidates")}
-                        className={`px-8 py-3 font-mono font-bold text-sm uppercase transition-all border-b-2 -mb-[2px] ${
-                            activeTab === "candidates"
-                                ? "border-accent text-foreground"
-                                : "border-transparent text-muted-foreground hover:text-foreground"
-                        }`}
-                    >
-                        Candidates
-                    </button>
-                    <button
-                        onClick={() => setActiveTab("committees")}
-                        className={`px-8 py-3 font-mono font-bold text-sm uppercase transition-all border-b-2 -mb-[2px] ${
-                            activeTab === "committees"
-                                ? "border-accent text-foreground"
-                                : "border-transparent text-muted-foreground hover:text-foreground"
-                        }`}
-                    >
-                        PAC Committees
-                    </button>
-                </div>
+      <div className="candidate-tabs" aria-label="Campaign finance directories" role="tablist">
+        <button id="candidates-tab" role="tab" aria-controls="candidates-panel" aria-selected={activeTab === "candidates"} onClick={() => { setActiveTab("candidates"); setVisibleCount(INITIAL_DIRECTORY_ROWS) }}>Candidates <span>{candidates.length.toLocaleString()}</span></button>
+        <button id="committees-tab" role="tab" aria-controls="committees-panel" aria-selected={activeTab === "committees"} onClick={() => { setActiveTab("committees"); setVisibleCount(INITIAL_DIRECTORY_ROWS) }}>PAC committees <span>{committees.length.toLocaleString()}</span></button>
+      </div>
 
-                {activeTab === "candidates" && (
-                <>
-                {/* Search and Filters */}
-                <div className="mb-12 animate-stagger-item delay-1">
-                    <div className="flex flex-col lg:flex-row gap-6 mb-8">
-                        <div className="flex-1 relative">
-                            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-accent" size={20} />
-                            <input
-                                type="text"
-                                placeholder="SEARCH BY NAME OR ID..."
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                className="w-full bg-card border-2 border-border px-12 py-4 text-foreground font-mono font-bold placeholder:text-muted-foreground focus:outline-none focus:border-accent transition-all uppercase tracking-wider"
-                            />
-                        </div>
-                        <button className="flex items-center justify-center gap-2 bg-muted border-2 border-border px-8 py-4 font-mono font-bold uppercase hover:bg-muted/50 hover:border-accent transition-all text-accent">
-                            <Filter size={16} />
-                            Advanced Filters
-                        </button>
-                    </div>
+      <section className="candidate-workbench" aria-label="Directory filters">
+        {activeTab === "candidates" ? (
+          <>
+            <label className="candidate-search"><Search size={17} /><span className="sr-only">Search candidates</span><input type="search" placeholder="Name or FEC candidate ID" value={query} onChange={(event) => { setQuery(event.target.value); setVisibleCount(INITIAL_DIRECTORY_ROWS) }} /></label>
+            <label className="candidate-select"><span className="sr-only">Candidate state</span><select value={state} onChange={(event) => { setState(event.target.value); setVisibleCount(INITIAL_DIRECTORY_ROWS) }}><option value="all">All states</option>{states.map((value) => <option key={value} value={value}>{value}</option>)}</select><ChevronDown size={14} /></label>
+            <label className="candidate-select"><span className="sr-only">Office sought</span><select value={office} onChange={(event) => { setOffice(event.target.value); setVisibleCount(INITIAL_DIRECTORY_ROWS) }}><option value="all">All offices</option>{offices.map((value) => <option key={value} value={value}>{officeLabel(value)}</option>)}</select><ChevronDown size={14} /></label>
+            {activeFilters > 0 ? <button className="candidate-clear" type="button" onClick={clearCandidateFilters}><RotateCcw size={14} /> Clear {activeFilters}</button> : null}
+          </>
+        ) : (
+          <label className="candidate-search candidate-search-wide"><Search size={17} /><span className="sr-only">Search committees</span><input type="search" placeholder="Committee name or FEC committee ID" value={committeeQuery} onChange={(event) => { setCommitteeQuery(event.target.value); setVisibleCount(INITIAL_DIRECTORY_ROWS) }} /></label>
+        )}
+        <div className="candidate-result-scope" aria-live="polite"><strong>{activeRows.length.toLocaleString()}</strong> records match · showing {Math.min(activeRows.length, visibleCount).toLocaleString()}</div>
+      </section>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <select
-                            value={selectedState}
-                            onChange={(e) => setSelectedState(e.target.value)}
-                            className="bg-card border-2 border-border px-4 py-3 text-foreground font-mono text-sm uppercase focus:border-accent outline-none appearance-none"
-                        >
-                            <option value="all">All States</option>
-                            {states.map(state => (
-                                <option key={state} value={state}>{state}</option>
-                            ))}
-                        </select>
+      {activeTab === "candidates" ? (
+        <section id="candidates-panel" role="tabpanel" aria-labelledby="candidates-tab" className="candidate-directory">
+          {candidateState === "loading" ? <DataState kind="setup" title="Loading candidate records" description="Requesting the current candidate directory from the local FEC-backed service." />
+            : candidateState === "error" ? <DataState kind="error" title="Candidate directory unavailable" description={`${candidatesError}. This failed request is not presented as an empty list.`} action={<button type="button" onClick={() => void loadCandidates()}>Retry candidates</button>} />
+              : candidateState === "empty" ? <DataState title="No candidates match these filters" description="Clear a filter or search another official candidate identifier." />
+                : <div className="candidate-record-list">{filteredCandidates.slice(0, visibleCount).map((candidate, index) => (
+                  <article className="candidate-record" key={candidate.candidate_id} style={{ "--row-index": Math.min(index, 7) } as React.CSSProperties}>
+                    <div className={`candidate-record-mark ${partyClass(candidate.party)}`} aria-hidden="true">{candidate.name?.split(/\s+/).map((part) => part[0]).slice(0, 2).join("") || "?"}</div>
+                    <div className="candidate-record-main"><div className="candidate-record-heading"><h2>{candidate.name || "Candidate name unavailable"}</h2>{candidate.incumbent ? <span className="archive-chip">Incumbent filing status</span> : null}</div><p>{officeLabel(candidate.office_sought)} · {candidate.state || "State unavailable"}{candidate.district ? ` district ${candidate.district}` : ""} · {candidate.party || "Party unavailable"}</p>{candidate.committee_name ? <small>Principal committee: {candidate.committee_name}</small> : null}</div>
+                    <div className="candidate-record-id"><span>FEC candidate ID</span><strong>{candidate.candidate_id}</strong></div>
+                    <div className="candidate-record-actions"><Link href={buildFecReceiptHref({ search: candidate.name || candidate.candidate_id })}>Search receipts <FileSearch size={14} /></Link><a href={`https://www.fec.gov/data/candidate/${encodeURIComponent(candidate.candidate_id)}/`} target="_blank" rel="noreferrer">FEC record <ExternalLink size={14} /></a></div>
+                  </article>
+                ))}</div>}
+        </section>
+      ) : (
+        <section id="committees-panel" role="tabpanel" aria-labelledby="committees-tab" className="candidate-directory">
+          {committeeState === "loading" ? <DataState kind="setup" title="Loading committee records" description="Requesting committee records independently from the candidate directory." />
+            : committeeState === "error" ? <DataState kind="error" title="Committee directory unavailable" description={`${committeesError}. Candidate results remain independently available.`} action={<button type="button" onClick={() => void loadCommittees()}>Retry committees</button>} />
+              : committeeState === "empty" ? <DataState title="No committees match this search" description="Search another committee name or official FEC identifier." />
+                : <div className="candidate-record-list">{filteredCommittees.slice(0, visibleCount).map((committee, index) => (
+                  <article className="candidate-record candidate-record-committee" key={committee.committee_id} style={{ "--row-index": Math.min(index, 7) } as React.CSSProperties}>
+                    <div className="candidate-record-mark" aria-hidden="true"><Building2 size={20} /></div>
+                    <div className="candidate-record-main"><h2>{committee.committee_name || "Committee name unavailable"}</h2><p>{committee.committee_type || "Type unavailable"} · {committee.state || "National or state unavailable"} · {committee.party || "Party unavailable"}</p>{committee.designation ? <small>Designation: {committee.designation}</small> : null}</div>
+                    <div className="candidate-record-id"><span>FEC committee ID</span><strong>{committee.committee_id}</strong></div>
+                    <div className="candidate-record-actions"><Link href={`/fec/receipts?committee=${encodeURIComponent(committee.committee_id)}`}>View receipts <FileSearch size={14} /></Link><a href={`https://www.fec.gov/data/committee/${encodeURIComponent(committee.committee_id)}/`} target="_blank" rel="noreferrer">FEC record <ExternalLink size={14} /></a></div>
+                  </article>
+                ))}</div>}
+        </section>
+      )}
 
-                        <select
-                            value={selectedOffice}
-                            onChange={(e) => setSelectedOffice(e.target.value)}
-                            className="bg-card border-2 border-border px-4 py-3 text-foreground font-mono text-sm uppercase focus:border-accent outline-none appearance-none"
-                        >
-                            <option value="all">All Offices</option>
-                            {offices.map(office => (
-                                <option key={office} value={office}>{office}</option>
-                            ))}
-                        </select>
-
-                        <button className="bg-accent text-accent-foreground text-black font-mono font-bold uppercase hover:bg-card hover:text-black transition-all px-4 py-3">
-                            Apply Filters
-                        </button>
-                    </div>
-                </div>
-
-                {/* Results Summary */}
-                <div className="mb-6 flex items-center gap-2 text-muted-foreground font-sans text-xs text-muted-foreground tracking-wide">
-                    <div className="w-2 h-2 bg-accent text-accent-foreground rounded-full animate-pulse"></div>
-                    Showing {filteredCandidates.length} of {candidates.length} candidates
-                </div>
-
-                {/* Candidates Grid */}
-                {loading ? (
-                    <div className="flex items-center justify-center h-64">
-                        <div className="w-12 h-12 border-4 border-accent border-t-transparent rounded-full animate-spin"></div>
-                    </div>
-                ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                        {filteredCandidates.map((candidate, idx) => (
-                            <div key={candidate.candidate_id} className={`bg-card border-2 border-border p-6 hover:border-accent/50 transition-all duration-300 group animate-stagger-item delay-${(idx % 5) + 1}`}>
-                                <div className="flex items-start justify-between mb-4">
-                                    <div className="w-12 h-12 bg-muted border border-border flex items-center justify-center text-muted-foreground">
-                                        <Users size={20} />
-                                    </div>
-                                    {candidate.incumbent && (
-                                        <div className="px-2 py-1 bg-yellow-900/20 border border-yellow-500/30 text-yellow-400 text-[10px] font-mono font-bold uppercase">
-                                            Incumbent
-                                        </div>
-                                    )}
-                                </div>
-
-                                <h3 className="font-serif text-xl font-bold text-foreground mb-2 group-hover:text-accent transition-colors">
-                                    {candidate.name}
-                                </h3>
-
-                                <div className="space-y-2 mb-4">
-                                    {candidate.office_sought && (
-                                        <div className="flex items-center gap-2 text-xs font-mono text-muted-foreground uppercase">
-                                            <Building size={12} />
-                                            {candidate.office_sought}
-                                        </div>
-                                    )}
-                                    {candidate.state && (
-                                        <div className="flex items-center gap-2 text-xs font-mono text-muted-foreground uppercase">
-                                            <MapPin size={12} />
-                                            {candidate.state}{candidate.district ? `-${candidate.district}` : ""}
-                                        </div>
-                                    )}
-                                    {candidate.party && (
-                                        <div className="flex items-center gap-2 text-xs font-mono uppercase">
-                                            <span className={`w-2 h-2 rounded-full ${candidate.party.includes("Democrat") ? "bg-blue-400" : candidate.party.includes("Republican") ? "bg-red-400" : "bg-gray-400"}`}></span>
-                                            {candidate.party}
-                                        </div>
-                                    )}
-                                </div>
-
-                                {candidate.committee_name && (
-                                    <div className="pt-4 border-t border-border">
-                                        <div className="text-[10px] font-mono text-muted-foreground uppercase mb-1">Affiliated Committee</div>
-                                        <div className="text-sm font-sans text-foreground truncate">
-                                            {candidate.committee_name}
-                                        </div>
-                                    </div>
-                                )}
-
-                                <div className="mt-4 pt-4 border-t border-border flex justify-between items-center">
-                                    <Link
-                                        href={`/fec/receipts?committee=${encodeURIComponent(candidate.committee_id || "")}`}
-                                        className="text-[10px] font-mono text-accent hover:underline uppercase flex items-center gap-1"
-                                    >
-                                        View Receipts <ExternalLink size={10} />
-                                    </Link>
-                                    <div className="text-[10px] font-mono text-muted-foreground uppercase">
-                                        ID: {candidate.candidate_id}
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
-
-                {filteredCandidates.length === 0 && !loading && (
-                    <div className="text-center py-12 text-muted-foreground font-mono">
-                        No candidates found matching your criteria.
-                    </div>
-                )}
-                </>
-                )}
-
-                {activeTab === "committees" && (
-                <>
-                {/* Committees Search */}
-                <div className="mb-12">
-                    <div className="flex flex-col lg:flex-row gap-6">
-                        <div className="flex-1 relative">
-                            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-accent" size={20} />
-                            <input
-                                type="text"
-                                placeholder="SEARCH COMMITTEES BY NAME OR ID..."
-                                value={committeeSearch}
-                                onChange={(e) => setCommitteeSearch(e.target.value)}
-                                className="w-full bg-card border-2 border-border px-12 py-4 text-foreground font-mono font-bold placeholder:text-muted-foreground focus:outline-none focus:border-accent transition-all uppercase tracking-wider"
-                            />
-                        </div>
-                    </div>
-                </div>
-
-                {/* Committees Summary */}
-                <div className="mb-6 flex items-center gap-2 text-muted-foreground font-sans text-xs tracking-wide">
-                    <div className="w-2 h-2 bg-accent rounded-full animate-pulse"></div>
-                    Showing {filteredCommittees.length} of {committees.length} committees
-                </div>
-
-                {/* Committees Grid */}
-                {loading ? (
-                    <div className="flex items-center justify-center h-64">
-                        <div className="w-12 h-12 border-4 border-accent border-t-transparent rounded-full animate-spin"></div>
-                    </div>
-                ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                        {filteredCommittees.map((committee, idx) => (
-                            <div key={committee.committee_id} className={`bg-card border-2 border-border p-6 hover:border-accent/50 transition-all duration-300 group animate-stagger-item delay-${(idx % 5) + 1}`}>
-                                <div className="flex items-start justify-between mb-4">
-                                    <div className="w-12 h-12 bg-muted border border-border flex items-center justify-center text-muted-foreground">
-                                        <Building size={20} />
-                                    </div>
-                                </div>
-
-                                <h3 className="font-serif text-lg font-bold text-foreground mb-2 group-hover:text-accent transition-colors line-clamp-2">
-                                    {committee.committee_name}
-                                </h3>
-
-                                <div className="space-y-2 mb-4">
-                                    {committee.committee_type && (
-                                        <div className="flex items-center gap-2 text-xs font-mono text-muted-foreground uppercase">
-                                            <Filter size={12} />
-                                            {committee.committee_type}
-                                        </div>
-                                    )}
-                                    {committee.state && (
-                                        <div className="flex items-center gap-2 text-xs font-mono text-muted-foreground uppercase">
-                                            <MapPin size={12} />
-                                            {committee.state}
-                                        </div>
-                                    )}
-                                    {committee.party && (
-                                        <div className="flex items-center gap-2 text-xs font-mono uppercase">
-                                            <span className={`w-2 h-2 rounded-full ${committee.party.includes("Democrat") ? "bg-blue-400" : committee.party.includes("Republican") ? "bg-red-400" : "bg-gray-400"}`}></span>
-                                            {committee.party}
-                                        </div>
-                                    )}
-                                </div>
-
-                                {committee.designation && (
-                                    <div className="pt-4 border-t border-border">
-                                        <div className="text-[10px] font-mono text-muted-foreground uppercase mb-1">Designation</div>
-                                        <div className="text-sm font-sans text-foreground">
-                                            {committee.designation}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {committee.organization_type && (
-                                    <div className="pt-3">
-                                        <div className="text-[10px] font-mono text-muted-foreground uppercase mb-1">Organization Type</div>
-                                        <div className="text-sm font-sans text-foreground">
-                                            {committee.organization_type}
-                                        </div>
-                                    </div>
-                                )}
-
-                                <div className="mt-4 pt-4 border-t border-border flex justify-between items-center">
-                                    <Link
-                                        href={`/fec/receipts?committee=${encodeURIComponent(committee.committee_id)}`}
-                                        className="text-[10px] font-mono text-accent hover:underline uppercase flex items-center gap-1"
-                                    >
-                                        View Receipts <ExternalLink size={10} />
-                                    </Link>
-                                    <div className="text-[10px] font-mono text-muted-foreground uppercase">
-                                        ID: {committee.committee_id}
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
-
-                {filteredCommittees.length === 0 && !loading && (
-                    <div className="text-center py-12 text-muted-foreground font-mono">
-                        No committees found matching your criteria.
-                    </div>
-                )}
-                </>
-                )}
-            </div>
-        </div>
-    );
+      {activeRows.length > visibleCount ? <div className="candidate-load-more"><button type="button" onClick={() => setVisibleCount((count) => count + INITIAL_DIRECTORY_ROWS)}>Show {Math.min(INITIAL_DIRECTORY_ROWS, activeRows.length - visibleCount)} more records</button></div> : null}
+    </ArchivePage>
+  )
 }

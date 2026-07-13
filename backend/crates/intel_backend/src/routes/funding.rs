@@ -4,7 +4,6 @@ use axum::extract::{Path, Query, State};
 use axum::Json;
 use serde::Deserialize;
 use std::sync::Arc;
-use tracing::Instrument;
 
 #[derive(Debug, Deserialize)]
 pub struct FundingQuery {
@@ -29,7 +28,7 @@ pub async fn get_member_funding(
 
     // Version the in-memory namespace along with the persistent cache
     // contract so a long-lived process cannot serve pre-provenance rankings.
-    let cache_key = format!("funding:v2:{}:{}", bioguide_id, cycle);
+    let cache_key = format!("funding:v3:{}:{}", bioguide_id, cycle);
 
     // 1. In-memory cache
     if let Some(cached) = state.cache.get(&cache_key).await {
@@ -39,24 +38,18 @@ pub async fn get_member_funding(
         return Ok(Json(funding));
     }
 
-    // 2. DB cache (24h TTL)
-    if let Ok(Some(cached)) = state.repo.get_cached_funding(&bioguide_id, cycle, 24).await {
-        let cache_value = serde_json::to_value(&cached)
-            .map_err(|_| crate::models::AppError::Internal("cache serialization failed".into()))?;
-        state.cache.set(cache_key, cache_value).await;
-        return Ok(Json(cached));
-    }
-    // 3. Precomputed rankings (bulk import path — preferred)
+    // 2. Precomputed rankings (bulk import path — preferred). Check these
+    // before the persisted live-totals cache so a completed bulk import takes
+    // effect immediately instead of being hidden for up to 24 hours.
     match state
         .repo
         .get_member_funding_from_rankings(&bioguide_id, cycle)
         .await
     {
-        Ok(Some(funding))
-            if !funding.top_donors.is_empty() || !funding.top_committees.is_empty() =>
-        {
-            let cache_value = serde_json::to_value(&funding)
-                .map_err(|_| crate::models::AppError::Internal("cache serialization failed".into()))?;
+        Ok(Some(funding)) if funding.has_successful_fec_run => {
+            let cache_value = serde_json::to_value(&funding).map_err(|_| {
+                crate::models::AppError::Internal("cache serialization failed".into())
+            })?;
             state.cache.set(cache_key, cache_value).await;
             return Ok(Json(funding));
         }
@@ -71,6 +64,16 @@ pub async fn get_member_funding(
         }
     }
 
+    // 3. DB cache (24h TTL). This is populated by the private ingestion plane,
+    // never by a public request, and remains lower priority than canonical
+    // bulk rankings.
+    if let Ok(Some(cached)) = state.repo.get_cached_funding(&bioguide_id, cycle, 24).await {
+        let cache_value = serde_json::to_value(&cached)
+            .map_err(|_| crate::models::AppError::Internal("cache serialization failed".into()))?;
+        state.cache.set(cache_key, cache_value).await;
+        return Ok(Json(cached));
+    }
+
     // 4. DB materialized view (legacy / totals-only path)
     let funding = state
         .repo
@@ -81,69 +84,25 @@ pub async fn get_member_funding(
             crate::models::AppError::NotFound(format!("Member {} not found", bioguide_id))
         })?;
 
-    // 5. If MV has no data, auto_ingest from OpenFEC
-    tracing::info!(
-        bioguide_id = %bioguide_id,
-        top_donors_len = funding.top_donors.len(),
-        direct_receipts = funding.direct_receipts,
-        "checking if auto_ingest needed"
-    );
-    let funding = if funding.top_donors.is_empty() && funding.direct_receipts == 0.0 {
-        tracing::info!(
-            bioguide_id = %bioguide_id,
-            "triggering auto_ingest from OpenFEC live"
-        );
-        let auto_span =
-            tracing::info_span!("auto_ingest_funding", bioguide_id = %bioguide_id, cycle = %cycle);
-        let funding_result = async {
-            state
-                .repo
-                .auto_ingest_member_funding(&bioguide_id, cycle, &state.openfec_api_key)
-                .await
-        }
-        .instrument(auto_span)
-        .await;
-
-        match funding_result {
-            Ok(Some(live_funding)) => {
-                tracing::info!(
-                    bioguide_id = %bioguide_id,
-                    live_direct_receipts = live_funding.direct_receipts,
-                    "auto_ingest succeeded"
-                );
-                if let Err(error) = state
-                    .repo
-                    .save_funding_cache(&bioguide_id, cycle, &live_funding)
-                    .await
-                {
-                    tracing::warn!(bioguide_id = %bioguide_id, %error, "funding cache write failed");
-                }
-                live_funding
-            }
-            Ok(None) => {
-                tracing::warn!(
-                    bioguide_id = %bioguide_id,
-                    "auto_ingest returned None (no FEC ID or API returned empty)"
-                );
-                funding
-            }
-            Err(e) => {
-                tracing::error!(
-                    bioguide_id = %bioguide_id,
-                    error = %e,
-                    "auto_ingest failed"
-                );
-                funding
-            }
-        }
-    } else {
-        funding
-    };
-
-    // 6. Cache in memory and return
+    // 5. Cache the read result in memory and return. Missing canonical data is
+    // reported through provenance; the worker/CLI ingestion plane owns all
+    // network acquisition and persistent writes.
     let cache_value = serde_json::to_value(&funding)
         .map_err(|_| crate::models::AppError::Internal("serialization failed".into()))?;
     state.cache.set(cache_key, cache_value).await;
 
     Ok(Json(funding))
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn public_handler_has_no_ingestion_or_persistent_write_calls() {
+        let production_handler = include_str!("funding.rs");
+        let live_ingest_call = [".auto_ingest", "_member_funding("].concat();
+        let persistent_cache_write = [".save_funding", "_cache("].concat();
+
+        assert!(!production_handler.contains(&live_ingest_call));
+        assert!(!production_handler.contains(&persistent_cache_write));
+    }
 }

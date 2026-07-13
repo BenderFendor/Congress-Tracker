@@ -1,0 +1,26 @@
+{
+  "classification": [
+    "success"
+  ],
+  "command": [
+    "env",
+    "DATABASE_URL=postgres://congress_tracker:congress_tracker@127.0.0.1:5432/congress_tracker",
+    "cargo",
+    "run",
+    "-p",
+    "intel_backend",
+    "--bin",
+    "ingest",
+    "--",
+    "fec-rebuild-rankings",
+    "--cycles",
+    "2026"
+  ],
+  "cwd": "/home/bender/classwork/congress-tracker/backend",
+  "duration_seconds": 53.768,
+  "max_rss_kb": 93680,
+  "returncode": 0,
+  "stderr_tail": "    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.91s\n     Running `target/debug/ingest fec-rebuild-rankings --cycles 2026`",
+  "stdout_tail": "2026-07-11T12:02:04.614889Z  INFO sqlx::postgres::notice: relation \"_sqlx_migrations\" already exists, skipping\n2026-07-11T12:02:05.263286Z  INFO intel_backend::fec_bulk::rankings: Building donor rankings cycle=2026\n2026-07-11T12:02:57.184093Z  WARN sqlx::query: slow statement: execution time exceeded alert threshold summary=\"WITH candidate_committees AS ( \u2026\" db.statement=\"\\n\\n\\n        WITH candidate_committees AS (\\n            SELECT DISTINCT cc.candidate_id, cc.committee_id\\n            FROM fec_candidate_committees cc\\n            WHERE cc.election_cycle = $1\\n        ),\\n        donor_agg AS (\\n            SELECT\\n                cc.candidate_id,\\n                r.donor_key,\\n                MAX(r.contributor_name) AS display_name,\\n                SUM(r.amount) AS total_amount,\\n                COUNT(*) AS contribution_count,\\n                MAX(r.transaction_date) AS most_recent_date\\n            FROM fec_canonical_individual_receipts r\\n            JOIN candidate_committees cc ON cc.committee_id = r.committee_id\\n            WHERE r.election_cycle = $1\\n              AND r.is_current = true\\n              AND r.include_in_totals = true\\n              AND r.entity_type = 'IND'\\n              AND r.contributor_name <> 'Unknown'\\n            GROUP BY cc.candidate_id, r.donor_key\\n        ),\\n        ranked AS (\\n            SELECT *,\\n                   ROW_NUMBER() OVER (\\n                       PARTITION BY candidate_id\\n                       ORDER BY total_amount DESC, contribution_count DESC\\n                   ) AS rank\\n            FROM donor_agg\\n        )\\n        INSERT INTO fec_candidate_donor_rankings\\n            (candidate_id, election_cycle, donor_key, display_name,\\n             total_amount, contribution_count, most_recent_date, rank)\\n        SELECT\\n            candidate_id, $1, donor_key, display_name,\\n            total_amount, contribution_count, most_recent_date, rank\\n        FROM ranked\\n        WHERE rank <= 20\\n        \\n\" rows_affected=38712 rows_returned=0 elapsed=51.895110626s elapsed_secs=51.895110626 slow_threshold=1s\n2026-07-11T12:02:57.184160Z  INFO intel_backend::fec_bulk::rankings: Donor rankings built cycle=2026 rows=38712\n2026-07-11T12:02:57.184170Z  INFO intel_backend::fec_bulk::rankings: Building committee rankings cycle=2026\n2026-07-11T12:02:57.279807Z  INFO intel_backend::fec_bulk::rankings: Committee rankings built cycle=2026 rows=1928\n2026-07-11T12:02:57.279852Z  INFO intel_backend::fec_bulk::rankings: Refreshing member_funding_cycle_mv\n2026-07-11T12:02:57.303937Z  INFO intel_backend::fec_bulk::rankings: member_funding_cycle_mv refreshed",
+  "timed_out": false
+}

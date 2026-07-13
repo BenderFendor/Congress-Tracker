@@ -111,18 +111,73 @@ pub async fn source_freshness(pool: &sqlx::PgPool) -> Result<Vec<SourceFreshness
 
     let now = Utc::now();
     for source in &mut sources {
-        source.freshness = match (source.status.as_deref(), source.fetched_at) {
-            (Some("failed"), _) => "failed".to_string(),
-            (Some("success"), Some(fetched_at)) => {
-                let ttl = i64::from(source.default_ttl_seconds.unwrap_or(86_400));
-                if now.signed_duration_since(fetched_at).num_seconds() <= ttl {
-                    "fresh".to_string()
-                } else {
-                    "stale".to_string()
-                }
-            }
-            _ => "missing".to_string(),
-        };
+        source.freshness = classify_source_freshness(
+            source.status.as_deref(),
+            source.fetched_at,
+            source.default_ttl_seconds,
+            now,
+        );
     }
     Ok(sources)
+}
+
+fn classify_source_freshness(
+    status: Option<&str>,
+    fetched_at: Option<DateTime<Utc>>,
+    default_ttl_seconds: Option<i32>,
+    now: DateTime<Utc>,
+) -> String {
+    match (status, fetched_at) {
+        (Some("failed"), _) => "failed".to_string(),
+        (Some("success"), Some(fetched_at)) => {
+            let ttl = i64::from(default_ttl_seconds.unwrap_or(86_400));
+            if now.signed_duration_since(fetched_at).num_seconds() <= ttl {
+                "fresh".to_string()
+            } else {
+                "stale".to_string()
+            }
+        }
+        _ => "missing".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod freshness_tests {
+    use super::classify_source_freshness;
+    use chrono::{Duration, Utc};
+
+    #[test]
+    fn distinguishes_fresh_stale_failed_and_missing_key_runs() {
+        let now = Utc::now();
+        assert_eq!(
+            classify_source_freshness(
+                Some("success"),
+                Some(now - Duration::seconds(30)),
+                Some(60),
+                now
+            ),
+            "fresh"
+        );
+        assert_eq!(
+            classify_source_freshness(
+                Some("success"),
+                Some(now - Duration::seconds(61)),
+                Some(60),
+                now
+            ),
+            "stale"
+        );
+        assert_eq!(
+            classify_source_freshness(Some("failed"), Some(now), Some(60), now),
+            "failed"
+        );
+        assert_eq!(
+            classify_source_freshness(Some("auth_missing"), Some(now), Some(60), now),
+            "missing"
+        );
+        assert_eq!(
+            classify_source_freshness(None, None, Some(60), now),
+            "missing"
+        );
+    }
 }

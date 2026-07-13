@@ -60,6 +60,11 @@ fn spawn_intel_backend(port: u16) -> Option<Child> {
 }
 
 fn find_binary() -> String {
+    let workspace_binary =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/intel_backend");
+    if workspace_binary.is_file() {
+        return workspace_binary.to_string_lossy().into_owned();
+    }
     // Try multiple relative and absolute patterns to handle different CWD setups.
     let candidates = [
         // Workspace root: ~/classwork/congress-tracker/
@@ -285,6 +290,11 @@ async fn test_all_api_endpoints() {
         } else {
             assert_eq!(status, StatusCode::OK, "member votes");
             assert!(body["votes"].is_array(), "votes should be an array");
+            if let Some(summary) = body["summary"].as_object() {
+                assert!(summary["party_line_eligible_votes"].is_number());
+                assert!(summary["first_vote_date"].is_string());
+                assert!(summary["last_vote_date"].is_string());
+            }
         }
 
         // /api/members/:bioguide_id/legislation
@@ -322,6 +332,34 @@ async fn test_all_api_endpoints() {
                 "transactions should be an array"
             );
         }
+
+        // Range-safe annual financial snapshots and Senate eFD staging.
+        let (status, body) = check_endpoint(
+            &client,
+            &base_url,
+            "/api/financial-snapshots?limit=5",
+            "financial-snapshots",
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "financial snapshots");
+        assert!(body["snapshots"].is_array(), "snapshots should be an array");
+        assert!(
+            body["provenance"].is_object(),
+            "snapshot provenance should be present"
+        );
+
+        let (status, body) = check_endpoint(
+            &client,
+            &base_url,
+            "/api/senate-disclosures?limit=5",
+            "senate-disclosures",
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "Senate disclosures");
+        assert!(
+            body["reports"].is_array(),
+            "Senate reports should be an array"
+        );
 
         // /api/members/:bioguide_id/funding
         let (status, body) = check_endpoint(
@@ -394,6 +432,89 @@ async fn test_all_api_endpoints() {
     } else {
         assert_eq!(status, StatusCode::OK, "bill intel");
     }
+
+    // Populated-dataset M5 proof: normalized amendments live in the compound
+    // response and explicit LDA citations are distinct from heuristic matches.
+    let (status, body) = check_endpoint(
+        &client,
+        &base_url,
+        "/api/bills/119/hr/6489/intel",
+        "bill-intel-evidence-contract",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "known bill intelligence");
+    assert!(
+        body["amendments"].is_array(),
+        "bill intel must include normalized amendments"
+    );
+    let direct_links = body["lobbying_bill_links"]
+        .as_array()
+        .expect("bill intel must include explicit LDA bill links");
+    assert!(
+        !direct_links.is_empty(),
+        "known bill should retain its explicit LDA citation"
+    );
+    assert!(direct_links
+        .iter()
+        .all(|link| link["confidence"] == "direct"));
+    assert!(body["lobbying_overlay"]
+        .as_array()
+        .expect("bill intel must include heuristic suggestions")
+        .iter()
+        .all(|suggestion| suggestion["confidence"] == "heuristic"));
+
+    let (status, body) = check_endpoint(
+        &client,
+        &base_url,
+        "/api/bills/119/hr/6489/amendments",
+        "bill-amendments",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "bill amendments");
+    assert_eq!(
+        body["total"].as_u64(),
+        body["amendments"].as_array().map(|rows| rows.len() as u64)
+    );
+
+    // Visualization totals must equal the exact precomputed canonical summary,
+    // while displayed sectors remain a bounded top-N presentation.
+    let (status, body) = check_endpoint(
+        &client,
+        &base_url,
+        "/api/visualizations/campaign-finance?cycle=2026",
+        "campaign-finance-visualization",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "campaign finance visualization");
+    let database_url =
+        std::env::var("DATABASE_URL").expect("DATABASE_URL was present during setup");
+    let pool = sqlx::PgPool::connect(&database_url)
+        .await
+        .expect("connect for parity query");
+    let canonical: (f64, f64, f64, f64, i64) = sqlx::query_as(
+        "SELECT total_receipts::float8, total_disbursements::float8, independent_supporting::float8, independent_opposing::float8, committee_count FROM fec_campaign_finance_cycle_summaries WHERE election_cycle = 2026",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("2026 canonical campaign-finance summary");
+    for (field, expected) in [
+        ("total_receipts", canonical.0),
+        ("total_disbursements", canonical.1),
+        ("independent_expenditures_supporting", canonical.2),
+        ("independent_expenditures_opposing", canonical.3),
+    ] {
+        let actual = body[field]
+            .as_f64()
+            .unwrap_or_else(|| panic!("{field} must be numeric"));
+        assert!(
+            (actual - expected).abs() < 0.01,
+            "{field} differs from canonical summary"
+        );
+    }
+    assert_eq!(body["committee_count"].as_i64(), Some(canonical.4));
+    assert!(body["by_sector"]
+        .as_array()
+        .is_some_and(|sectors| sectors.len() <= 20));
 
     // ── Influence ──
     print_section("Influence");
@@ -667,6 +788,19 @@ async fn test_all_api_endpoints() {
         "filings should be array or have filings field"
     );
 
+    let (status, body) = check_endpoint(
+        &client,
+        &base_url,
+        "/api/lobbying/filings?search=defense&limit=5",
+        "lobbying-filings-search",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "lobbying search");
+    assert!(
+        body.get("filings").is_some() && body.get("total").is_some(),
+        "lobbying search should preserve paginated response shape"
+    );
+
     // Unknown filing
     let (status, body) = check_endpoint(
         &client,
@@ -679,6 +813,17 @@ async fn test_all_api_endpoints() {
         assert_json_error(status, &body);
     } else {
         assert_eq!(status, StatusCode::OK, "lobbying filing detail");
+    }
+
+    for (path, field) in [
+        ("/api/lobbying/clients?limit=2", "clients"),
+        ("/api/lobbying/registrants?limit=2", "registrants"),
+        ("/api/lobbying/lobbyists?limit=2", "lobbyists"),
+    ] {
+        let (status, body) = check_endpoint(&client, &base_url, path, field).await;
+        assert_eq!(status, StatusCode::OK, "{field} list");
+        assert!(body[field].is_array(), "{field} should be an array");
+        assert!(body["total"].is_number(), "{field} should include total");
     }
 
     // ── FEC ──
@@ -710,6 +855,54 @@ async fn test_all_api_endpoints() {
         "fec committees should be array or have committees field"
     );
 
+    let (status, body) = check_endpoint(
+        &client,
+        &base_url,
+        "/api/fec/receipts?cycle=2026&page=1&per_page=5",
+        "fec-receipts",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "fec receipts");
+    assert!(body["data"].is_array(), "fec receipts should expose data");
+    assert!(
+        body["meta"]["paging"].is_object(),
+        "fec receipts should expose paging"
+    );
+    assert!(
+        body["meta"]["coverage_status"].is_string(),
+        "fec receipts should expose ingestion coverage"
+    );
+    assert!(
+        body["meta"]["unresolved_linkage_issues"].is_i64(),
+        "fec receipts should expose unresolved official linkage coverage"
+    );
+    assert!(
+        body["provenance"].is_object(),
+        "fec receipts should expose provenance"
+    );
+
+    let (status, body) = check_endpoint(
+        &client,
+        &base_url,
+        "/api/fec/disbursements?cycle=2026&page=1&per_page=5",
+        "fec-disbursements",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "fec disbursements");
+    assert!(body["data"].is_array(), "disbursements should expose data");
+    assert!(
+        body["meta"]["paging"].is_object(),
+        "disbursements should expose paging"
+    );
+    assert!(
+        body["meta"]["coverage_status"].is_string(),
+        "disbursements should expose ingestion coverage"
+    );
+    assert!(
+        body["provenance"].is_object(),
+        "disbursements should expose provenance"
+    );
+
     // Alias route
     let (status, body) = check_endpoint(
         &client,
@@ -724,20 +917,19 @@ async fn test_all_api_endpoints() {
         "elections candidates should have data"
     );
 
-    // ── Admin ──
-    print_section("Admin");
-
-    let (status, body) = check_endpoint(
+    // Operational entity-resolution review is private tooling, not part of
+    // the unauthenticated public data plane.
+    let (status, _) = check_endpoint(
         &client,
         &base_url,
         "/api/admin/entity-resolution-queue?limit=5",
-        "admin-entity-resolution",
+        "private-admin-route",
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "entity resolution queue");
-    assert!(
-        body.is_array() || body.is_object() || body.get("items").is_some(),
-        "entity resolution should return valid shape"
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "admin route must not be public"
     );
 
     // ── Done ──

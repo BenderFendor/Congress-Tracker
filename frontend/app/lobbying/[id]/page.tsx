@@ -58,7 +58,7 @@ export default function LobbyingFilingPage() {
       ) : !filing ? (
         <DataState title="Filing not found" description="No canonical filing record matches this identifier." />
       ) : (
-        <div className="archive-grid-two">
+        <div className="archive-content archive-grid-two">
           <ArchivePanel title="Filed record" kicker={filing.filing_type || "LDA filing"}>
             <dl className="grid gap-4 p-2 text-sm sm:grid-cols-2">
               <div><dt className="font-mono text-xs uppercase text-muted-foreground">Registrant</dt><dd className="mt-1 font-semibold">{filing.registrant_name || "Not published"}</dd></div>
@@ -79,7 +79,7 @@ export default function LobbyingFilingPage() {
         </div>
       )}
 
-      <Link href="/lobbying" className="archive-link mt-6">Return to lobbying filings</Link>
+      <div className="archive-content"><Link href="/lobbying" className="archive-link mt-6">Return to lobbying filings</Link></div>
     </ArchivePage>
   )
 }

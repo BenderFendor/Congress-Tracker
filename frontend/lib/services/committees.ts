@@ -1,4 +1,5 @@
 import { BACKEND_URL } from "@/lib/constants";
+import { DetailRequestError, classifyDetailResponse } from "@/lib/detail-request-state.mjs";
 import type { ProvenanceSummary } from "./provenance";
 
 export type Committee = {
@@ -18,6 +19,7 @@ export type Committee = {
     party: string;
     state: string;
     district?: string;
+    chamber?: string;
     rank?: number;
     title?: string;
   }>;
@@ -44,28 +46,37 @@ export async function getCommittees(chamber?: string): Promise<Committee[]> {
   }
 }
 
-export async function getCommittee(id: string): Promise<Committee | null> {
+export async function getCommittee(id: string, signal?: AbortSignal): Promise<Committee | null> {
+  let res: Response;
   try {
-    const res = await fetch(`${BACKEND_URL}/api/committees/${id}`);
-    if (!res.ok) return null;
-    const data = await res.json();
-    return {
-      ...data,
-      members: Array.isArray(data.roster)
-        ? data.roster.map((member: Record<string, unknown>) => ({
-            bioguide_id: String(member.bioguide_id ?? ""),
-            first_name: String(member.first_name ?? ""),
-            last_name: String(member.last_name ?? ""),
-            party: String(member.party ?? ""),
-            state: String(member.state ?? ""),
-            district: member.district ? String(member.district) : undefined,
-            rank: typeof member.rank === "number" ? member.rank : undefined,
-            title: member.title ? String(member.title) : undefined,
-          }))
-        : [],
-      bills: Array.isArray(data.bills) ? data.bills : [],
-    };
-  } catch {
-    return null;
+    res = await fetch(`${BACKEND_URL}/api/committees/${encodeURIComponent(id)}`, { signal });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") throw error;
+    throw new DetailRequestError("Committee detail", null, "");
   }
+
+  const responseState = classifyDetailResponse(res.status);
+  if (responseState === "not_found") return null;
+  if (responseState === "error") {
+    throw new DetailRequestError("Committee detail", res.status, res.statusText);
+  }
+
+  const data = await res.json();
+  return {
+    ...data,
+    members: Array.isArray(data.roster)
+      ? data.roster.map((member: Record<string, unknown>) => ({
+          bioguide_id: String(member.bioguide_id ?? ""),
+          first_name: String(member.first_name ?? ""),
+          last_name: String(member.last_name ?? ""),
+          party: String(member.party ?? ""),
+          state: String(member.state ?? ""),
+          district: member.district ? String(member.district) : undefined,
+          chamber: member.chamber ? String(member.chamber) : undefined,
+          rank: typeof member.rank === "number" ? member.rank : undefined,
+          title: member.title ? String(member.title) : undefined,
+        }))
+      : [],
+    bills: Array.isArray(data.bills) ? data.bills : [],
+  };
 }

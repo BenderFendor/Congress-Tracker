@@ -178,21 +178,44 @@ pub async fn get_member_disclosures(
 }
 
 /// GET /api/organizations/{organization_id}
+/// Accepts numeric organization IDs and FEC committee IDs (e.g. C00546358).
 pub async fn get_organization(
     State(state): State<Arc<AppState>>,
-    Path(organization_id): Path<i64>,
+    Path(organization_id): Path<String>,
 ) -> Result<Json<OrganizationProfile>, crate::models::AppError> {
-    let organization = state
-        .repo
-        .get_organization(organization_id)
+    let pool = state.repo.pool();
+
+    // Try numeric lookup first, then FEC committee ID lookup
+    let org_id: i64 = if let Ok(numeric) = organization_id.parse::<i64>() {
+        numeric
+    } else {
+        let (found_id,): (i64,) = sqlx::query_as(
+            "SELECT organization_id FROM organization_identifiers WHERE scheme = 'fec' AND value = $1 LIMIT 1",
+        )
+        .bind(&organization_id)
+        .fetch_optional(pool)
         .await
         .map_err(|e| crate::models::AppError::Internal(format!("database error: {}", e)))?
         .ok_or_else(|| {
-            crate::models::AppError::NotFound(format!("Organization {} not found", organization_id))
+            crate::models::AppError::NotFound(format!(
+                "Organization {} not found",
+                organization_id
+            ))
+        })?;
+        found_id
+    };
+
+    let organization = state
+        .repo
+        .get_organization(org_id)
+        .await
+        .map_err(|e| crate::models::AppError::Internal(format!("database error: {}", e)))?
+        .ok_or_else(|| {
+            crate::models::AppError::NotFound(format!("Organization {} not found", org_id))
         })?;
     let identifiers = state
         .repo
-        .get_organization_identifiers(organization_id)
+        .get_organization_identifiers(org_id)
         .await
         .map_err(|e| crate::models::AppError::Internal(format!("database error: {}", e)))?
         .into_iter()
@@ -202,12 +225,22 @@ pub async fn get_organization(
             source: row.source,
         })
         .collect();
-    let key = format!("organization:{}", organization_id);
-    let relationships = state
+    let key = format!("organization:{}", org_id);
+    let mut relationship_rows = state
         .repo
         .list_relationships(Some(&key), None, None, 200)
         .await
-        .map_err(|e| crate::models::AppError::Internal(format!("database error: {}", e)))?
+        .map_err(|e| crate::models::AppError::Internal(format!("database error: {}", e)))?;
+    relationship_rows.extend(
+        state
+            .repo
+            .list_relationships(None, Some(&key), None, 200)
+            .await
+            .map_err(|e| crate::models::AppError::Internal(format!("database error: {}", e)))?,
+    );
+    relationship_rows.sort_by_key(|row| row.relationship_id);
+    relationship_rows.dedup_by_key(|row| row.relationship_id);
+    let relationships = relationship_rows
         .into_iter()
         .map(RelationshipEvidence::from)
         .collect();

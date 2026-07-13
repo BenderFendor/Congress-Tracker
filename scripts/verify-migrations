@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Proves fresh and upgrade PostgreSQL migrations against disposable databases.
+set -euo pipefail
+
+if [[ "${1:-}" == "--help" ]]; then
+  cat <<'EOF'
+Usage: DATABASE_URL=postgres://... scripts/verify-migrations
+
+Creates two disposable databases beside DATABASE_URL, runs the SQLx migration
+suite from empty and from the last committed schema (0016), verifies a second
+idempotent run, then removes both databases.
+EOF
+  exit 0
+fi
+
+: "${DATABASE_URL:?DATABASE_URL must point to a PostgreSQL database whose owner can create databases}"
+command -v psql >/dev/null || { echo "psql is required" >&2; exit 1; }
+
+fresh_db="congress_tracker_migration_fresh"
+upgrade_db="congress_tracker_migration_upgrade"
+base_url="${DATABASE_URL%/*}"
+
+cleanup() {
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS ${fresh_db} WITH (FORCE)" >/dev/null
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS ${upgrade_db} WITH (FORCE)" >/dev/null
+}
+trap cleanup EXIT
+
+cleanup
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE ${fresh_db}" >/dev/null
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE ${upgrade_db}" >/dev/null
+
+(
+  cd backend
+  MIGRATION_TEST_DATABASE_URL="${base_url}/${fresh_db}" \
+    cargo test -p intel_backend --test migration_test migration_fresh_database -- --ignored --exact
+  MIGRATION_TEST_DATABASE_URL="${base_url}/${upgrade_db}" \
+    cargo test -p intel_backend --test migration_test \
+      migration_upgrade_from_prior_committed_schema -- --ignored --exact
+)

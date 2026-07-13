@@ -1,0 +1,115 @@
+name: CongressTracker CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  backend:
+    name: Backend (Rust)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: congress_tracker
+          POSTGRES_PASSWORD: congress_tracker
+          POSTGRES_DB: congress_tracker
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            backend/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('backend/Cargo.lock') }}
+
+      - name: Format check
+        run: cd backend && cargo fmt --check
+
+      - name: Clippy
+        run: cd backend && cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Check
+        run: cd backend && cargo check
+
+      - name: Verify fresh and upgrade migrations
+        run: scripts/verify-migrations
+        env:
+          DATABASE_URL: postgres://congress_tracker:congress_tracker@localhost:5432/congress_tracker
+
+      - name: Deterministic Rust tests
+        run: |
+          cd backend
+          cargo test --workspace --exclude civiq_client --lib --bins
+          cargo test -p civiq_client test_query_builder
+
+      - name: Compile integration tests
+        run: cd backend && cargo test --workspace --tests --no-run
+
+      - name: Deterministic database contracts
+        run: |
+          cd backend
+          MIGRATION_TEST_DATABASE_URL="$DATABASE_URL" cargo test -p intel_backend --test migration_test migration_fresh_database -- --ignored --exact
+          cargo test -p intel_backend --test fec_bulk_pipeline_test
+          cargo test -p intel_backend --test influence_financials_test
+        env:
+          DATABASE_URL: postgres://congress_tracker:congress_tracker@localhost:5432/congress_tracker
+
+  frontend:
+    name: Frontend (Next.js)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: cd frontend && pnpm install --frozen-lockfile
+
+      - name: Deterministic frontend tests
+        run: cd frontend && pnpm test:unit
+
+      - name: TypeScript check
+        run: cd frontend && pnpm typecheck
+
+      - name: ESLint
+        run: cd frontend && pnpm lint
+
+      - name: Oxlint
+        run: cd frontend && pnpm lint:ox
+
+      - name: Build
+        run: cd frontend && pnpm build
+        env:
+          NEXT_PUBLIC_BACKEND_URL: http://localhost:4020
+          NEXT_PUBLIC_CONGRESS_GOV_API_KEY: ci-placeholder

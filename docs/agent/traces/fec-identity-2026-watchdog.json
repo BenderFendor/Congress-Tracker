@@ -1,0 +1,26 @@
+{
+  "classification": [
+    "success"
+  ],
+  "command": [
+    "env",
+    "DATABASE_URL=postgres://congress_tracker:congress_tracker@127.0.0.1:5432/congress_tracker",
+    "cargo",
+    "run",
+    "-p",
+    "intel_backend",
+    "--bin",
+    "ingest",
+    "--",
+    "fec-refresh-identities",
+    "--cycles",
+    "2026"
+  ],
+  "cwd": "/home/bender/classwork/congress-tracker/backend",
+  "duration_seconds": 287.605,
+  "max_rss_kb": 1087964,
+  "returncode": 0,
+  "stderr_tail": "   Compiling intel_backend v0.1.0 (/home/bender/classwork/congress-tracker/backend/crates/intel_backend)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 10.55s\n     Running `target/debug/ingest fec-refresh-identities --cycles 2026`",
+  "stdout_tail": "2026-07-11T12:10:50.814265Z  INFO sqlx::postgres::notice: relation \"_sqlx_migrations\" already exists, skipping",
+  "timed_out": false
+}

@@ -26,7 +26,70 @@ pub struct LobbyingFilingUpsert<'a> {
     pub source_run_id: Option<uuid::Uuid>,
 }
 
+pub struct LobbyingLobbyistUpsert<'a> {
+    pub id: i64,
+    pub first_name: Option<&'a str>,
+    pub middle_name: Option<&'a str>,
+    pub last_name: &'a str,
+    pub suffix: Option<&'a str>,
+    pub raw_json: serde_json::Value,
+    pub source_run_id: Option<uuid::Uuid>,
+}
+
 impl Repository {
+    pub async fn upsert_lobbying_lobbyist(
+        &self,
+        input: LobbyingLobbyistUpsert<'_>,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"INSERT INTO lobbying_lobbyists
+               (id, first_name, middle_name, last_name, suffix, raw_json, source_run_id)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)
+               ON CONFLICT (id) DO UPDATE SET
+                 first_name  = COALESCE(EXCLUDED.first_name, lobbying_lobbyists.first_name),
+                 middle_name = COALESCE(EXCLUDED.middle_name, lobbying_lobbyists.middle_name),
+                 last_name   = EXCLUDED.last_name,
+                 suffix      = COALESCE(EXCLUDED.suffix, lobbying_lobbyists.suffix),
+                 raw_json    = EXCLUDED.raw_json"#,
+        )
+        .bind(input.id)
+        .bind(input.first_name)
+        .bind(input.middle_name)
+        .bind(input.last_name)
+        .bind(input.suffix)
+        .bind(input.raw_json)
+        .bind(input.source_run_id)
+        .execute(self.pool())
+        .await?;
+        Ok(())
+    }
+
+    pub async fn link_lobbyist_to_filing(
+        &self,
+        filing_uuid: &str,
+        lobbyist_id: i64,
+        covered_position: Option<&str>,
+        is_new: Option<bool>,
+        source_run_id: Option<uuid::Uuid>,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"INSERT INTO lobbying_filing_lobbyists
+               (filing_uuid, lobbyist_id, covered_position, is_new, source_run_id)
+               VALUES ($1, $2, $3, $4, $5)
+               ON CONFLICT (filing_uuid, lobbyist_id) DO UPDATE SET
+                 covered_position = COALESCE(EXCLUDED.covered_position, lobbying_filing_lobbyists.covered_position),
+                 is_new = COALESCE(EXCLUDED.is_new, lobbying_filing_lobbyists.is_new)"#,
+        )
+        .bind(filing_uuid)
+        .bind(lobbyist_id)
+        .bind(covered_position)
+        .bind(is_new)
+        .bind(source_run_id)
+        .execute(self.pool())
+        .await?;
+        Ok(())
+    }
+
     /// Insert or update a lobbying registrant row.
     pub async fn upsert_lobbying_registrant(
         &self,

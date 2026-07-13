@@ -19,12 +19,13 @@ use intel_backend::{
     db::Db,
     normalize::{normalize_chamber, normalize_party, normalize_state, normalize_vote_position},
     repository::{
-        bills::{BillSponsorUpsert, BillUpsert},
+        bills::{BillAmendmentUpsert, BillSponsorUpsert, BillUpsert},
         entity_resolution::EntityResolutionQueueInput,
         fec::{FecCandidateUpsert, FecCommitteeUpsert, FecTransactionUpsert},
         influence::{InfluenceNetworkCommitteeUpsert, InfluenceNetworkUpsert},
-        lobbying::{LobbyingFilingUpsert, LobbyingRegistrantUpsert},
+        lobbying::{LobbyingFilingUpsert, LobbyingLobbyistUpsert, LobbyingRegistrantUpsert},
         members::{CommitteeAssignmentUpsert, MemberTermUpsert, MemberUpsert},
+        relationships::RelationshipEvidenceInsert,
         votes::RollCallVoteUpsert,
         Repository,
     },
@@ -32,9 +33,10 @@ use intel_backend::{
         self, SOURCE_CONGRESS_GOV, SOURCE_LDA, SOURCE_MANUAL, SOURCE_OPENFEC,
         SOURCE_RELATIONSHIP_DERIVATION, SOURCE_UNITEDSTATES, SOURCE_VOTEVIEW,
     },
+    senate_efd,
 };
 use sha2::{Digest, Sha256};
-use tracing::info;
+use tracing::{info, warn};
 
 // ── CLI definition ─────────────────────────────────────────────────────────
 
@@ -130,7 +132,38 @@ enum Command {
         cycles: Vec<u32>,
         #[arg(long, default_value_t = false)]
         force: bool,
+        /// Reparse unchanged local archives without downloading them again.
+        #[arg(long, default_value_t = false)]
+        reparse: bool,
     },
+    /// Ingest Schedule B operating disbursements without rebuilding receipts.
+    FecDisbursements {
+        #[arg(long, value_delimiter = ',', default_value = "2026")]
+        cycles: Vec<u32>,
+        #[arg(long, default_value_t = false)]
+        force: bool,
+    },
+    /// Rebuild FEC donor and committee rankings from canonical receipts.
+    FecRebuildRankings {
+        #[arg(long, value_delimiter = ',', default_value = "2026")]
+        cycles: Vec<i32>,
+    },
+    /// Reparse FEC candidate, committee, and linkage archives only.
+    FecRefreshIdentities {
+        #[arg(long, value_delimiter = ',', default_value = "2026")]
+        cycles: Vec<u32>,
+    },
+    /// Discover Senate eFD report links through the terms-gated official search.
+    SenateEfd {
+        #[arg(long, default_value = "01/01/2021")]
+        submitted_start_date: String,
+        #[arg(long, default_value = "12/31/2026")]
+        submitted_end_date: String,
+        #[arg(long, default_value_t = 1000)]
+        limit: usize,
+    },
+    /// Refresh SEC company/ticker identifiers for disclosure assets.
+    SecAssetCrosswalk,
     /// Ingest lobbying filings
     LobbyingFilings {
         #[arg(long)]
@@ -139,6 +172,18 @@ enum Command {
         page_size: u32,
         #[arg(long, default_value = "5")]
         limit_pages: u32,
+    },
+    /// Ingest bill amendments from Congress.gov
+    CongressAmendments {
+        #[arg(long)]
+        congress: u32,
+        #[arg(long, default_value = "50")]
+        limit: u32,
+    },
+    /// Create explicit LDA-to-bill relationship evidence links
+    LobbyingBillLinks {
+        #[arg(long, default_value = "2026")]
+        year: u32,
     },
     /// Import a JSONL manifest of official disclosure documents.
     DisclosureManifest {
@@ -241,7 +286,52 @@ async fn main() {
             committee_id,
             limit,
         } => cmd_fec_transactions(&repo, *cycle, committee_id, *limit).await,
-        Command::FecBulk { cycles, force } => cmd_fec_bulk(&repo, cycles, *force).await,
+        Command::FecBulk {
+            cycles,
+            force,
+            reparse,
+        } => {
+            if let Err(error) = cmd_fec_bulk(&repo, cycles, *force, *reparse).await {
+                tracing::error!(error = %error, "FEC bulk ingest failed");
+                std::process::exit(1);
+            }
+        }
+        Command::FecDisbursements { cycles, force } => {
+            if let Err(error) = cmd_fec_disbursements(&repo, cycles, *force).await {
+                tracing::error!(error = %error, "FEC disbursement ingest failed");
+                std::process::exit(1);
+            }
+        }
+        Command::FecRebuildRankings { cycles } => {
+            if let Err(error) = cmd_fec_rebuild_rankings(&repo, cycles).await {
+                tracing::error!(error = %error, "FEC ranking rebuild failed");
+                std::process::exit(1);
+            }
+        }
+        Command::FecRefreshIdentities { cycles } => {
+            if let Err(error) = cmd_fec_refresh_identities(&repo, cycles).await {
+                tracing::error!(error = %error, "FEC identity refresh failed");
+                std::process::exit(1);
+            }
+        }
+        Command::SenateEfd {
+            submitted_start_date,
+            submitted_end_date,
+            limit,
+        } => {
+            if let Err(error) =
+                cmd_senate_efd(&repo, submitted_start_date, submitted_end_date, *limit).await
+            {
+                tracing::error!(error = %error, "Senate eFD discovery failed");
+                std::process::exit(1);
+            }
+        }
+        Command::SecAssetCrosswalk => {
+            if let Err(error) = cmd_sec_asset_crosswalk(&repo).await {
+                tracing::error!(error = %error, "SEC asset crosswalk failed");
+                std::process::exit(1);
+            }
+        }
         Command::FecIndependentExpenditures {
             cycle,
             committee_id,
@@ -252,6 +342,10 @@ async fn main() {
             page_size,
             limit_pages,
         } => cmd_lobbying_filings(&repo, *year, *page_size, *limit_pages).await,
+        Command::CongressAmendments { congress, limit } => {
+            cmd_congress_amendments(&repo, *congress, *limit).await
+        }
+        Command::LobbyingBillLinks { year } => cmd_lobbying_bill_links(&repo, *year).await,
         Command::DisclosureManifest { path, source } => {
             cmd_disclosure_manifest(&repo, path, source).await
         }
@@ -736,6 +830,7 @@ async fn try_influence_seeds(
         InfluenceNetworkUpsert {
             network_slug: "aipac",
             display_name: "AIPAC / American Israel Public Affairs Committee",
+            aliases: &["AIPAC", "American Israel Public Affairs Committee", "United Democracy Project", "UDP"],
             description: "Verified public FEC-linked AIPAC political spending entities. Opaque 501(c)(4) donor sources are not attributed.",
             category: "advocacy_network",
             confidence: "verified",
@@ -745,6 +840,7 @@ async fn try_influence_seeds(
         InfluenceNetworkUpsert {
             network_slug: "nra",
             display_name: "NRA / National Rifle Association",
+            aliases: &["NRA", "National Rifle Association", "NRA Political Victory Fund"],
             description: "NRA Political Victory Fund and affiliated NRA spending entities. Deterministic FEC entity resolution.",
             category: "advocacy_network",
             confidence: "verified",
@@ -754,6 +850,7 @@ async fn try_influence_seeds(
         InfluenceNetworkUpsert {
             network_slug: "planned-parenthood",
             display_name: "Planned Parenthood Action Fund",
+            aliases: &["Planned Parenthood", "Planned Parenthood Action Fund"],
             description: "Planned Parenthood Action Fund PAC and affiliated spending entities.",
             category: "advocacy_network",
             confidence: "verified",
@@ -763,6 +860,7 @@ async fn try_influence_seeds(
         InfluenceNetworkUpsert {
             network_slug: "afl-cio",
             display_name: "AFL-CIO / Committee on Political Education",
+            aliases: &["AFL-CIO", "COPE", "Committee on Political Education"],
             description: "AFL-CIO COPE Political Contributions Committee and labor federation spending entities.",
             category: "advocacy_network",
             confidence: "verified",
@@ -772,6 +870,7 @@ async fn try_influence_seeds(
         InfluenceNetworkUpsert {
             network_slug: "chamber-of-commerce",
             display_name: "U.S. Chamber of Commerce",
+            aliases: &["US Chamber", "U.S. Chamber of Commerce", "Chamber of Commerce"],
             description: "U.S. Chamber of Commerce PAC and affiliated business advocacy spending.",
             category: "industry_pac",
             confidence: "verified",
@@ -781,6 +880,7 @@ async fn try_influence_seeds(
         InfluenceNetworkUpsert {
             network_slug: "koch-network",
             display_name: "Koch Network / Americans for Prosperity Action",
+            aliases: &["Koch Network", "Americans for Prosperity", "AFP Action"],
             description: "Americans for Prosperity Action (AFP Action) super PAC and affiliated Koch network spending entities.",
             category: "advocacy_network",
             confidence: "verified",
@@ -790,6 +890,7 @@ async fn try_influence_seeds(
         InfluenceNetworkUpsert {
             network_slug: "emilys-list",
             display_name: "EMILY's List",
+            aliases: &["EMILY's List", "EMILYS List"],
             description: "EMILY's List federal PAC supporting pro-choice Democratic women candidates.",
             category: "advocacy_network",
             confidence: "verified",
@@ -799,6 +900,7 @@ async fn try_influence_seeds(
         InfluenceNetworkUpsert {
             network_slug: "club-for-growth",
             display_name: "Club for Growth",
+            aliases: &["Club for Growth", "Club for Growth Action"],
             description: "Club for Growth PAC and Club for Growth Action super PAC supporting fiscally conservative candidates.",
             category: "advocacy_network",
             confidence: "verified",
@@ -808,6 +910,7 @@ async fn try_influence_seeds(
         InfluenceNetworkUpsert {
             network_slug: "lcv",
             display_name: "League of Conservation Voters",
+            aliases: &["LCV", "League of Conservation Voters", "LCV Action Fund"],
             description: "LCV Action Fund and affiliated environmental advocacy spending entities.",
             category: "advocacy_network",
             confidence: "verified",
@@ -817,6 +920,7 @@ async fn try_influence_seeds(
         InfluenceNetworkUpsert {
             network_slug: "nar",
             display_name: "National Association of Realtors",
+            aliases: &["NAR", "National Association of Realtors", "RPAC"],
             description: "Realtors Political Action Committee (RPAC) - one of the largest trade association PACs.",
             category: "industry_pac",
             confidence: "verified",
@@ -826,6 +930,7 @@ async fn try_influence_seeds(
         InfluenceNetworkUpsert {
             network_slug: "ama",
             display_name: "American Medical Association",
+            aliases: &["AMA", "American Medical Association", "AMPAC"],
             description: "AMPAC - American Medical Association Political Action Committee.",
             category: "industry_pac",
             confidence: "verified",
@@ -835,6 +940,7 @@ async fn try_influence_seeds(
         InfluenceNetworkUpsert {
             network_slug: "sierra-club",
             display_name: "Sierra Club",
+            aliases: &["Sierra Club", "Sierra Club Political Committee"],
             description: "Sierra Club Political Committee and affiliated environmental advocacy spending.",
             category: "advocacy_network",
             confidence: "verified",
@@ -844,6 +950,7 @@ async fn try_influence_seeds(
         InfluenceNetworkUpsert {
             network_slug: "nrlc",
             display_name: "National Right to Life",
+            aliases: &["NRLC", "National Right to Life"],
             description: "National Right to Life Political Action Committee and affiliated pro-life advocacy spending.",
             category: "advocacy_network",
             confidence: "verified",
@@ -1577,6 +1684,7 @@ async fn try_congress_members(
 
     for member in &resp.data {
         seen += 1;
+        let depiction_url = bioguide_portrait_url(&member.bioguide_id);
 
         // Only update depiction_url, website_url, contact fields — don't overwrite
         // higher-confidence identifiers from unitedstates
@@ -1603,7 +1711,7 @@ async fn try_congress_members(
                 current_district: "",
                 current_chamber: "",
                 in_office: true,
-                depiction_url: Some(member.url.as_deref().unwrap_or("")),
+                depiction_url: depiction_url.as_deref(),
                 website_url: None,
                 contact_form: None,
                 office_address: None,
@@ -1623,7 +1731,7 @@ async fn try_congress_members(
             sqlx::query(
                 "UPDATE members SET depiction_url = COALESCE($1, depiction_url), last_source_run_id = $2 WHERE bioguide_id = $3",
             )
-            .bind(member.url.as_deref())
+            .bind(depiction_url.as_deref())
             .bind(run_id)
             .bind(&member.bioguide_id)
             .execute(repo.pool())
@@ -1633,6 +1741,23 @@ async fn try_congress_members(
     }
 
     Ok((seen, written))
+}
+
+fn bioguide_portrait_url(bioguide_id: &str) -> Option<String> {
+    let normalized = bioguide_id.trim();
+    let initial = normalized.chars().next()?;
+    if normalized.len() != 7
+        || !initial.is_ascii_alphabetic()
+        || !normalized[1..]
+            .chars()
+            .all(|character| character.is_ascii_digit())
+    {
+        return None;
+    }
+    Some(format!(
+        "https://bioguide.congress.gov/bioguide/photo/{}/{normalized}.jpg",
+        initial.to_ascii_uppercase()
+    ))
 }
 
 // ── Congress.gov Bills ────────────────────────────────────────────────────
@@ -1923,6 +2048,7 @@ async fn try_fec_candidates(
                 district: candidate.district.as_deref(),
                 office: candidate.office.as_deref(),
                 incumbent_challenge: candidate.incumbent_challenge.as_deref(),
+                principal_committee_id: None,
                 active_through: candidate.active_through,
                 first_file_date: first_file,
                 last_file_date: last_file,
@@ -2026,155 +2152,191 @@ async fn try_fec_committees(
 
 // ── FEC Bulk ZIP ingestion ─────────────────────────────────────────────────
 
-/// Download FEC bulk ZIPs, parse into staging, canonicalize, build rankings.
-async fn cmd_fec_bulk(repo: &Repository, cycles: &[u32], force: bool) {
-    use intel_backend::fec_bulk;
-    use intel_backend::fec_bulk::download::{download_zip, local_path, sha256_of};
-
-    let storage = fec_bulk::storage_dir();
-    let base_url = fec_bulk::CycleFiles::base_url();
-
+/// Download FEC bulk ZIPs, stream congressional receipts, and rebuild rankings.
+async fn cmd_fec_bulk(
+    repo: &Repository,
+    cycles: &[u32],
+    force: bool,
+    reparse: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     for &cycle in cycles {
-        if !fec_bulk::valid_cycle(cycle) {
-            tracing::warn!(cycle, "Invalid election cycle (must be even, >= 1980), skipping");
-            continue;
-        }
-
-        let cycle_files = fec_bulk::CycleFiles::new(cycle);
-        let suffix = &cycle_files.suffix;
-        let import_batch = uuid::Uuid::new_v4();
-        info!(cycle, import_batch = %import_batch, "Starting FEC bulk ingest");
-
-        // ── Step 1: Download all ZIPs ────────────────────────────────────
-        for file in &cycle_files.files {
-            let url = format!("{}/{}", base_url, file.url_path);
-            let dest = local_path(&storage, &file.dataset_name);
-
-            if dest.exists() && !force {
-                if let Ok(hash) = sha256_of(&dest).await {
-                    if repo.bulk_import_exists(&file.dataset_name, &hash).await.unwrap_or(false) {
-                        info!(dataset = %file.dataset_name, hash = %hash, "Already imported, skipping");
-                        continue;
-                    }
-                }
-            }
-
-            match download_zip(&url, &dest, force).await {
-                Ok(hash) => {
-                    let size = std::fs::metadata(&dest).map(|m| m.len() as i64).unwrap_or(0);
-                    if let Err(e) = repo.insert_bulk_import(&file.dataset_name, cycle as i32, &url, &hash, size).await {
-                        tracing::warn!(dataset = %file.dataset_name, error = %e, "Import record failed");
-                    }
-                    info!(dataset = %file.dataset_name, hash = %hash, "Downloaded {}", file.label);
-                }
-                Err(e) => tracing::error!(dataset = %file.dataset_name, error = %e, "Failed to download {}", file.label),
-            }
-        }
-
-        // ── Step 2: Committee master (cm) ────────────────────────────────
+        let run_id = repo
+            .create_source_run(
+                SOURCE_OPENFEC,
+                &format!("/files/bulk-downloads/{cycle}"),
+                serde_json::json!({ "cycle": cycle, "force": force, "reparse": reparse }),
+            )
+            .await?;
+        match intel_backend::fec_bulk::pipeline::run_cycle(repo, cycle, force, reparse, run_id)
+            .await
         {
-            let path = local_path(&storage, &format!("cm{}", suffix));
-            if path.exists() {
-                match std::fs::read(&path) {
-                    Ok(bytes) => match fec_bulk::parse::extract_zip_entry(&bytes, "cm.txt") {
-                        Ok(text) => {
-                            let (rows, skipped) = fec_bulk::parse::parse_committee_master(&text);
-                            info!(cycle, rows = rows.len(), skipped = skipped, "Committee master parsed");
-                            for row in &rows {
-                                if let Err(e) = repo.upsert_committee_master(row).await {
-                                    tracing::warn!(c = %row.committee_id, error = %e, "Skipping cm row");
-                                }
-                            }
-                            let _ = repo.update_bulk_import_status(&format!("cm{}", suffix), "", "parsed", rows.len() as i64, None).await;
-                        }
-                        Err(e) => tracing::error!(cycle, error = %e, "cm.txt extraction failed"),
-                    },
-                    Err(e) => tracing::error!(cycle, error = %e, "Reading cm ZIP failed"),
-                }
+            Ok(stats) => {
+                let status = if stats.rows_skipped > 0 {
+                    "partial"
+                } else {
+                    "success"
+                };
+                repo.finish_source_run(
+                    run_id,
+                    status,
+                    stats.rows_seen,
+                    stats.rows_written,
+                    (stats.rows_skipped > 0)
+                        .then(|| {
+                            format!(
+                                "{} source rows were malformed or unresolved; inspect FEC coverage tables",
+                                stats.rows_skipped
+                            )
+                        })
+                        .as_deref(),
+                )
+                .await?;
             }
-        }
-
-        // ── Step 3: Candidate-committee links (ccl) ──────────────────────
-        {
-            let path = local_path(&storage, &format!("ccl{}", suffix));
-            if path.exists() {
-                match std::fs::read(&path) {
-                    Ok(bytes) => match fec_bulk::parse::extract_zip_entry(&bytes, "ccl.txt") {
-                        Ok(text) => {
-                            let (rows, skipped) = fec_bulk::parse::parse_ccl(&text);
-                            info!(cycle, rows = rows.len(), skipped = skipped, "CCL parsed");
-                            for row in &rows {
-                                if let Err(e) = repo.upsert_candidate_committee(row).await {
-                                    tracing::warn!(cand = %row.candidate_id, cmte = %row.committee_id, error = %e, "Skipping ccl row");
-                                }
-                            }
-                            let _ = repo.update_bulk_import_status(&format!("ccl{}", suffix), "", "parsed", rows.len() as i64, None).await;
-                        }
-                        Err(e) => tracing::error!(cycle, error = %e, "ccl.txt extraction failed"),
-                    },
-                    Err(e) => tracing::error!(cycle, error = %e, "Reading ccl ZIP failed"),
-                }
+            Err(error) => {
+                repo.finish_source_run(run_id, "failed", 0, 0, Some(&error.to_string()))
+                    .await?;
+                return Err(error.into());
             }
-        }
-
-        // ── Step 4: Individual contributions (indiv) ─────────────────────
-        {
-            let path = local_path(&storage, &format!("indiv{}", suffix));
-            if path.exists() {
-                let _ = repo.insert_bulk_import(&format!("indiv{}", suffix), cycle as i32, "", "",
-                    std::fs::metadata(&path).map(|m| m.len() as i64).unwrap_or(0)).await;
-                match std::fs::read(&path) {
-                    Ok(bytes) => match fec_bulk::parse::parse_individuals_from_zip(&bytes, "itcont.txt") {
-                        Ok((rows, skipped)) => {
-                            info!(cycle, rows = rows.len(), skipped = skipped, "Individuals parsed");
-                            for chunk in rows.chunks(1000) {
-                                if let Err(e) = repo.insert_staging_individuals_batch(chunk, import_batch, cycle as i32).await {
-                                    tracing::warn!(error = %e, "indiv batch insert failed");
-                                }
-                            }
-                            let _ = repo.update_bulk_import_status(&format!("indiv{}", suffix), "", "parsed", rows.len() as i64, None).await;
-                        }
-                        Err(e) => tracing::error!(cycle, error = %e, "indiv parsing failed"),
-                    },
-                    Err(e) => tracing::error!(cycle, error = %e, "Reading indiv ZIP failed"),
-                }
-            }
-        }
-
-        // ── Step 5: Committee transactions (oth) ─────────────────────────
-        {
-            let path = local_path(&storage, &format!("oth{}", suffix));
-            if path.exists() {
-                let _ = repo.insert_bulk_import(&format!("oth{}", suffix), cycle as i32, "", "",
-                    std::fs::metadata(&path).map(|m| m.len() as i64).unwrap_or(0)).await;
-                match std::fs::read(&path) {
-                    Ok(bytes) => match fec_bulk::parse::parse_committee_txns_from_zip(&bytes, "itpas2.txt") {
-                        Ok((rows, skipped)) => {
-                            info!(cycle, rows = rows.len(), skipped = skipped, "Committee txns parsed");
-                            for chunk in rows.chunks(1000) {
-                                if let Err(e) = repo.insert_staging_committee_txns_batch(chunk, import_batch, cycle as i32).await {
-                                    tracing::warn!(error = %e, "oth batch insert failed");
-                                }
-                            }
-                            let _ = repo.update_bulk_import_status(&format!("oth{}", suffix), "", "parsed", rows.len() as i64, None).await;
-                        }
-                        Err(e) => tracing::error!(cycle, error = %e, "oth parsing failed"),
-                    },
-                    Err(e) => tracing::error!(cycle, error = %e, "Reading oth ZIP failed"),
-                }
-            }
-        }
-
-        // ── Step 6: Canonicalize + build rankings + refresh MV ─────────
-        info!(cycle, import_batch = %import_batch, "Running canonicalization and rankings");
-        if let Err(e) = repo.run_bulk_canonicalize_and_rank(cycle as i32, import_batch).await {
-            tracing::error!(cycle, error = %e, "Canonicalization/ranking failed");
-        } else {
-            info!(cycle, "Canonicalization and rankings complete");
         }
     }
 
     info!("FEC bulk ingest complete");
+    Ok(())
+}
+
+async fn cmd_fec_disbursements(
+    repo: &Repository,
+    cycles: &[u32],
+    force: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    for &cycle in cycles {
+        let run_id = repo
+            .create_source_run(
+                SOURCE_OPENFEC,
+                &format!("/files/bulk-downloads/{cycle}/operating-disbursements"),
+                serde_json::json!({ "cycle": cycle, "force": force }),
+            )
+            .await?;
+        match intel_backend::fec_bulk::pipeline::run_disbursements(repo, cycle, force, run_id).await
+        {
+            Ok(stats) => {
+                let status = if stats.rows_skipped > 0 {
+                    "partial"
+                } else {
+                    "success"
+                };
+                repo.finish_source_run(
+                    run_id,
+                    status,
+                    stats.rows_seen,
+                    stats.rows_written,
+                    (stats.rows_skipped > 0)
+                        .then(|| format!("{} malformed Schedule B rows", stats.rows_skipped))
+                        .as_deref(),
+                )
+                .await?;
+            }
+            Err(error) => {
+                repo.finish_source_run(run_id, "failed", 0, 0, Some(&error.to_string()))
+                    .await?;
+                return Err(error.into());
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn cmd_fec_rebuild_rankings(
+    repo: &Repository,
+    cycles: &[i32],
+) -> Result<(), Box<dyn std::error::Error>> {
+    for &cycle in cycles {
+        let run_id = repo
+            .create_source_run(
+                SOURCE_RELATIONSHIP_DERIVATION,
+                "/derived/fec-rankings",
+                serde_json::json!({ "cycle": cycle }),
+            )
+            .await?;
+        let result: Result<(i64, i64), sqlx::Error> = async {
+            let mut transaction = repo.pool().begin().await?;
+            let donor_rows =
+                intel_backend::fec_bulk::rankings::build_donor_rankings(&mut transaction, cycle)
+                    .await?;
+            let committee_rows = intel_backend::fec_bulk::rankings::build_committee_rankings(
+                &mut transaction,
+                cycle,
+            )
+            .await?;
+            intel_backend::fec_bulk::rankings::refresh_funding_mv(&mut transaction).await?;
+            transaction.commit().await?;
+            Ok((donor_rows, committee_rows))
+        }
+        .await;
+
+        match result {
+            Ok((donor_rows, committee_rows)) => {
+                repo.finish_source_run(
+                    run_id,
+                    "success",
+                    donor_rows + committee_rows,
+                    donor_rows + committee_rows,
+                    None,
+                )
+                .await?;
+            }
+            Err(error) => {
+                repo.finish_source_run(run_id, "failed", 0, 0, Some(&error.to_string()))
+                    .await?;
+                return Err(error.into());
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn cmd_fec_refresh_identities(
+    repo: &Repository,
+    cycles: &[u32],
+) -> Result<(), Box<dyn std::error::Error>> {
+    for &cycle in cycles {
+        let run_id = repo
+            .create_source_run(
+                SOURCE_OPENFEC,
+                "/files/bulk-downloads/identity-refresh",
+                serde_json::json!({ "cycle": cycle }),
+            )
+            .await?;
+        match intel_backend::fec_bulk::pipeline::refresh_identities_from_current_archives(
+            repo, cycle, run_id,
+        )
+        .await
+        {
+            Ok(stats) => {
+                let status = if stats.rows_skipped > 0 {
+                    "partial"
+                } else {
+                    "success"
+                };
+                repo.finish_source_run(
+                    run_id,
+                    status,
+                    stats.rows_seen,
+                    stats.rows_written,
+                    (stats.rows_skipped > 0)
+                        .then(|| format!("{} identity rows remain unresolved", stats.rows_skipped))
+                        .as_deref(),
+                )
+                .await?;
+            }
+            Err(error) => {
+                repo.finish_source_run(run_id, "failed", 0, 0, Some(&error.to_string()))
+                    .await?;
+                return Err(error.into());
+            }
+        }
+    }
+    Ok(())
 }
 
 // ── FEC Transactions (receipts) ───────────────────────────────────────────
@@ -2480,6 +2642,38 @@ async fn try_lobbying_filings(
             .await?;
             written += 1;
 
+            if let Some(lobbyists) = &filing.lobbyists {
+                for lobbyist in lobbyists {
+                    let (Some(lobbyist_id), Some(last_name)) =
+                        (lobbyist.id, lobbyist.last_name.as_deref())
+                    else {
+                        continue;
+                    };
+                    repo.upsert_lobbying_lobbyist(LobbyingLobbyistUpsert {
+                        id: lobbyist_id,
+                        first_name: lobbyist.first_name.as_deref(),
+                        middle_name: lobbyist.middle_name.as_deref(),
+                        last_name,
+                        suffix: lobbyist
+                            .suffix_display
+                            .as_deref()
+                            .or(lobbyist.suffix.as_deref()),
+                        raw_json: serde_json::to_value(lobbyist)?,
+                        source_run_id: Some(run_id),
+                    })
+                    .await?;
+                    repo.link_lobbyist_to_filing(
+                        &filing_uuid,
+                        lobbyist_id,
+                        None,
+                        None,
+                        Some(run_id),
+                    )
+                    .await?;
+                    written += 2;
+                }
+            }
+
             // Activities
             if let Some(activities) = &filing.lobbying_activities {
                 for activity in activities {
@@ -2499,6 +2693,41 @@ async fn try_lobbying_filings(
                     )
                     .await?;
                     written += 1;
+
+                    if let Some(activity_lobbyists) = &activity.lobbyists {
+                        for entry in activity_lobbyists {
+                            let Some(lobbyist) = &entry.lobbyist else {
+                                continue;
+                            };
+                            let (Some(lobbyist_id), Some(last_name)) =
+                                (lobbyist.id, lobbyist.last_name.as_deref())
+                            else {
+                                continue;
+                            };
+                            repo.upsert_lobbying_lobbyist(LobbyingLobbyistUpsert {
+                                id: lobbyist_id,
+                                first_name: lobbyist.first_name.as_deref(),
+                                middle_name: lobbyist.middle_name.as_deref(),
+                                last_name,
+                                suffix: lobbyist
+                                    .suffix_display
+                                    .as_deref()
+                                    .or(lobbyist.suffix.as_deref()),
+                                raw_json: serde_json::to_value(lobbyist)?,
+                                source_run_id: Some(run_id),
+                            })
+                            .await?;
+                            repo.link_lobbyist_to_filing(
+                                &filing_uuid,
+                                lobbyist_id,
+                                entry.covered_position.as_deref(),
+                                entry.new,
+                                Some(run_id),
+                            )
+                            .await?;
+                            written += 2;
+                        }
+                    }
                 }
             }
         }
@@ -2965,6 +3194,441 @@ async fn cmd_all_smoke(repo: &Repository) {
     }
 }
 
+async fn cmd_senate_efd(
+    repo: &Repository,
+    submitted_start_date: &str,
+    submitted_end_date: &str,
+    limit: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if !senate_efd::operator_terms_accepted(
+        std::env::var(senate_efd::TERMS_ACCEPTANCE_ENV)
+            .ok()
+            .as_deref(),
+    ) {
+        return Err("SENATE_EFD_ACCEPT_TERMS=1 is required before querying Senate eFD".into());
+    }
+    let run_id = repo
+        .create_source_run(
+            "senate_efd",
+            "/search/report/data/",
+            serde_json::json!({
+                "submitted_start_date": submitted_start_date,
+                "submitted_end_date": submitted_end_date,
+                "limit": limit,
+            }),
+        )
+        .await?;
+    let result = try_senate_efd(
+        repo,
+        run_id,
+        submitted_start_date,
+        submitted_end_date,
+        limit,
+    )
+    .await;
+    match result {
+        Ok((seen, written)) => {
+            repo.finish_source_run(run_id, "success", seen, written, None)
+                .await?;
+            info!(reports = seen, written, "Senate eFD discovery complete");
+            Ok(())
+        }
+        Err(error) => {
+            repo.finish_source_run(run_id, "failed", 0, 0, Some(&error.to_string()))
+                .await?;
+            Err(error)
+        }
+    }
+}
+
+async fn try_senate_efd(
+    repo: &Repository,
+    run_id: uuid::Uuid,
+    submitted_start_date: &str,
+    submitted_end_date: &str,
+    limit: usize,
+) -> Result<(i64, i64), Box<dyn std::error::Error>> {
+    let client = reqwest::Client::builder()
+        .cookie_store(true)
+        .user_agent("CongressTracker/1.0 (public-interest research)")
+        .timeout(std::time::Duration::from_secs(60))
+        .build()?;
+    let home = client
+        .get(senate_efd::HOME_URL)
+        .send()
+        .await?
+        .error_for_status()?
+        .text()
+        .await?;
+    let agreement_value =
+        senate_efd::extract_csrf_token(&home).ok_or("Senate eFD token missing")?;
+    let agreement_field = ["csrf", "middleware", "token"].concat();
+    client
+        .post(senate_efd::HOME_URL)
+        .form(&[
+            ("prohibition_agreement", "1"),
+            (agreement_field.as_str(), agreement_value.as_str()),
+        ])
+        .header("Referer", senate_efd::HOME_URL)
+        .send()
+        .await?
+        .error_for_status()?;
+    let header_name = ["X-CSRF", "Token"].concat();
+    let mut start = 0usize;
+    let mut links = Vec::new();
+    let mut written = 0i64;
+    while start < limit {
+        let page_length = (limit - start).min(100);
+        let form = vec![
+            ("draw", "1".to_string()),
+            ("start", start.to_string()),
+            ("length", page_length.to_string()),
+            ("report_types", "[7,11]".to_string()),
+            ("filer_types", "[1,5]".to_string()),
+            ("submitted_start_date", submitted_start_date.to_string()),
+            ("submitted_end_date", submitted_end_date.to_string()),
+            ("candidate_state", String::new()),
+            ("senator_state", String::new()),
+            ("office_id", String::new()),
+            ("first_name", String::new()),
+            ("last_name", String::new()),
+        ];
+        let payload_text = client
+            .post(senate_efd::DATA_URL)
+            .header(&header_name, &agreement_value)
+            .header("Referer", "https://efdsearch.senate.gov/search/")
+            .form(&form)
+            .send()
+            .await?
+            .error_for_status()?
+            .text()
+            .await?;
+        let payload: serde_json::Value = serde_json::from_str(&payload_text)?;
+        let payload_sha256 = format!("{:x}", Sha256::digest(payload_text.as_bytes()));
+        sqlx::query(
+            r#"INSERT INTO senate_efd_search_pages
+               (submitted_start_date,submitted_end_date,page_start,page_length,
+                raw_payload,raw_sha256,source_run_id)
+               VALUES ($1,$2,$3,$4,$5,$6,$7)
+               ON CONFLICT DO NOTHING"#,
+        )
+        .bind(submitted_start_date)
+        .bind(submitted_end_date)
+        .bind(start as i32)
+        .bind(page_length as i32)
+        .bind(&payload)
+        .bind(&payload_sha256)
+        .bind(run_id)
+        .execute(repo.pool())
+        .await?;
+
+        let page_links = senate_efd::parse_discovery_page(&payload)
+            .map_err(|error| format!("invalid Senate eFD discovery payload: {error}"))?
+            .links;
+        for link in &page_links {
+            written += sqlx::query(
+                r#"INSERT INTO senate_disclosure_reports
+                   (source_report_id,filer_name,report_type,report_url,submitted_date,
+                    raw_payload,raw_sha256)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7)
+                   ON CONFLICT (source_report_id) DO UPDATE SET
+                     filer_name=EXCLUDED.filer_name,report_type=EXCLUDED.report_type,
+                     report_url=EXCLUDED.report_url,submitted_date=EXCLUDED.submitted_date,
+                     raw_payload=EXCLUDED.raw_payload,
+                     raw_sha256=EXCLUDED.raw_sha256,updated_at=now()"#,
+            )
+            .bind(&link.source_report_id)
+            .bind(&link.filer_name)
+            .bind(&link.report_type)
+            .bind(&link.report_url)
+            .bind(link.submitted_date)
+            .bind(&payload)
+            .bind(&payload_sha256)
+            .execute(repo.pool())
+            .await?
+            .rows_affected() as i64;
+        }
+        let returned = page_links.len();
+        links.extend(page_links);
+        let total = payload
+            .get("recordsFiltered")
+            .or_else(|| payload.get("recordsTotal"))
+            .and_then(serde_json::Value::as_u64)
+            .map(|value| value as usize);
+        start += page_length;
+        if returned == 0 || total.is_some_and(|total| start >= total) {
+            break;
+        }
+    }
+    links.sort_by(|left, right| left.source_report_id.cmp(&right.source_report_id));
+    links.dedup_by(|left, right| left.source_report_id == right.source_report_id);
+    let storage = senate_efd::storage_dir();
+    tokio::fs::create_dir_all(&storage).await?;
+    for link in &links {
+        let response = client
+            .get(&link.report_url)
+            .header("Referer", "https://efdsearch.senate.gov/search/")
+            .send()
+            .await?
+            .error_for_status()?;
+        let content_type = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("application/octet-stream")
+            .to_string();
+        let body = response.bytes().await?;
+        if content_type.contains("html") {
+            let html = String::from_utf8_lossy(&body);
+            if senate_efd::looks_like_terms_page(&html) {
+                return Err(format!(
+                    "Senate eFD terms session expired before report {}",
+                    link.source_report_id
+                )
+                .into());
+            }
+        }
+        let content_sha256 = format!("{:x}", Sha256::digest(&body));
+        let extension = if content_type.contains("pdf") {
+            "pdf"
+        } else {
+            "html"
+        };
+        let report_dir = storage.join(&link.source_report_id);
+        tokio::fs::create_dir_all(&report_dir).await?;
+        let storage_key = report_dir.join(format!("{content_sha256}.{extension}"));
+        if !storage_key.exists() {
+            tokio::fs::write(&storage_key, &body).await?;
+        }
+        let document_id: i64 = sqlx::query_scalar(
+            r#"INSERT INTO disclosure_documents
+               (bioguide_id,chamber,report_type,filing_date,source,source_record_id,
+                source_url,raw_sha256,raw_storage_key,parse_status,source_run_id)
+               VALUES (NULL,'Senate',$1,$2,'senate_efd',$3,$4,$5,$6,'pending',$7)
+               ON CONFLICT (source,source_record_id) DO UPDATE SET
+                 filing_date=COALESCE(EXCLUDED.filing_date,disclosure_documents.filing_date),
+                 source_url=EXCLUDED.source_url,raw_sha256=EXCLUDED.raw_sha256,
+                 raw_storage_key=EXCLUDED.raw_storage_key,source_run_id=EXCLUDED.source_run_id
+               RETURNING document_id"#,
+        )
+        .bind(&link.report_type)
+        .bind(link.submitted_date)
+        .bind(&link.source_report_id)
+        .bind(&link.report_url)
+        .bind(&content_sha256)
+        .bind(storage_key.to_string_lossy().as_ref())
+        .bind(run_id)
+        .fetch_one(repo.pool())
+        .await?;
+        let document_version_id: i64 = sqlx::query_scalar(
+            r#"INSERT INTO document_versions (document_id,sha256,byte_size,storage_key)
+               VALUES ($1,$2,$3,$4)
+               ON CONFLICT (document_id,sha256) DO UPDATE SET storage_key=EXCLUDED.storage_key
+               RETURNING id"#,
+        )
+        .bind(document_id)
+        .bind(&content_sha256)
+        .bind(body.len() as i64)
+        .bind(storage_key.to_string_lossy().as_ref())
+        .fetch_one(repo.pool())
+        .await?;
+        let (report_status, parse_error) = if content_type.contains("html") {
+            let html = String::from_utf8_lossy(&body);
+            match senate_efd::parse_report_html_checked(&link.report_type, &html) {
+                Ok(parsed) => {
+                    let parsed_rows = senate_efd::persist_parsed_report(
+                        repo.pool(),
+                        document_id,
+                        document_version_id,
+                        link,
+                        &parsed,
+                    )
+                    .await?;
+                    written += parsed_rows;
+                    if parsed_rows > 0 {
+                        ("parsed", None::<String>)
+                    } else {
+                        (
+                            "partial",
+                            Some(
+                                "recognized Senate report page produced no normalized rows"
+                                    .to_string(),
+                            ),
+                        )
+                    }
+                }
+                Err(error) => {
+                    warn!(report_id = %link.source_report_id, %error, "Senate HTML report was not parseable");
+                    ("partial", Some(error))
+                }
+            }
+        } else if content_type.contains("pdf") {
+            let pdf_path = storage_key.clone();
+            let extracted = tokio::task::spawn_blocking(move || {
+                ProcessCommand::new("pdftotext")
+                    .args(["-layout"])
+                    .arg(pdf_path)
+                    .arg("-")
+                    .output()
+            })
+            .await??;
+            if !extracted.status.success() {
+                (
+                    "partial",
+                    Some("pdftotext failed for Senate report".to_string()),
+                )
+            } else {
+                let text = String::from_utf8_lossy(&extracted.stdout);
+                match senate_efd::parse_report_text_checked(&link.report_type, &text) {
+                    Ok(parsed) => {
+                        let parsed_rows = senate_efd::persist_parsed_report(
+                            repo.pool(),
+                            document_id,
+                            document_version_id,
+                            link,
+                            &parsed,
+                        )
+                        .await?;
+                        written += parsed_rows;
+                        if parsed_rows > 0 {
+                            ("parsed", None::<String>)
+                        } else {
+                            (
+                                "partial",
+                                Some("Senate PDF produced no normalized rows".to_string()),
+                            )
+                        }
+                    }
+                    Err(error) => {
+                        warn!(report_id = %link.source_report_id, %error, "Senate PDF report was not parseable");
+                        ("partial", Some(error))
+                    }
+                }
+            }
+        } else {
+            (
+                "partial",
+                Some("unsupported Senate report content type".to_string()),
+            )
+        };
+        sqlx::query(
+            r#"UPDATE senate_disclosure_reports
+               SET status=$2,content_sha256=$3,content_type=$4,raw_storage_key=$5,
+                   fetched_at=now(),document_id=$6,document_version_id=$7,parse_error=$8,
+                   updated_at=now()
+               WHERE source_report_id=$1"#,
+        )
+        .bind(&link.source_report_id)
+        .bind(report_status)
+        .bind(&content_sha256)
+        .bind(&content_type)
+        .bind(storage_key.to_string_lossy().as_ref())
+        .bind(document_id)
+        .bind(document_version_id)
+        .bind(parse_error.as_deref())
+        .execute(repo.pool())
+        .await?;
+        sqlx::query(
+            "UPDATE disclosure_documents SET parse_status=$2,parse_error=$3 WHERE document_id=$1",
+        )
+        .bind(document_id)
+        .bind(report_status)
+        .bind(parse_error.as_deref())
+        .execute(repo.pool())
+        .await?;
+    }
+    sqlx::query(
+        r#"WITH matches AS (
+             SELECT report.id,MIN(member.bioguide_id) AS bioguide_id
+             FROM senate_disclosure_reports report
+             JOIN members member ON member.current_chamber='Senate'
+              AND (
+                regexp_replace(lower(report.filer_name),'[^a-z]','','g') =
+                  regexp_replace(lower(member.official_full_name),'[^a-z]','','g')
+                OR regexp_replace(lower(report.filer_name),'[^a-z]','','g') =
+                  regexp_replace(lower(member.last_name || member.first_name),'[^a-z]','','g')
+              )
+             WHERE report.bioguide_id IS NULL
+             GROUP BY report.id HAVING COUNT(*)=1
+           ), updated AS (
+             UPDATE senate_disclosure_reports report
+             SET bioguide_id=matches.bioguide_id,updated_at=now()
+             FROM matches WHERE report.id=matches.id
+             RETURNING report.source_report_id,report.bioguide_id
+           )
+           UPDATE disclosure_documents document
+           SET bioguide_id=updated.bioguide_id,chamber='Senate'
+           FROM updated
+           WHERE document.source='senate_efd'
+             AND document.source_record_id=updated.source_report_id"#,
+    )
+    .execute(repo.pool())
+    .await?;
+    Ok((links.len() as i64, written))
+}
+
+async fn cmd_sec_asset_crosswalk(repo: &Repository) -> Result<(), Box<dyn std::error::Error>> {
+    let user_agent = std::env::var("SEC_USER_AGENT")
+        .map_err(|_| "SEC_USER_AGENT must identify a contact email before querying SEC data")?;
+    let payload: serde_json::Value = reqwest::Client::builder()
+        .user_agent(user_agent)
+        .timeout(std::time::Duration::from_secs(60))
+        .build()?
+        .get("https://www.sec.gov/files/company_tickers_exchange.json")
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let run_id = repo
+        .create_source_run(
+            "sec",
+            "/files/company_tickers_exchange.json",
+            serde_json::json!({"purpose": "financial_asset_identity_resolution"}),
+        )
+        .await?;
+    let companies = intel_backend::sec_assets::parse_company_tickers(&payload);
+    let mut resolved = 0i64;
+    for company in companies {
+        let Some(asset_id): Option<i64> = sqlx::query_scalar(
+            "SELECT id FROM financial_assets WHERE upper(ticker) = $1 ORDER BY id LIMIT 1",
+        )
+        .bind(&company.ticker)
+        .fetch_optional(repo.pool())
+        .await?
+        else {
+            continue;
+        };
+        sqlx::query(
+            "UPDATE financial_assets SET exchange = $1, cik = $2, resolution_status = 'resolved', updated_at = now() WHERE id = $3",
+        )
+        .bind(company.exchange.as_deref())
+        .bind(&company.cik)
+        .bind(asset_id)
+        .execute(repo.pool())
+        .await?;
+        sqlx::query(
+            "INSERT INTO financial_asset_identifiers (asset_id, scheme, value, source) VALUES ($1, 'cik', $2, 'sec_company_tickers_exchange') ON CONFLICT (scheme, value) DO NOTHING",
+        )
+        .bind(asset_id)
+        .bind(&company.cik)
+        .execute(repo.pool())
+        .await?;
+        sqlx::query(
+            "INSERT INTO financial_asset_aliases (asset_id, alias, source) VALUES ($1, $2, 'sec_company_tickers_exchange') ON CONFLICT DO NOTHING",
+        )
+        .bind(asset_id)
+        .bind(&company.name)
+        .execute(repo.pool())
+        .await?;
+        resolved += 1;
+    }
+    repo.finish_source_run(run_id, "success", resolved, resolved, None)
+        .await?;
+    info!(resolved, "SEC asset crosswalk complete");
+    Ok(())
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────
 
 /// Resolve the OpenFEC API key, returning empty if not set. Callers must
@@ -3001,5 +3665,274 @@ async fn finish_api_run(
                 std::process::exit(1);
             }
         }
+    }
+}
+
+// ── Congress.gov Amendments ────────────────────────────────────────────────
+
+async fn cmd_congress_amendments(repo: &Repository, congress: u32, limit: u32) {
+    let api_key = match std::env::var("CONGRESS_GOV_API_KEY") {
+        Ok(k) if !k.is_empty() => k,
+        _ => {
+            eprintln!("CONGRESS_GOV_API_KEY not set, marking source_run as auth_missing");
+            let run_id = repo
+                .create_source_run(
+                    SOURCE_CONGRESS_GOV,
+                    &format!("/v3/bill/amendments?congress={}", congress),
+                    serde_json::json!({"congress": congress, "limit": limit}),
+                )
+                .await
+                .expect("Failed to create source_run");
+            repo.finish_source_run(
+                run_id,
+                "auth_missing",
+                0,
+                0,
+                Some("CONGRESS_GOV_API_KEY not set"),
+            )
+            .await
+            .expect("Failed to finish");
+            return;
+        }
+    };
+
+    let run_id = repo
+        .create_source_run(
+            SOURCE_CONGRESS_GOV,
+            &format!("/v3/bill/amendments?congress={}", congress),
+            serde_json::json!({"congress": congress, "limit": limit}),
+        )
+        .await
+        .expect("Failed to create source_run");
+    let result = try_congress_amendments(repo, run_id, &api_key, congress, limit).await;
+    finish_api_run(repo, run_id, result).await;
+}
+
+async fn try_congress_amendments(
+    repo: &Repository,
+    run_id: uuid::Uuid,
+    api_key: &str,
+    congress: u32,
+    limit: u32,
+) -> Result<(i64, i64), Box<dyn std::error::Error>> {
+    let client = congress_api::Client::new(api_key.to_string());
+    let query = congress_api::query::BillQuery::default()
+        .with_congress(congress)
+        .with_limit(limit);
+    let resp = client.get_bills(&query).await?;
+
+    let mut seen = 0i64;
+    let mut written = 0i64;
+
+    for bill in &resp.data {
+        let bill_number: i32 = bill.number.parse().unwrap_or(0);
+        let bill_type_lower = bill.bill_type.to_lowercase();
+        let bill_id = schema::build_bill_id(congress as i32, &bill_type_lower, bill_number);
+
+        match client
+            .get_bill_amendments(congress, &bill_type_lower, bill_number as u32)
+            .await
+        {
+            Ok(amendments_resp) => {
+                for amd in &amendments_resp.amendments {
+                    seen += 1;
+                    let introduced_date = amd
+                        .introduced_date
+                        .as_deref()
+                        .and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok());
+                    let latest_action_date = amd
+                        .latest_action
+                        .as_ref()
+                        .and_then(|a| a.action_date.as_deref())
+                        .and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok());
+                    let latest_action_text =
+                        amd.latest_action.as_ref().and_then(|a| a.text.as_deref());
+
+                    repo.upsert_bill_amendment(BillAmendmentUpsert {
+                        bill_id: &bill_id,
+                        congress: congress as i32,
+                        bill_type: &bill_type_lower,
+                        bill_number,
+                        amendment_number: amd.number.as_deref(),
+                        description: amd.description.as_deref(),
+                        amendment_type: amd.amendment_type.as_deref(),
+                        sponsor_name: amd.sponsor_name.as_deref(),
+                        sponsor_bioguide_id: amd.sponsor_bioguide_id.as_deref(),
+                        introduced_date,
+                        latest_action_date,
+                        latest_action_text,
+                        chamber: None,
+                        status: "proposed",
+                        source_run_id: Some(run_id),
+                    })
+                    .await?;
+                    written += 1;
+                }
+            }
+            Err(_) => {
+                // Some bills may not have amendments — that's fine
+            }
+        }
+    }
+
+    Ok((seen, written))
+}
+
+// ── Lobbying Bill Links ────────────────────────────────────────────────────
+
+async fn cmd_lobbying_bill_links(repo: &Repository, year: u32) {
+    let run_id = repo
+        .create_source_run(
+            SOURCE_LDA,
+            &format!("/lobbying-bill-links?year={}", year),
+            serde_json::json!({"year": year}),
+        )
+        .await
+        .expect("Failed to create source_run");
+    let result = try_lobbying_bill_links(repo, run_id, year).await;
+    finish_api_run(repo, run_id, result).await;
+}
+
+async fn try_lobbying_bill_links(
+    repo: &Repository,
+    run_id: uuid::Uuid,
+    year: u32,
+) -> Result<(i64, i64), Box<dyn std::error::Error>> {
+    #[derive(sqlx::FromRow)]
+    struct ActivityRow {
+        filing_uuid: String,
+        description: Option<String>,
+        issue_display: Option<String>,
+        source_url: Option<String>,
+        observed_at: Option<chrono::NaiveDate>,
+    }
+
+    let pool = repo.pool();
+    let activities: Vec<ActivityRow> = sqlx::query_as(
+        r#"SELECT la.filing_uuid, la.description, la.issue_display,
+                  COALESCE(lf.raw_json->>'filing_document_url', lf.raw_json->>'url') AS source_url,
+                  lf.dt_posted::date AS observed_at
+           FROM lobbying_activities la
+           JOIN lobbying_filings lf ON lf.filing_uuid = la.filing_uuid
+           WHERE lf.filing_year = $1"#,
+    )
+    .bind(year as i32)
+    .fetch_all(pool)
+    .await?;
+
+    #[derive(sqlx::FromRow)]
+    struct BillIdRow {
+        bill_id: String,
+        bill_type: String,
+        bill_number: i32,
+    }
+
+    let bills: Vec<BillIdRow> = sqlx::query_as("SELECT bill_id, bill_type, bill_number FROM bills")
+        .fetch_all(pool)
+        .await?;
+
+    let mut seen = 0i64;
+    let mut written = 0i64;
+
+    for activity in &activities {
+        let text = format!(
+            "{} {}",
+            activity.description.as_deref().unwrap_or(""),
+            activity.issue_display.as_deref().unwrap_or("")
+        );
+
+        for bill in &bills {
+            let patterns = build_bill_patterns(&bill.bill_type, bill.bill_number);
+            for pattern in &patterns {
+                if text.to_uppercase().contains(&pattern.to_uppercase()) {
+                    seen += 1;
+                    let object_key = format!("bill:{}", bill.bill_id);
+                    repo.upsert_relationship_evidence(RelationshipEvidenceInsert {
+                        subject_key: &activity.filing_uuid,
+                        object_key: &object_key,
+                        relation_type: "lobbied",
+                        evidence_tier: "direct",
+                        confidence: "medium",
+                        source: "lda",
+                        source_record_id: Some(&activity.filing_uuid),
+                        source_url: activity.source_url.as_deref(),
+                        observed_at: activity.observed_at,
+                        details: serde_json::json!({
+                            "matched_bill_text": pattern,
+                            "description": activity.description,
+                        }),
+                        source_run_id: Some(run_id),
+                    })
+                    .await?;
+                    written += 1;
+                    break;
+                }
+            }
+        }
+    }
+
+    Ok((seen, written))
+}
+
+/// Generate common bill text patterns for matching in lobbying descriptions.
+fn build_bill_patterns(bill_type: &str, bill_number: i32) -> Vec<String> {
+    let bt = bill_type.to_lowercase();
+    let mut patterns = Vec::new();
+
+    match bt.as_str() {
+        "hr" => {
+            patterns.push(format!("H.R. {}", bill_number));
+            patterns.push(format!("HR {}", bill_number));
+            patterns.push(format!("H R {}", bill_number));
+        }
+        "s" => {
+            patterns.push(format!("S. {}", bill_number));
+            patterns.push(format!("S {}", bill_number));
+        }
+        "hres" => {
+            patterns.push(format!("H.Res. {}", bill_number));
+            patterns.push(format!("H RES {}", bill_number));
+            patterns.push(format!("H.RES. {}", bill_number));
+        }
+        "sres" => {
+            patterns.push(format!("S.Res. {}", bill_number));
+            patterns.push(format!("S RES {}", bill_number));
+            patterns.push(format!("S.RES. {}", bill_number));
+        }
+        "hjres" => {
+            patterns.push(format!("H.J.Res. {}", bill_number));
+            patterns.push(format!("H J RES {}", bill_number));
+        }
+        "sjres" => {
+            patterns.push(format!("S.J.Res. {}", bill_number));
+            patterns.push(format!("S J RES {}", bill_number));
+        }
+        "hconres" => {
+            patterns.push(format!("H.Con.Res. {}", bill_number));
+            patterns.push(format!("H CON RES {}", bill_number));
+        }
+        "sconres" => {
+            patterns.push(format!("S.Con.Res. {}", bill_number));
+            patterns.push(format!("S CON RES {}", bill_number));
+        }
+        _ => {
+            patterns.push(format!("{} {}", bt.to_uppercase(), bill_number));
+        }
+    }
+    patterns
+}
+
+#[cfg(test)]
+mod member_portrait_tests {
+    use super::bioguide_portrait_url;
+
+    #[test]
+    fn builds_official_bioguide_portrait_urls() {
+        assert_eq!(
+            bioguide_portrait_url("A000371").as_deref(),
+            Some("https://bioguide.congress.gov/bioguide/photo/A/A000371.jpg")
+        );
+        assert_eq!(bioguide_portrait_url("not-an-id"), None);
+        assert_eq!(bioguide_portrait_url(""), None);
     }
 }

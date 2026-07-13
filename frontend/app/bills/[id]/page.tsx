@@ -1,10 +1,10 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import { createLogger } from "@/lib/tracing"
-import { ArrowLeft, FileText, AlertTriangle } from "lucide-react"
+import { ArrowLeft, FileText, RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { getBillIntel, type BillIntel } from "@/lib/services/bills"
 import { formatCurrency, formatDate } from "@/lib/format"
@@ -13,7 +13,15 @@ import {
   ArchiveHero,
   ArchivePanel,
   ArchiveMetrics,
+  DataState,
 } from "@/components/ui/archive-ui"
+
+type BillPageState =
+  | { kind: "loading" }
+  | { kind: "invalid" }
+  | { kind: "not_found" }
+  | { kind: "error"; message: string }
+  | { kind: "loaded"; data: BillIntel }
 
 function parseBillId(rawId: string): { congress: number; billType: string; billNumber: number } | null {
   const cleaned = decodeURIComponent(rawId).toLowerCase().trim()
@@ -46,33 +54,36 @@ export default function BillDetailPage() {
   const router = useRouter()
   const rawId = params?.id || ""
 
-  const [data, setData] = useState<BillIntel | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [state, setState] = useState<BillPageState>({ kind: "loading" })
+  const [retryKey, setRetryKey] = useState(0)
 
   useEffect(() => {
+    const controller = new AbortController()
     async function fetchBill() {
+      setState({ kind: "loading" })
       if (!rawId) {
-        setLoading(false)
+        setState({ kind: "invalid" })
         return
       }
       const parsed = parseBillId(rawId)
       if (!parsed) {
-        setLoading(false)
+        setState({ kind: "invalid" })
         return
       }
       try {
-        const result = await getBillIntel(parsed.congress, parsed.billType, parsed.billNumber)
-        setData(result)
+        const result = await getBillIntel(parsed.congress, parsed.billType, parsed.billNumber, controller.signal)
+        setState(result ? { kind: "loaded", data: result } : { kind: "not_found" })
       } catch (err) {
+        if (controller.signal.aborted) return
         log.error("Error loading bill intelligence", { error: String(err) })
-      } finally {
-        setLoading(false)
+        setState({ kind: "error", message: err instanceof Error ? err.message : "Bill detail request failed" })
       }
     }
-    fetchBill()
-  }, [rawId])
+    void fetchBill()
+    return () => controller.abort()
+  }, [rawId, retryKey])
 
-  if (loading) {
+  if (state.kind === "loading") {
     return (
       <ArchivePage>
         <div className="py-24 text-center text-muted-foreground">Loading bill intelligence...</div>
@@ -80,26 +91,52 @@ export default function BillDetailPage() {
     )
   }
 
-  if (!data || !data.bill) {
+  if (state.kind === "invalid" || state.kind === "not_found" || state.kind === "error") {
+    const isError = state.kind === "error"
+    const title = state.kind === "invalid" ? "Invalid Bill Identifier" : isError ? "Bill Details Unavailable" : "Bill Not Found"
+    const description = state.kind === "invalid"
+      ? "Use a bill identifier such as hr1-119 or 119-hr-1."
+      : isError
+        ? `${state.message}. The record's existence has not been determined.`
+        : `No bill was returned for identifier ${rawId}.`
     return (
       <ArchivePage>
         <div className="py-12">
           <Button variant="ghost" size="sm" onClick={() => router.back()} className="mb-6">
             <ArrowLeft className="h-4 w-4 mr-2" /> Back
           </Button>
-          <div className="border border-border bg-card p-12 text-center rounded-sm">
-            <AlertTriangle className="h-10 w-10 text-muted-foreground mx-auto mb-4" />
-            <h2 className="text-xl font-bold text-foreground mb-2">Bill Not Found</h2>
-            <p className="text-muted-foreground max-w-md mx-auto">
-              Could not retrieve intelligence for identifier <code className="bg-muted px-2 py-0.5 rounded text-xs">{rawId}</code>.
-            </p>
-          </div>
+          <DataState
+            kind={isError ? "error" : "empty"}
+            title={title}
+            description={description}
+            action={<div className="flex flex-wrap gap-3">{isError ? <Button size="sm" onClick={() => setRetryKey((key) => key + 1)}><RefreshCw className="h-4 w-4 mr-2" />Retry</Button> : null}<Button asChild variant="outline" size="sm"><Link href="/bills">Browse bills</Link></Button></div>}
+          />
         </div>
       </ArchivePage>
     )
   }
 
-  const { bill, actions, sponsors, cosponsors, committees, funding_overlay, lobbying_overlay } = data
+  const data = state.data
+  const {
+    bill,
+    actions,
+    sponsors,
+    cosponsors,
+    committees,
+    amendments,
+    funding_overlay,
+    lobbying_overlay,
+    lobbying_bill_links,
+  } = data
+  const totalSponsorReceipts = funding_overlay?.reduce((sum, sponsor) => sum + sponsor.total_receipts, 0) ?? 0
+  const topInfluenceNetworks = Array.from(
+    new Map(
+      (funding_overlay ?? []).flatMap((sponsor) => sponsor.top_networks).map((network) => [network.network_slug, network])
+    ).values()
+  ).sort((left, right) => right.amount - left.amount)
+  const fundingQuality = funding_overlay?.some((sponsor) => sponsor.data_quality === "missing_crosswalk")
+    ? "missing_crosswalk"
+    : "complete"
 
   const metrics = [
     { label: "Congress", value: `${bill.congress}th` },
@@ -135,18 +172,18 @@ export default function BillDetailPage() {
                 <div>
                   <div className="text-sm text-muted-foreground">Total Sponsor Receipts</div>
                   <div className="text-2xl font-bold text-foreground">
-                    {formatCurrency(funding_overlay.total_sponsor_receipts)}
+                    {formatCurrency(totalSponsorReceipts)}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-xs uppercase tracking-wider font-mono text-muted-foreground">Data Quality:</span>
                   <span className="px-2.5 py-1 text-xs font-mono font-bold bg-accent/10 text-accent rounded-sm uppercase">
-                    {funding_overlay.data_quality}
+                    {fundingQuality}
                   </span>
                 </div>
               </div>
 
-              {funding_overlay.top_influence_networks && funding_overlay.top_influence_networks.length > 0 && (
+              {topInfluenceNetworks.length > 0 && (
                 <div>
                   <h4 className="text-sm font-semibold text-foreground mb-3">Top Influence Networks</h4>
                   <div className="border border-border rounded-sm overflow-hidden">
@@ -158,15 +195,15 @@ export default function BillDetailPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border">
-                        {funding_overlay.top_influence_networks.map((net) => (
+                        {topInfluenceNetworks.map((net) => (
                           <tr key={net.network_slug} className="hover:bg-muted/30">
                             <td className="p-3 font-medium text-foreground">
                               <Link href={`/influence?network=${net.network_slug}`} className="hover:underline">
-                                {net.display_name || net.network_slug}
+                                {net.network_slug}
                               </Link>
                             </td>
                             <td className="p-3 text-right font-mono text-foreground">
-                              {formatCurrency(net.total_amount)}
+                              {formatCurrency(net.amount)}
                             </td>
                           </tr>
                         ))}
@@ -233,6 +270,28 @@ export default function BillDetailPage() {
           </div>
         </ArchivePanel>
 
+        <ArchivePanel title="Amendments" kicker="Normalized Congress.gov records">
+          <div className="border-t border-border overflow-x-auto">
+            {amendments.length > 0 ? (
+              <table className="w-full text-left text-sm">
+                <thead className="bg-muted/50 border-b border-border font-mono text-xs uppercase text-muted-foreground">
+                  <tr><th className="p-3">Amendment</th><th className="p-3">Sponsor</th><th className="p-3">Latest action</th><th className="p-3">Status</th></tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {amendments.map((amendment, index) => (
+                    <tr key={`${amendment.amendment_type ?? "amendment"}-${amendment.amendment_number ?? index}`}>
+                      <td className="p-3 align-top"><div className="font-semibold">{[amendment.amendment_type, amendment.amendment_number].filter(Boolean).join(" ") || "Number unavailable"}</div><div className="mt-1 text-muted-foreground">{amendment.description || "No description supplied by Congress.gov."}</div></td>
+                      <td className="p-3 align-top">{amendment.sponsor_name || "Not supplied"}</td>
+                      <td className="p-3 align-top"><div className="font-mono text-xs text-muted-foreground">{formatDate(amendment.latest_action_date)}</div><div className="mt-1">{amendment.latest_action_text || "No action text supplied."}</div></td>
+                      <td className="p-3 align-top font-mono text-xs uppercase">{amendment.status}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : <div className="p-6 text-sm text-muted-foreground">No normalized amendment records are loaded for this bill.</div>}
+          </div>
+        </ArchivePanel>
+
         {/* Lifecycle Timeline (Actions) */}
         <ArchivePanel title="Lifecycle Timeline" kicker="Actions">
           <div className="border-t border-border overflow-x-auto">
@@ -291,8 +350,24 @@ export default function BillDetailPage() {
           </div>
         </ArchivePanel>
 
+        <ArchivePanel title="Explicit Bill Citations in LDA Filings" kicker="Direct evidence">
+          <div className="p-6">
+            {lobbying_bill_links.length > 0 ? (
+              <div className="space-y-3">
+                {lobbying_bill_links.map((link) => (
+                  <Link key={`${link.filing_uuid}-${link.matched_bill_text ?? "citation"}`} href={`/lobbying/${encodeURIComponent(link.filing_uuid)}`} className="block border border-border bg-card p-4 transition-colors hover:border-accent">
+                    <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-semibold">{link.client_name || "Client not supplied"}</span><span className="border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 font-mono text-xs uppercase text-emerald-500">Direct LDA citation</span></div>
+                    <div className="mt-2 text-sm text-muted-foreground">Registrant: {link.registrant_name || "Not supplied"}</div>
+                    <div className="mt-1 font-mono text-xs">Matched text: {link.matched_bill_text || "Explicit bill identifier"}</div>
+                  </Link>
+                ))}
+              </div>
+            ) : <div className="text-sm text-muted-foreground">No explicit bill citation is loaded from an LDA filing. Keyword suggestions below are not direct evidence.</div>}
+          </div>
+        </ArchivePanel>
+
         {/* Heuristic Lobbying Overlay */}
-        <ArchivePanel title="Lobbying Activity Overlay" kicker="Influence Tracking">
+        <ArchivePanel title="Related Lobbying Suggestions" kicker="Heuristic, not direct evidence">
           <div className="p-6">
             {lobbying_overlay && lobbying_overlay.length > 0 ? (
               <div className="space-y-4">

@@ -10,6 +10,7 @@ pub struct ParsedPtrTransaction {
     pub amount_max: Option<f64>,
     pub transaction_date: Option<NaiveDate>,
     pub disclosure_date: Option<NaiveDate>,
+    pub raw_text: String,
 }
 
 /// Parse transaction rows emitted by `pdftotext -layout` for a House PTR.
@@ -62,6 +63,7 @@ pub fn parse_house_ptr_text(text: &str) -> Vec<ParsedPtrTransaction> {
             amount_max,
             transaction_date: parse_us_date(fields[date_index]),
             disclosure_date: Some(disclosure_date),
+            raw_text: line.to_string(),
         });
     }
     transactions

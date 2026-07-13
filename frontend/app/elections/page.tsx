@@ -5,6 +5,8 @@ import "./election-map.css"
 import { useState, useEffect, useMemo } from "react"
 import { CompactMasthead, ElectionsHierarchyVisual } from "@/components/ui/mockup-visuals"
 import { ElectionMap } from "@/components/elections/election-map"
+import { STATE_ABBR_BY_FIPS } from "@/components/elections/election-map-helpers"
+import { candidateStateMatchesFips } from "@/lib/county-geography.mjs"
 import { createLogger } from "@/lib/tracing"
 import { getChamberDashboard, type ChamberDashboard } from "@/lib/services/chambers"
 import { getAllCandidates, type FECandidate } from "@/lib/services/fec"
@@ -145,8 +147,11 @@ export default function ElectionsPage() {
   const senateSeats = 33
   const incumbentsCount = candidates.filter((c) => c.incumbent === true).length
   const challengersCount = candidates.filter((c) => c.status === "challenger" || c.status === "open").length
+  const selectedStateAbbr = selectedState ? STATE_ABBR_BY_FIPS[selectedState] ?? null : null
   const visibleCandidates = useMemo(
-    () => (selectedState ? candidates.filter((candidate) => candidate.state === selectedState) : candidates),
+    () => (selectedState
+      ? candidates.filter((candidate) => candidateStateMatchesFips(candidate.state, selectedState))
+      : candidates),
     [candidates, selectedState],
   )
   const districtSummary = useMemo(() => {
@@ -324,7 +329,7 @@ export default function ElectionsPage() {
 
       {/* CANDIDATE ACTIVITY as cards */}
       <ArchivePanel
-        title={selectedState ? `${selectedState} candidate activity` : "Candidate activity"}
+        title={selectedStateAbbr ? `${selectedStateAbbr} candidate activity` : "Candidate activity"}
         kicker="FEC records loaded for this cycle"
       >
         <div className="p-6">
@@ -340,7 +345,7 @@ export default function ElectionsPage() {
           {selectedState && districtSummary.length > 0 && (
             <div className="mb-6 border-b border-border pb-5">
               <div className="mb-3 text-xs font-mono uppercase text-muted-foreground">
-                District view · {selectedState}
+                District view · {selectedStateAbbr}
               </div>
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                 {districtSummary.map(([district, summary]) => {
@@ -352,7 +357,7 @@ export default function ElectionsPage() {
                       style={{ borderLeftColor: partyColor(leading) }}
                     >
                       <div className="font-mono text-xs font-bold text-foreground">
-                        {selectedState}-{district}
+                        {selectedStateAbbr}-{district}
                       </div>
                       <div className="mt-1 text-xs text-muted-foreground">
                         {summary.total} candidate row{summary.total === 1 ? "" : "s"} · {leading}

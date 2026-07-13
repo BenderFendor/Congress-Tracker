@@ -8,11 +8,21 @@
 //! handful of ZIP files cover all ~5M receipts per cycle without
 //! thousands of API page requests.
 
-pub mod download;
-pub mod parse;
-pub mod canonicalize;
-pub mod rankings;
+use chrono::Datelike;
 
+pub mod batches;
+pub mod canonicalize;
+pub mod classify;
+pub mod disbursements;
+pub mod download;
+pub mod identity;
+pub mod parse;
+pub mod pipeline;
+pub mod rankings;
+pub mod staging;
+pub mod stream;
+pub mod supplemental;
+pub mod supplemental_ingest;
 
 /// FEC bulk data file types for a given election cycle.
 pub struct CycleFiles {
@@ -30,6 +40,8 @@ pub struct BulkFile {
     pub label: &'static str,
     /// Relative URL path under the FEC bulk download base.
     pub url_path: String,
+    /// Exact pipe-delimited entry name inside the archive.
+    pub entry_name: &'static str,
 }
 
 impl CycleFiles {
@@ -50,29 +62,40 @@ impl CycleFiles {
             suffix: suffix.clone(),
             files: vec![
                 BulkFile {
-                    dataset_name: format!("indiv{}", suffix),
-                    label: "Individual contributions",
-                    url_path: format!("{}/indiv{}.zip", year_prefix, suffix),
-                },
-                BulkFile {
-                    dataset_name: format!("oth{}", suffix),
-                    label: "Committee transactions",
-                    url_path: format!("{}/oth{}.zip", year_prefix, suffix),
+                    dataset_name: format!("cn{}", suffix),
+                    label: "Candidate master",
+                    url_path: format!("{}/cn{}.zip", year_prefix, suffix),
+                    entry_name: "cn.txt",
                 },
                 BulkFile {
                     dataset_name: format!("cm{}", suffix),
                     label: "Committee master",
                     url_path: format!("{}/cm{}.zip", year_prefix, suffix),
+                    entry_name: "cm.txt",
                 },
                 BulkFile {
                     dataset_name: format!("ccl{}", suffix),
                     label: "Candidate-committee links",
                     url_path: format!("{}/ccl{}.zip", year_prefix, suffix),
+                    entry_name: "ccl.txt",
                 },
                 BulkFile {
-                    dataset_name: format!("cn{}", suffix),
-                    label: "Candidate master",
-                    url_path: format!("{}/cn{}.zip", year_prefix, suffix),
+                    dataset_name: format!("indiv{}", suffix),
+                    label: "Individual contributions",
+                    url_path: format!("{}/indiv{}.zip", year_prefix, suffix),
+                    entry_name: "itcont.txt",
+                },
+                BulkFile {
+                    dataset_name: format!("oth{}", suffix),
+                    label: "Committee transactions",
+                    url_path: format!("{}/oth{}.zip", year_prefix, suffix),
+                    entry_name: "itoth.txt",
+                },
+                BulkFile {
+                    dataset_name: format!("oppexp{}", suffix),
+                    label: "Operating expenditures",
+                    url_path: format!("{}/oppexp{}.zip", year_prefix, suffix),
+                    entry_name: "oppexp.txt",
                 },
             ],
         }
@@ -142,11 +165,38 @@ pub mod ccl_columns {
     pub const LINKAGE_ID: usize = 6;
 }
 
+/// FEC pipe-delimited column indices for the `cn` candidate master file.
+pub mod cn_columns {
+    pub const CAND_ID: usize = 0;
+    pub const CAND_NAME: usize = 1;
+    pub const CAND_PTY_AFFILIATION: usize = 2;
+    pub const CAND_ELECTION_YR: usize = 3;
+    pub const CAND_OFFICE_ST: usize = 4;
+    pub const CAND_OFFICE: usize = 5;
+    pub const CAND_OFFICE_DISTRICT: usize = 6;
+    pub const CAND_ICI: usize = 7;
+    pub const CAND_STATUS: usize = 8;
+    pub const CAND_PCC: usize = 9;
+    pub const CAND_ST1: usize = 10;
+    pub const CAND_ST2: usize = 11;
+    pub const CAND_CITY: usize = 12;
+    pub const CAND_ST: usize = 13;
+    pub const CAND_ZIP: usize = 14;
+}
+
 /// Default storage directory for downloaded ZIPs.
 pub fn storage_dir() -> std::path::PathBuf {
+    if let Some(path) = std::env::var("FEC_ARCHIVE_DIR")
+        .ok()
+        .filter(|path| !path.trim().is_empty())
+    {
+        return std::path::PathBuf::from(path);
+    }
     std::env::var("WORKER_STORAGE_DIR")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| std::path::PathBuf::from("./worker_storage/fec"))
+        .ok()
+        .filter(|path| !path.trim().is_empty())
+        .map(|path| std::path::PathBuf::from(path).join("fec"))
+        .unwrap_or_else(|| std::path::PathBuf::from("./worker_storage/fec"))
 }
 
 /// Build a donor key from contributor fields for conservative grouping.
@@ -158,7 +208,11 @@ pub fn build_donor_key(name: &str, zip: &str, employer: &str) -> String {
     let name = name.trim().to_uppercase();
     let zip = zip.trim();
     // Keep only the first 5 digits of ZIP
-    let zip5: String = zip.chars().take_while(|c| c.is_ascii_digit()).take(5).collect();
+    let zip5: String = zip
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .take(5)
+        .collect();
     let employer = employer.trim().to_uppercase();
     format!("{}|{}|{}", name, zip5, employer)
 }
@@ -169,12 +223,24 @@ pub fn parse_fec_date(s: &str) -> Option<chrono::NaiveDate> {
     if s.len() != 8 || s.chars().all(|c| c == '0') {
         return None;
     }
-    chrono::NaiveDate::parse_from_str(s, "%m%d%Y").ok()
+    chrono::NaiveDate::parse_from_str(s, "%m%d%Y")
+        .ok()
+        .filter(|date| (1980..=2100).contains(&date.year()))
 }
 
-/// Parse a numeric field, returning 0.0 on empty/unparseable.
-pub fn parse_amount(s: &str) -> f64 {
-    s.trim().parse::<f64>().unwrap_or(0.0)
+/// Reject dates that are technically parseable but impossible for a
+/// cycle-scoped archive. The FEC occasionally publishes malformed future
+/// dates; keeping them as NULL preserves the receipt without inventing a
+/// transaction date.
+pub fn is_plausible_fec_date(date: chrono::NaiveDate, cycle: u32) -> bool {
+    let year = date.year();
+    let cycle = cycle as i32;
+    (cycle - 5..=cycle + 1).contains(&year)
+}
+
+/// Parse a required numeric field without turning malformed source data into zero.
+pub fn parse_amount(s: &str) -> Option<f64> {
+    s.trim().parse::<f64>().ok()
 }
 
 /// Parse an integer field.
@@ -184,5 +250,39 @@ pub fn parse_int(s: &str) -> Option<i64> {
 
 /// Check whether a 2-year election cycle is valid (even year, >= 1980).
 pub fn valid_cycle(cycle: u32) -> bool {
-    cycle >= 1980 && cycle % 2 == 0
+    cycle >= 1980 && cycle.is_multiple_of(2)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cycle_files_put_small_identity_files_before_large_transactions() {
+        let files = CycleFiles::new(2026).files;
+        let contracts: Vec<(&str, &str)> = files
+            .iter()
+            .map(|file| (file.dataset_name.as_str(), file.entry_name))
+            .collect();
+
+        assert_eq!(
+            contracts,
+            vec![
+                ("cn26", "cn.txt"),
+                ("cm26", "cm.txt"),
+                ("ccl26", "ccl.txt"),
+                ("indiv26", "itcont.txt"),
+                ("oth26", "itoth.txt"),
+                ("oppexp26", "oppexp.txt"),
+            ]
+        );
+    }
+
+    #[test]
+    fn cycle_date_guard_rejects_far_future_source_dates() {
+        let valid = chrono::NaiveDate::from_ymd_opt(2026, 3, 5).unwrap();
+        let far_future = chrono::NaiveDate::from_ymd_opt(2036, 3, 5).unwrap();
+        assert!(is_plausible_fec_date(valid, 2026));
+        assert!(!is_plausible_fec_date(far_future, 2026));
+    }
 }

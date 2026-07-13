@@ -58,9 +58,9 @@ function getResultUrl(item: SearchResult): string | null {
     case "member": return `/legislators/${item.id}`
     case "bill": return `/bills/${item.id}`
     case "committee": return `/committees/${item.id}`
-    case "lobbying_client":
-    case "lobbying_registrant": return `/lobbying/${item.id}`
-    case "pac": return null
+    case "lobbying_client": return `/lobbying/clients/${item.id}`
+    case "lobbying_registrant": return `/lobbying/registrants/${item.id}`
+    case "pac": return `/organizations/${item.id}`
   }
 }
 

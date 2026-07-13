@@ -1,0 +1,9 @@
+{
+  "draw": 2,
+  "recordsTotal": 3,
+  "recordsFiltered": 3,
+  "data": [
+    ["<a href=\"/search/view/annual/annual-002/\">Senator Grace Sample</a>", "05/10/2026"],
+    ["<a href=\"/search/view/ptr/ptr-003/\">Senator Linus Example</a>", "05/11/2026"]
+  ]
+}

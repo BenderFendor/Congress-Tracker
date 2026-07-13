@@ -13,6 +13,17 @@ import { getRecentFilings, type LobbyingFiling } from "@/lib/services/lobbying"
 import { getRecentBills, type Bill } from "@/lib/services/bills"
 import { compactNumber, formatDate } from "@/lib/format"
 import { getSourceCoverage, type SourceCoverage } from "@/lib/services/sources"
+import { availableCount } from "@/lib/truth-states.mjs"
+
+type HomeSource = "legislators" | "trades" | "filings" | "bills" | "coverage"
+
+const initialFailures: Record<HomeSource, boolean> = {
+  legislators: false,
+  trades: false,
+  filings: false,
+  bills: false,
+  coverage: false,
+}
 
 const CivicObservatory = dynamic(
   () => import("@/components/ui/civic-observatory").then((module) => module.CivicObservatory),
@@ -34,24 +45,32 @@ export default function HomePage() {
   const [filings, setFilings] = useState<LobbyingFiling[]>([])
   const [bills, setBills] = useState<Bill[]>([])
   const [sourceCoverage, setSourceCoverage] = useState<SourceCoverage | null>(null)
+  const [failures, setFailures] = useState(initialFailures)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     async function loadData() {
       try {
-        const [legislatorData, tradeData, filingData, billData, coverageData] = await Promise.all([
-          getAllLegislators().catch(() => []),
-          getRecentTrades(80).catch(() => []),
-          getRecentFilings(1, 40).then((data) => data.results || []).catch(() => []),
-          getRecentBills(40).catch(() => []),
-          getSourceCoverage().catch(() => null),
+        const [legislatorResult, tradeResult, filingResult, billResult, coverageResult] = await Promise.allSettled([
+          getAllLegislators(),
+          getRecentTrades(80),
+          getRecentFilings(1, 40).then((data) => data.results || []),
+          getRecentBills(40),
+          getSourceCoverage(),
         ])
 
-        setLegislators(legislatorData)
-        setTrades(tradeData)
-        setFilings(filingData)
-        setBills(billData)
-        setSourceCoverage(coverageData)
+        setLegislators(legislatorResult.status === "fulfilled" ? legislatorResult.value : [])
+        setTrades(tradeResult.status === "fulfilled" ? tradeResult.value : [])
+        setFilings(filingResult.status === "fulfilled" ? filingResult.value : [])
+        setBills(billResult.status === "fulfilled" ? billResult.value : [])
+        setSourceCoverage(coverageResult.status === "fulfilled" ? coverageResult.value : null)
+        setFailures({
+          legislators: legislatorResult.status === "rejected",
+          trades: tradeResult.status === "rejected",
+          filings: filingResult.status === "rejected",
+          bills: billResult.status === "rejected",
+          coverage: coverageResult.status === "rejected",
+        })
       } finally {
         setLoading(false)
       }
@@ -69,7 +88,13 @@ export default function HomePage() {
     () => filings.reduce((sum, filing) => sum + numericValue(filing.income) + numericValue(filing.expenses), 0),
     [filings],
   )
-  const lobbyingSpendLabel = totalLobbyingIncome > 0 ? `$${compactNumber(totalLobbyingIncome)} disclosed spend` : "Spend unavailable"
+  const lobbyingSpendLabel = failures.filings
+    ? "Lobbying source unavailable"
+    : totalLobbyingIncome > 0
+      ? `$${compactNumber(totalLobbyingIncome)} disclosed spend`
+      : "Spend unavailable"
+
+  const hasActivityFailure = failures.bills || failures.trades || failures.filings
 
   const sourceCounts = useMemo(() => {
     const initial = { fresh: 0, stale: 0, failed: 0 }
@@ -108,7 +133,7 @@ export default function HomePage() {
   return (
     <ArchivePage>
       <ArchiveHero
-        eyebrow={loading ? "Syncing public records" : sourceCoverage?.summary.successful ? "Fresh public records" : "Public records with coverage gaps"}
+        eyebrow={loading ? "Syncing public records" : failures.coverage ? "Source status unavailable" : sourceCoverage?.summary.successful ? "Fresh public records" : "Public records with coverage gaps"}
         title="Power. Policy."
         accent="Public Knowledge."
         description="Trace legislation, campaign money, lobbying, and financial disclosures back to the public records that support them."
@@ -150,10 +175,10 @@ export default function HomePage() {
 
       <ArchiveMetrics
         metrics={[
-          { label: "Active legislators", value: loading ? "..." : legislators.length, detail: "Canonical member table", icon: <Users size={20} /> },
-          { label: "Bills tracked", value: loading ? "..." : compactNumber(bills.length), detail: "Recent Congress.gov feed", icon: <FileText size={20} /> },
-          { label: "Lobbying reports", value: loading ? "..." : compactNumber(filings.length), detail: lobbyingSpendLabel, icon: <Network size={20} /> },
-          { label: "Stock trades", value: loading ? "..." : compactNumber(trades.length), detail: `${matchedTradeMembers} matched members`, icon: <TrendingUp size={20} /> },
+          { label: "Active legislators", value: loading ? "..." : availableCount(legislators, failures.legislators), detail: failures.legislators ? "Member request failed" : "Canonical member table", icon: <Users size={20} /> },
+          { label: "Bills tracked", value: loading ? "..." : failures.bills ? "Unavailable" : compactNumber(bills.length), detail: failures.bills ? "Congress.gov request failed" : "Recent Congress.gov feed", icon: <FileText size={20} /> },
+          { label: "Lobbying reports", value: loading ? "..." : failures.filings ? "Unavailable" : compactNumber(filings.length), detail: lobbyingSpendLabel, icon: <Network size={20} /> },
+          { label: "Stock trades", value: loading ? "..." : failures.trades ? "Unavailable" : compactNumber(trades.length), detail: failures.trades || failures.legislators ? "Trade or member request failed" : `${matchedTradeMembers} matched members`, icon: <TrendingUp size={20} /> },
         ]}
       />
 
@@ -161,7 +186,11 @@ export default function HomePage() {
         <ArchivePanel title="Recent public activity" kicker="Live feed">
           <div>
             {latestItems.length === 0 ? (
-              <div className="py-10 text-sm text-muted-foreground">No records loaded from the configured APIs.</div>
+              <div className="py-10 text-sm text-muted-foreground">
+                {hasActivityFailure
+                  ? "Recent activity is unavailable because one or more source requests failed. This is not evidence of zero activity."
+                  : "The configured APIs returned no recent records."}
+              </div>
             ) : (
               latestItems.map((item, index) => (
                 <ActivityItem
@@ -187,11 +216,11 @@ export default function HomePage() {
                 </div>
               </div>
               <div className="relative z-10 mt-5 grid grid-cols-2 gap-3 text-sm text-muted-foreground">
-                <div className="flex justify-between border-t border-border pt-3"><span>Legislators</span><strong className="text-foreground">{legislators.length || 0}</strong></div>
+                <div className="flex justify-between border-t border-border pt-3"><span>Legislators</span><strong className="text-foreground">{availableCount(legislators, failures.legislators)}</strong></div>
                 <div className="flex justify-between border-t border-border pt-3"><span>Organizations</span><strong className="text-muted-foreground">Unavailable until entity crosswalks load</strong></div>
-                <div className="flex justify-between border-t border-border pt-3"><span>Bills</span><strong className="text-foreground">{bills.length || 0}</strong></div>
-                <div className="flex justify-between border-t border-border pt-3"><span>Trades</span><strong className="text-foreground">{trades.length || 0}</strong></div>
-                <div className="flex justify-between border-t border-border pt-3"><span>Filings</span><strong className="text-foreground">{filings.length || 0}</strong></div>
+                <div className="flex justify-between border-t border-border pt-3"><span>Bills</span><strong className="text-foreground">{failures.bills ? "Unavailable" : bills.length}</strong></div>
+                <div className="flex justify-between border-t border-border pt-3"><span>Trades</span><strong className="text-foreground">{failures.trades ? "Unavailable" : trades.length}</strong></div>
+                <div className="flex justify-between border-t border-border pt-3"><span>Filings</span><strong className="text-foreground">{failures.filings ? "Unavailable" : filings.length}</strong></div>
               </div>
               <Link href="/influence" className="archive-link mt-4 inline-flex">Open influence graph <ArrowRight size={14} /></Link>
             </div>
@@ -208,9 +237,9 @@ export default function HomePage() {
         </div>
 
         <div className="home-coverage-summary" aria-label="Source coverage summary">
-          <div className="fresh"><strong>{sourceCounts.fresh}</strong><span>Fresh</span></div>
-          <div className="stale"><strong>{sourceCounts.stale}</strong><span>Stale</span></div>
-          <div className="failed"><strong>{sourceCounts.failed}</strong><span>Unavailable</span></div>
+          <div className="fresh"><strong>{failures.coverage ? "Unavailable" : sourceCounts.fresh}</strong><span>Fresh</span></div>
+          <div className="stale"><strong>{failures.coverage ? "Unavailable" : sourceCounts.stale}</strong><span>Stale</span></div>
+          <div className="failed"><strong>{failures.coverage ? "Unavailable" : sourceCounts.failed}</strong><span>Unavailable</span></div>
         </div>
 
         <details className="home-source-inventory" open>
@@ -228,7 +257,9 @@ export default function HomePage() {
                 <span><i className={`ct-status-dot ${src.freshness === "fresh" ? "" : src.freshness === "stale" ? "warn" : "bad"}`} />{src.display_name || src.source}</span>
                 <b>{src.freshness === "fresh" ? "Fresh" : src.freshness === "stale" ? "Stale" : "Unavailable"}</b>
               </div>
-            )) : <div className="text-sm text-muted-foreground">Source coverage loading...</div>}
+            )) : <div className="text-sm text-muted-foreground">
+              {loading ? "Source coverage loading..." : failures.coverage ? "Source coverage request failed. Coverage counts are unavailable." : "No source coverage records were returned."}
+            </div>}
           </div>
         </details>
       </section>

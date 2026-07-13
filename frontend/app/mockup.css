@@ -18,7 +18,7 @@
 }
 .dark .civic-header {
   border-bottom-color: rgba(240, 111, 99, 0.18);
-  background: linear-gradient(90deg, rgba(8, 14, 23, 0.92), rgba(17, 24, 36, 0.86), rgba(8, 14, 23, 0.92));
+  background: linear-gradient(90deg, rgba(6, 6, 6, 0.94), rgba(17, 17, 17, 0.9), rgba(6, 6, 6, 0.94));
   box-shadow: 0 1rem 3.5rem rgba(0, 0, 0, 0.32), inset 0 -1px rgba(255, 255, 255, 0.025);
 }
 .civic-header-inner { display: flex; align-items: center; justify-content: space-between; width: min(100%, 110rem); margin: 0 auto; }
@@ -36,6 +36,15 @@
 .civic-search { display: grid; width: 2.1rem; height: 2.1rem; margin-left: 0.35rem; place-items: center; border: 1px solid var(--border); border-radius: 50%; color: var(--muted-foreground); }
 .civic-search:hover { border-color: var(--accent); color: var(--accent); }
 .civic-mobile-nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: min(100%, 110rem); margin: 0.8rem auto 0; padding-top: 0.6rem; border-top: 1px solid var(--border); }
+.civic-explore-menu { max-height: min(72vh, 42rem); overflow-y: auto; }
+.civic-mobile-nav-section { display: grid; align-content: start; padding: 0.65rem 0.75rem; }
+.civic-mobile-nav-section p { margin-bottom: 0.35rem; color: var(--muted-foreground); font-size: 0.6rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+.civic-mobile-nav-section a { min-height: 2.75rem; padding: 0.7rem 0; border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent); color: var(--muted-foreground); font-size: 0.8rem; font-weight: 600; }
+.civic-mobile-nav-section a:hover, .civic-mobile-nav-section a.active { color: var(--accent); }
+
+@media (max-width: 520px) {
+  .civic-mobile-nav { grid-template-columns: 1fr; max-height: calc(100vh - 5.5rem); overflow-y: auto; }
+}
 
 .ct-ticker {
   border-bottom: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
@@ -84,7 +93,20 @@
 }
 @media (max-width: 720px) {
   .civic-header { padding-block: 0.55rem; }
-  .civic-observatory { top: 10rem; right: -30%; width: 105vw; height: 28rem; opacity: 0.18; }
+  .home-snapshot-heading,
+  .archive-metrics,
+  .home-story-grid,
+  .home-coverage {
+    animation: none !important;
+  }
+  .home-story-grid > .archive-panel { animation: none !important; }
+  .civic-observatory {
+    top: 10rem;
+    right: 0;
+    width: 100vw;
+    height: 28rem;
+    opacity: 0.18;
+  }
 }
 
 /* -- Member directory interaction --------------------------------------- */
@@ -154,7 +176,7 @@
   .member-directory-grid { grid-template-columns: minmax(0, 1fr); }
   .member-directory-summary { grid-template-columns: repeat(2, 1fr); }
 }
-.dark .member-portrait { background: radial-gradient(circle at 50% 30%, #253249, #101823 68%); }
+.dark .member-portrait { background: radial-gradient(circle at 50% 30%, #252525, #101010 68%); }
 .member-portrait-fallback::before {
   content: "";
   position: absolute;
@@ -163,6 +185,72 @@
   border: 1px dashed color-mix(in srgb, var(--accent) 28%, transparent);
   border-radius: 50%;
   animation: ct-slow-spin 24s linear infinite;
+}
+
+/* Committee detail: portrait-led public roster */
+.committee-roster-shell { border-top: 1px solid var(--border); }
+.committee-roster-intro {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 2rem;
+  padding: 1.5rem;
+  background: linear-gradient(110deg, color-mix(in srgb, var(--muted) 42%, transparent), transparent 65%);
+  border-bottom: 1px solid var(--border);
+}
+.committee-roster-intro p { max-width: 44rem; margin-top: 0.55rem; color: var(--muted-foreground); font-size: 0.82rem; line-height: 1.65; }
+.committee-roster-count { display: flex; align-items: baseline; gap: 0.55rem; flex-shrink: 0; }
+.committee-roster-count strong { font-family: var(--font-playfair), Georgia, serif; font-size: clamp(2.5rem, 5vw, 4.5rem); line-height: 0.8; color: var(--foreground); }
+.committee-roster-count span { color: var(--muted-foreground); font-size: 0.62rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; }
+.committee-roster-group { padding: 1.5rem; }
+.committee-roster-group + .committee-roster-group { border-top: 1px solid var(--border); }
+.committee-roster-heading { display: flex; align-items: end; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+.committee-roster-heading > div { display: flex; align-items: baseline; gap: 0.7rem; }
+.committee-roster-heading span { color: var(--accent); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.62rem; font-weight: 800; }
+.committee-roster-heading h2 { font-family: var(--font-playfair), Georgia, serif; font-size: 1.3rem; font-weight: 650; letter-spacing: -0.02em; }
+.committee-roster-heading p { color: var(--muted-foreground); font-size: 0.68rem; letter-spacing: 0.06em; text-transform: uppercase; }
+.committee-leadership-grid, .committee-roster-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.9rem; }
+.committee-member-link { display: block; min-width: 0; color: inherit; text-decoration: none; }
+.committee-member-card { height: 100%; overflow: hidden; border: 1px solid var(--border); background: var(--card); transition: transform 220ms ease, border-color 220ms ease, box-shadow 220ms ease; }
+.committee-member-card.is-leadership { border-top: 2px solid var(--accent); }
+.committee-member-link:hover .committee-member-card, .committee-member-link:focus-visible .committee-member-card { transform: translateY(-3px); border-color: color-mix(in srgb, var(--accent) 65%, var(--border)); box-shadow: 0 18px 36px color-mix(in srgb, var(--foreground) 9%, transparent); }
+.committee-member-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.committee-member-portrait { position: relative; aspect-ratio: 4 / 3.25; overflow: hidden; background: radial-gradient(circle at 50% 26%, #f4ece1, #d8c8b5 72%); }
+.committee-member-portrait > img { width: 100%; height: 100%; object-fit: cover; object-position: center 20%; filter: saturate(0.86) contrast(1.03); transition: transform 360ms cubic-bezier(.2,.75,.2,1), filter 260ms ease; }
+.committee-member-link:hover .committee-member-portrait > img { transform: scale(1.025); filter: saturate(1) contrast(1.03); }
+.committee-member-portrait > span { display: grid; width: 100%; height: 100%; place-items: center; color: #806f5c; font-family: var(--font-playfair), Georgia, serif; font-size: 3rem; font-weight: 700; opacity: 0.72; }
+.committee-party-flag { position: absolute; left: 0.75rem; bottom: 0.75rem; padding: 0.28rem 0.5rem; color: #fff; background: #5d6470; font-size: 0.55rem; font-weight: 850; letter-spacing: 0.08em; text-transform: uppercase; box-shadow: 0 4px 12px rgb(0 0 0 / 18%); }
+.committee-party-flag.democrat { background: #285ba7; }
+.committee-party-flag.republican { background: #a53f36; }
+.committee-member-copy { display: flex; min-height: 10.75rem; flex-direction: column; padding: 1rem; }
+.committee-member-role { display: flex; align-items: center; gap: 0.35rem; min-height: 1.25rem; color: var(--accent); font-size: 0.58rem; font-weight: 850; letter-spacing: 0.08em; text-transform: uppercase; }
+.committee-member-copy h3 { margin-top: 0.45rem; font-family: var(--font-playfair), Georgia, serif; font-size: 1.35rem; font-weight: 650; line-height: 1.05; letter-spacing: -0.025em; }
+.committee-member-facts { display: flex; flex-wrap: wrap; gap: 0.45rem 0.85rem; margin-top: 0.7rem; color: var(--muted-foreground); font-size: 0.7rem; }
+.committee-member-facts span { display: inline-flex; align-items: center; gap: 0.3rem; }
+.committee-member-footer { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; margin-top: auto; padding-top: 0.8rem; border-top: 1px solid var(--border); color: var(--muted-foreground); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.58rem; text-transform: uppercase; }
+.committee-profile-cue { display: inline-flex; align-items: center; gap: 0.15rem; color: var(--foreground); font-family: inherit; font-weight: 800; }
+@media (max-width: 1100px) { .committee-leadership-grid, .committee-roster-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 760px) {
+  .committee-roster-intro { align-items: flex-start; flex-direction: column; gap: 1.15rem; }
+  .committee-roster-count strong { font-size: 3.2rem; }
+  .committee-roster-group { padding: 1rem; }
+  .committee-roster-heading { align-items: flex-start; flex-direction: column; gap: 0.35rem; }
+  .committee-leadership-grid, .committee-roster-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.65rem; }
+  .committee-member-copy { min-height: 10.25rem; padding: 0.8rem; }
+  .committee-member-copy h3 { font-size: 1.1rem; }
+  .committee-member-facts { align-items: flex-start; flex-direction: column; }
+  .committee-member-footer { align-items: flex-start; flex-direction: column; }
+}
+@media (max-width: 430px) {
+  .committee-roster-intro { padding: 1.1rem; }
+  .committee-leadership-grid, .committee-roster-grid { grid-template-columns: minmax(0, 1fr); }
+  .committee-member-card { display: grid; grid-template-columns: 7.25rem minmax(0, 1fr); }
+  .committee-member-portrait { aspect-ratio: auto; min-height: 10.5rem; }
+  .committee-member-copy { min-height: 10.5rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .committee-member-card, .committee-member-portrait > img { transition: none; }
+  .committee-member-link:hover .committee-member-card { transform: none; }
 }
 .member-compare-toggle {
   position: absolute;
@@ -269,6 +357,7 @@
   margin: 0;
   color: inherit;
 }
+.ct-palette-overlay:not([open]) { display: none; }
 .ct-palette-backdrop {
   position: absolute;
   inset: 0;
@@ -362,7 +451,7 @@
   transform: rotateY(-10deg) rotateX(4deg);
 }
 .dark .ct-network-glass {
-  background: linear-gradient(145deg, rgba(28,39,58,0.6), rgba(12,18,28,0.15));
+  background: linear-gradient(145deg, rgba(28,28,28,0.68), rgba(10,10,10,0.18));
 }
 .ct-network-svg {
   position: absolute;
@@ -543,6 +632,9 @@
   width: min(100% - 2rem, 106rem);
   margin: 0 auto;
 }
+.ct-masthead-grid > * {
+  min-width: 0;
+}
 .ct-masthead-visual {
   min-height: 200px;
   display: grid;
@@ -577,8 +669,12 @@
   }
 }
 @media (max-width: 680px) {
+  .ct-masthead-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
   .ct-masthead h1 {
     font-size: 2.5rem;
+    overflow-wrap: anywhere;
   }
   .ct-masthead-visual {
     min-height: 240px;

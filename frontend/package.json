@@ -5,7 +5,10 @@
   "scripts": {
     "build": "next build",
     "dev": "next dev",
-    "test": "node --test scripts/*.test.mjs",
+    "test": "pnpm test:unit",
+    "test:unit": "node --test scripts/*.test.mjs",
+    "test:live-api": "../scripts/verify-live-api-flows",
+    "test:rendered": "node scripts/rendered-route-smoke.mjs",
     "lint": "next lint --max-warnings=0",
     "lint:ox": "oxlint . --config .oxlintrc.json --deny-warnings --nextjs-plugin --react-plugin --jsx-a11y-plugin",
     "typecheck": "tsc --noEmit",

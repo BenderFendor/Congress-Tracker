@@ -20,6 +20,7 @@ import {
   Map as MapIcon,
 } from "lucide-react"
 import type { FECandidate } from "@/lib/services/fec"
+import { SUPPORTED_JURISDICTIONS } from "@/lib/county-geography.mjs"
 import statesJson from "us-atlas/states-10m.json"
 import countiesJson from "us-atlas/counties-10m.json"
 import { renderStateMap, type MapView } from "./election-map-render"
@@ -32,15 +33,12 @@ import {
   STATE_FIPS_TABLE,
   VIEW_LABELS,
   aggregateCandidates,
-  competitivenessScore,
   isOfficeInCandidate,
   metricValue,
-  partyLean,
-  pillClassForRating,
-  ratingLabel,
   topologyToCountyFeatures,
   topologyToStateFeatures,
   type CountyFips,
+  type CountyFeature,
   type Metric,
   type Office,
   type StateAggregate,
@@ -59,7 +57,19 @@ type MapTooltipState = {
   clientY: number
 }
 
+type CountyGeographyResponse = {
+  data: Array<{ fips: string; name: string; geometry: CountyFeature["geometry"] }>
+  meta: {
+    coverage: "geometry_and_names" | "unavailable"
+    results_coverage: "not_loaded"
+    retrieved_at: string
+    source: { label: string; url: string }
+  }
+}
+
 const NO_TOOLTIP: MapTooltipState = { type: null, fips: "", clientX: 0, clientY: 0 }
+const STATE_JURISDICTIONS = SUPPORTED_JURISDICTIONS.filter(({ territory }) => !territory)
+const TERRITORY_JURISDICTIONS = SUPPORTED_JURISDICTIONS.filter(({ territory }) => territory)
 
 type ElectionMapProps = {
   candidates: FECandidate[]
@@ -83,7 +93,7 @@ export function ElectionMap({
   onStateChange,
   onCountyChange,
   defaultOffice = "H",
-  defaultMetric = "rating",
+  defaultMetric = "candidates",
   cycle,
 }: ElectionMapProps) {
   const [office, setOffice] = useState<Office>(defaultOffice)
@@ -94,8 +104,15 @@ export function ElectionMap({
   const [tooltip, setTooltip] = useState<MapTooltipState>(NO_TOOLTIP)
   const [shareToast, setShareToast] = useState<string | null>(null)
   const [countyNames, setCountyNames] = useState<Map<CountyFips, string>>(new Map())
+  const [countyRows, setCountyRows] = useState<Array<{ fips: CountyFips; name: string }>>([])
+  const [countyGeometryFeatures, setCountyGeometryFeatures] = useState<CountyFeature[]>([])
+  const [countyLoading, setCountyLoading] = useState(false)
+  const [countyError, setCountyError] = useState<string | null>(null)
+  const [countyRetrievedAt, setCountyRetrievedAt] = useState<string | null>(null)
   const svgRef = useRef<SVGSVGElement | null>(null)
   const searchTimer = useRef<number | null>(null)
+  const selectedFips: StateFips | null = selectedState ?? null
+  const selectedCountyFips: CountyFips | null = selectedCounty ?? null
 
   useEffect(() => {
     clearTimeout(searchTimer.current ?? undefined)
@@ -112,31 +129,47 @@ export function ElectionMap({
   }, [selectedState, selectedCounty])
 
   useEffect(() => {
-    let cancelled = false
-    async function load() {
-      try {
-        const res = await fetch(
-          "https://api.census.gov/data/2020/dec/pl?get=NAME&for=county:*",
-        )
-        if (!res.ok) return
-        const rows: string[][] = await res.json()
-        const map = new Map<CountyFips, string>()
-        for (const row of rows.slice(1)) {
-          const [name, stateCode, countyCode] = row
-          if (name && stateCode && countyCode) {
-            map.set(`${stateCode}${countyCode}`, String(name).replace(/, .*$/, ""))
-          }
-        }
-        if (!cancelled) setCountyNames(map)
-      } catch {
-        // Census API may be blocked; fall back to FIPS labels.
-      }
+    if (!selectedFips) {
+      setCountyRows([])
+      setCountyGeometryFeatures([])
+      setCountyNames(new Map())
+      setCountyError(null)
+      setCountyRetrievedAt(null)
+      return
     }
-    void load()
-    return () => {
-      cancelled = true
-    }
-  }, [])
+
+    const controller = new AbortController()
+    setCountyLoading(true)
+    setCountyError(null)
+    fetch(`/api/elections/counties?state=${selectedFips}`, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`County geography request returned ${response.status}`)
+        return response.json() as Promise<CountyGeographyResponse>
+      })
+      .then((response) => {
+        const rows = response.data.map((row) => ({ ...row, fips: row.fips as CountyFips }))
+        setCountyRows(rows.map(({ fips, name }) => ({ fips, name })))
+        setCountyGeometryFeatures(rows.map((row) => ({
+          type: "Feature",
+          id: row.fips,
+          properties: { name: row.name },
+          geometry: row.geometry,
+        })))
+        setCountyNames(new Map(rows.map((row) => [row.fips, row.name])))
+        setCountyRetrievedAt(response.meta.retrieved_at)
+      })
+      .catch((requestError: unknown) => {
+        if (requestError instanceof DOMException && requestError.name === "AbortError") return
+        setCountyRows([])
+        setCountyGeometryFeatures([])
+        setCountyNames(new Map())
+        setCountyError(requestError instanceof Error ? requestError.message : "County geography request failed")
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setCountyLoading(false)
+      })
+    return () => controller.abort()
+  }, [selectedFips])
 
   const officeCandidates = useMemo(
     () => candidates.filter((c) => isOfficeInCandidate(c, office)),
@@ -144,17 +177,18 @@ export function ElectionMap({
   )
 
   const aggregates = useMemo(() => aggregateCandidates(officeCandidates), [officeCandidates])
-  const selectedFips: StateFips | null = selectedState ?? null
-  const selectedCountyFips: CountyFips | null = selectedCounty ?? null
   const stateFeatures = useMemo(() => topologyToStateFeatures(STATES_TOPOLOGY), [])
   const countyFeatures = useMemo(() => topologyToCountyFeatures(COUNTIES_TOPOLOGY), [])
+  const activeCountyFeatures = countyGeometryFeatures.length > 0
+    ? countyGeometryFeatures
+    : countyFeatures
 
   const renderMap = useCallback(() => {
     if (!svgRef.current) return
     renderStateMap(svgRef.current, {
       view,
       stateFeatures,
-      countyFeatures,
+      countyFeatures: activeCountyFeatures,
       aggregates,
       selectedState: selectedFips,
       selectedCounty: selectedCountyFips,
@@ -169,7 +203,7 @@ export function ElectionMap({
   }, [
     view,
     stateFeatures,
-    countyFeatures,
+    activeCountyFeatures,
     aggregates,
     selectedFips,
     selectedCountyFips,
@@ -266,7 +300,7 @@ export function ElectionMap({
             return
           }
         }
-      } else if (view === "state" && selectedFips) {
+      } else if (selectedFips) {
         for (const [fips, name] of countyNames.entries()) {
           if (fips.startsWith(selectedFips) && name.toLowerCase() === q) {
             onCountyChange?.(fips)
@@ -305,6 +339,27 @@ export function ElectionMap({
             ))}
           </div>
           <label className="election-map-field">
+            <MapPin className="election-map-field-icon" size={14} aria-hidden="true" />
+            <span className="sr-only">State geography</span>
+            <select
+              value={selectedFips ?? ""}
+              onChange={(event) => onStateChange(event.target.value || null)}
+              aria-label="State geography"
+            >
+              <option value="">Choose a state</option>
+              <optgroup label="States and District of Columbia">
+                {STATE_JURISDICTIONS.map(({ fips, name }) => (
+                  <option key={fips} value={fips}>{name}</option>
+                ))}
+              </optgroup>
+              <optgroup label="U.S. territories">
+                {TERRITORY_JURISDICTIONS.map(({ fips, name }) => (
+                  <option key={fips} value={fips}>{name}</option>
+                ))}
+              </optgroup>
+            </select>
+          </label>
+          <label className="election-map-field">
             <span className="sr-only">Office</span>
             <Building2 className="election-map-field-icon" size={14} aria-hidden="true" />
             <select value={office} onChange={handleOfficeChange} aria-label="Office filter">
@@ -336,8 +391,8 @@ export function ElectionMap({
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               onKeyDown={handleSearchKey}
-              placeholder={view === "county" ? "Search a county" : "Search a state"}
-              aria-label={view === "county" ? "Search a county" : "Search a state"}
+              placeholder={selectedFips ? "Search counties" : "Search states"}
+              aria-label={selectedFips ? "Search counties" : "Search states"}
             />
             {searchInput ? (
               <button
@@ -423,7 +478,7 @@ export function ElectionMap({
                 : error
                   ? "FEC request failed"
                   : view === "county"
-                    ? `County view · ${officeCandidates.length} state rows · cycle ${cycle}`
+                    ? `${countyRows.length || "No"} named counties · results not loaded`
                     : `${officeCandidates.length} rows · cycle ${cycle}`}
             </div>
           </div>
@@ -462,7 +517,7 @@ export function ElectionMap({
               stateAbbr={STATE_FIPS_TABLE[selectedFips]?.abbr ?? ""}
               stateName={STATE_FIPS_TABLE[selectedFips]?.name ?? ""}
             />
-          ) : view === "state" && selectedFips ? (
+          ) : selectedFips ? (
             <StateDetail
               aggregate={aggregates.get(selectedFips) ?? null}
               metric={metric}
@@ -472,6 +527,19 @@ export function ElectionMap({
           )}
         </aside>
       </div>
+
+      {selectedFips ? (
+        <CountyDirectory
+          rows={countyRows}
+          stateName={STATE_FIPS_TABLE[selectedFips]?.name ?? "Selected state"}
+          selectedCounty={selectedCountyFips}
+          search={searchActive}
+          loading={countyLoading}
+          error={countyError}
+          retrievedAt={countyRetrievedAt}
+          onSelect={(fips) => onCountyChange?.(fips)}
+        />
+      ) : null}
 
       <RaceTable
         aggregates={aggregates}
@@ -486,7 +554,6 @@ export function ElectionMap({
 }
 
 function metricMax(aggregates: Map<StateFips, StateAggregate>, metric: Metric): number {
-  if (metric === "rating") return 1
   let max = 0
   for (const row of aggregates.values()) {
     const v = metricValue(row, metric)
@@ -512,7 +579,6 @@ function NationalDetail({
     let other = 0
     let incumbents = 0
     let open = 0
-    let tossUps = 0
     let statesWithData = 0
     for (const row of aggregates.values()) {
       total += row.total
@@ -522,10 +588,9 @@ function NationalDetail({
       other += row.other
       incumbents += row.incumbents
       open += row.open
-      if (ratingLabel(row) === "Toss-up") tossUps += 1
       if (row.total > 0) statesWithData += 1
     }
-    return { total, dem, rep, ind, other, incumbents, open, tossUps, statesWithData }
+    return { total, dem, rep, ind, other, incumbents, open, statesWithData }
   }, [aggregates])
 
   const totalParties = totals.dem + totals.rep + totals.ind + totals.other || 1
@@ -558,10 +623,10 @@ function NationalDetail({
         <Stat label="Candidate rows" value={String(totals.total)} />
         <Stat label="Incumbents" value={String(totals.incumbents)} />
         <Stat label="Open seats" value={String(totals.open)} />
-        <Stat label="Toss-up" value={String(totals.tossUps)} />
+        <Stat label="States with rows" value={String(totals.statesWithData)} />
       </div>
       <div className="election-map-detail-section">
-        <div className="election-map-kicker">Party share · {meta}</div>
+        <div className="election-map-kicker">Reported party · {meta}</div>
         <div className="election-map-bar-list">
           <BarRow label="Democratic" value={totals.dem} total={totalParties} cls="dem" />
           <BarRow label="Republican" value={totals.rep} total={totalParties} cls="rep" />
@@ -572,8 +637,9 @@ function NationalDetail({
       <div className="election-map-detail-section">
         <p className="election-map-source-note">
           Click any state on the map to zoom into its county-level geography.
-          Aggregated from FEC candidate rows. Empty map cells are states without
-          loaded rows — they are not contested races.
+          Aggregated from FEC candidate filings. Party counts describe reported
+          filings, not vote share, election results, competitiveness, or a forecast.
+          Empty map cells are states without loaded rows.
         </p>
       </div>
     </div>
@@ -587,8 +653,6 @@ function StateDetail({
   aggregate: StateAggregate | null
   metric: Metric
 }) {
-  const rating = ratingLabel(aggregate ?? undefined)
-  const pillCls = pillClassForRating(rating)
   const total = aggregate?.total ?? 0
   const totalParties = aggregate
     ? aggregate.democratic + aggregate.republican + aggregate.independent + aggregate.other || 1
@@ -626,7 +690,6 @@ function StateDetail({
               {total} candidate row{total === 1 ? "" : "s"} loaded
             </p>
           </div>
-          <span className={`election-map-pill election-map-pill--${pillCls}`}>{rating}</span>
         </div>
       </div>
       <div className="election-map-stats-strip" aria-label="State summary">
@@ -636,7 +699,7 @@ function StateDetail({
         <Stat label="Open seats" value={String(aggregate.open)} />
       </div>
       <div className="election-map-detail-section">
-        <div className="election-map-kicker">Party share · {meta}</div>
+        <div className="election-map-kicker">Reported party · {meta}</div>
         <div className="election-map-bar-list">
           <BarRow label="Democratic" value={aggregate.democratic} total={totalParties} cls="dem" />
           <BarRow label="Republican" value={aggregate.republican} total={totalParties} cls="rep" />
@@ -674,8 +737,9 @@ function StateDetail({
       <div className="election-map-detail-section">
         <p className="election-map-source-note">
           Click any county on the map to drill into local geography. Same FEC
-          rows that color the state map. No modeled spending or turnout;
-          empty fields are not treated as zero.
+          candidate filings that color the state map. Filing counts are not vote
+          share, election results, competitiveness, or a forecast. Empty fields
+          are not treated as zero.
         </p>
       </div>
     </div>
@@ -708,29 +772,115 @@ function CountyDetail({
         </div>
       </div>
       <div className="election-map-stats-strip" aria-label="County summary">
-        <Stat label="Total rows" value="0" />
-        <Stat label="Democratic" value="—" />
-        <Stat label="Republican" value="—" />
-        <Stat label="Other" value="—" />
+        <Stat label="Result rows" value="Not loaded" />
+        <Stat label="Geometry" value="Available" />
+        <Stat label="County FIPS" value={countyFips} />
       </div>
       <div className="election-map-detail-section">
-        <div className="election-map-kicker">Geography</div>
+        <div className="election-map-kicker">What this view proves</div>
         <p className="election-map-source-note">
-          County outlines load from the public U.S. Census Bureau boundary
-          geometry. State and district-level FEC filings do not break down to
-          individual counties — the federal pipeline reports at the
-          congressional-district level. Local candidate filings would come
-          from the county election office or the state campaign-finance
-          portal.
+          The boundary and county identity are sourced from the U.S. Census
+          Bureau. The loaded FEC candidate records are state and congressional
+          district filings, so they cannot be truthfully assigned to this
+          county. Result rows remain labeled not loaded instead of zero.
         </p>
       </div>
       <div className="election-map-detail-section">
-        <p className="election-map-source-note">
-          When county-level data is published, this view will show
-          per-county candidate counts, party share, and filing activity.
-        </p>
+        <div className="election-map-kicker">Primary sources</div>
+        <div className="election-map-source-links">
+          <a
+            href="https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/State_County/MapServer"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Census TIGERweb county layer
+          </a>
+          <a
+            href="https://www.eac.gov/voters/register-and-vote-in-your-state"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Find {stateName} election authorities
+          </a>
+          <a href="https://www.fec.gov/data/candidates/" target="_blank" rel="noreferrer">
+            FEC federal candidate filings
+          </a>
+        </div>
       </div>
     </div>
+  )
+}
+
+function CountyDirectory({
+  rows,
+  stateName,
+  selectedCounty,
+  search,
+  loading,
+  error,
+  retrievedAt,
+  onSelect,
+}: {
+  rows: Array<{ fips: CountyFips; name: string }>
+  stateName: string
+  selectedCounty: CountyFips | null
+  search: string
+  loading: boolean
+  error: string | null
+  retrievedAt: string | null
+  onSelect: (fips: CountyFips) => void
+}) {
+  const normalizedSearch = search.trim().toLowerCase()
+  const visibleRows = normalizedSearch
+    ? rows.filter((row) => row.name.toLowerCase().includes(normalizedSearch))
+    : rows
+
+  return (
+    <section className="election-county-directory" aria-label={`${stateName} county directory`}>
+      <div className="election-map-table-head">
+        <div>
+          <div className="election-map-kicker">Accessible map alternative</div>
+          <h3 className="election-map-table-title">{stateName} counties</h3>
+        </div>
+        <span className="election-map-data-status" data-loading={loading} data-error={Boolean(error)}>
+          {loading
+            ? "Loading Census county names"
+            : error
+              ? "County names unavailable"
+              : `${visibleRows.length} of ${rows.length} counties`}
+        </span>
+      </div>
+      {error ? (
+        <div className="election-county-directory-state">
+          <strong>County geography could not be refreshed.</strong>
+          <span>{error}. The map keeps Census boundary FIPS labels without inventing names.</span>
+        </div>
+      ) : loading ? (
+        <div className="election-county-directory-state">Loading the state-scoped Census county directory.</div>
+      ) : visibleRows.length === 0 ? (
+        <div className="election-county-directory-state">No county name matches the current search.</div>
+      ) : (
+        <div className="election-county-list" aria-label={`${stateName} counties`}>
+          {visibleRows.map((row) => (
+            <button
+              key={row.fips}
+              type="button"
+              className={`election-county-list-item${selectedCounty === row.fips ? " is-selected" : ""}`}
+              aria-pressed={selectedCounty === row.fips}
+              onClick={() => onSelect(row.fips)}
+            >
+              <span>{row.name}</span>
+              <small>FIPS {row.fips}</small>
+            </button>
+          ))}
+        </div>
+      )}
+      <footer className="election-county-directory-footer">
+        <span>Names: U.S. Census Bureau TIGERweb</span>
+        <span>Election results: not loaded</span>
+        {retrievedAt ? <span>Refreshed {new Date(retrievedAt).toLocaleDateString()}</span> : null}
+      </footer>
+    </section>
   )
 }
 
@@ -748,19 +898,15 @@ function RaceTable({
   const rows = useMemo(() => {
     return Array.from(aggregates.entries())
       .filter(([, row]) => row.total > 0)
-      .map(([fips, row]) => ({
-        fips,
-        row,
-        competitiveness: competitivenessScore(row),
-      }))
-      .sort((a, b) => a.competitiveness - b.competitiveness || b.row.total - a.row.total)
+      .map(([fips, row]) => ({ fips, row }))
+      .sort((a, b) => b.row.total - a.row.total || a.row.name.localeCompare(b.row.name))
       .slice(0, 12)
   }, [aggregates])
 
   return (
-    <section className="election-map-table" aria-label="Most competitive states">
+    <section className="election-map-table" aria-label="States with the most candidate filings">
       <div className="election-map-table-head">
-        <h3 className="election-map-table-title">Most competitive state races</h3>
+        <h3 className="election-map-table-title">States with the most candidate filings</h3>
         <span className="election-map-data-status" data-loading="false" data-error="false">
           {rows.length} of {aggregates.size} states · {OFFICE_LABELS[office]}
         </span>
@@ -770,10 +916,10 @@ function RaceTable({
           <thead>
             <tr>
               <th>State</th>
-              <th>Rating</th>
               <th>Candidates</th>
               <th>Incumbents</th>
-              <th>Party lean</th>
+              <th>Open seats</th>
+              <th>Reported party mix</th>
             </tr>
           </thead>
           <tbody>
@@ -786,9 +932,6 @@ function RaceTable({
               </tr>
             ) : (
               rows.map(({ fips, row }) => {
-                const rating = ratingLabel(row)
-                const pillCls = pillClassForRating(rating)
-                const lean = partyLean(row)
                 return (
                   <tr
                     key={fips}
@@ -800,19 +943,11 @@ function RaceTable({
                         {row.name} ({row.abbr})
                       </button>
                     </td>
-                    <td>
-                      <span className={`election-map-pill election-map-pill--${pillCls}`}>
-                        {rating}
-                      </span>
-                    </td>
                     <td>{row.total}</td>
                     <td>{row.incumbents}</td>
+                    <td>{row.open}</td>
                     <td className="font-mono text-xs">
-                      {lean > 0
-                        ? `+${(lean * 100).toFixed(0)} D`
-                        : lean < 0
-                          ? `${(lean * 100).toFixed(0)} R`
-                          : "0"}
+                      D {row.democratic} · R {row.republican} · Other {row.independent + row.other}
                     </td>
                   </tr>
                 )
@@ -868,7 +1003,7 @@ function Legend({
   metric: Metric
   maxValue: number
 }) {
-  if (view === "state") {
+  if (view !== "national") {
     return (
       <div className="election-map-legend" aria-hidden="true">
         <div className="election-map-legend-title">County boundaries</div>
@@ -880,35 +1015,6 @@ function Legend({
           <span className="election-map-legend-item">
             <MapIcon size={11} aria-hidden="true" style={{ color: "var(--election-dem)" }} />
             Drill into local view
-          </span>
-        </div>
-      </div>
-    )
-  }
-  if (metric === "rating") {
-    return (
-      <div className="election-map-legend" aria-hidden="true">
-        <div className="election-map-legend-title">Party lean</div>
-        <div className="election-map-legend-items">
-          <span className="election-map-legend-item">
-            <i className="election-map-swatch" data-lean="safe-d" />
-            Strong D
-          </span>
-          <span className="election-map-legend-item">
-            <i className="election-map-swatch" data-lean="tilt-d" />
-            Tilt D
-          </span>
-          <span className="election-map-legend-item">
-            <i className="election-map-swatch" data-lean="toss-up" />
-            Toss-up
-          </span>
-          <span className="election-map-legend-item">
-            <i className="election-map-swatch" data-lean="tilt-r" />
-            Tilt R
-          </span>
-          <span className="election-map-legend-item">
-            <i className="election-map-swatch" data-lean="safe-r" />
-            Strong R
           </span>
         </div>
       </div>
@@ -944,9 +1050,6 @@ function MapTooltip({
   metric: Metric
   tooltipType: "state" | "county"
 }) {
-  const rating = ratingLabel(row ?? undefined)
-  const pillCls = pillClassForRating(rating)
-  const lean = partyLean(row ?? undefined)
   return (
     <div
       className="election-map-tooltip-card"
@@ -958,32 +1061,33 @@ function MapTooltip({
         {name || "Unknown"}{abbr ? ` (${abbr})` : ""}
       </div>
       <div className="election-map-tooltip-grid">
-        <span>{tooltipType === "county" ? "County" : "Rating"}</span>
-        <strong>
-          {tooltipType === "county" ? (
-            <span className="election-map-pill election-map-pill--neutral">Local</span>
-          ) : (
-            <span className={`election-map-pill election-map-pill--${pillCls}`}>{rating}</span>
-          )}
-        </strong>
-        <span>Total rows</span>
-        <strong>{row?.total ?? 0}</strong>
-        <span>Democratic</span>
-        <strong>{row?.democratic ?? 0}</strong>
-        <span>Republican</span>
-        <strong>{row?.republican ?? 0}</strong>
-        <span>Incumbents</span>
-        <strong>{row?.incumbents ?? 0}</strong>
-        <span>Open seats</span>
-        <strong>{row?.open ?? 0}</strong>
-        <span>{METRIC_LABELS[metric]}</span>
-        <strong>
-          {metric === "rating"
-            ? lean === 0
-              ? "0"
-              : `${lean > 0 ? "+" : ""}${(lean * 100).toFixed(0)}%`
-            : metricValue(row ?? undefined, metric)}
-        </strong>
+        {tooltipType === "county" ? (
+          <>
+            <span>Geography</span>
+            <strong>Available</strong>
+            <span>Election results</span>
+            <strong>Not loaded</strong>
+          </>
+        ) : (
+          <>
+            <span>Total rows</span>
+            <strong>{row?.total ?? 0}</strong>
+            <span>Democratic</span>
+            <strong>{row?.democratic ?? 0}</strong>
+            <span>Republican</span>
+            <strong>{row?.republican ?? 0}</strong>
+            <span>Independent / other</span>
+            <strong>{(row?.independent ?? 0) + (row?.other ?? 0)}</strong>
+            <span>Incumbents</span>
+            <strong>{row?.incumbents ?? 0}</strong>
+            <span>Open seats</span>
+            <strong>{row?.open ?? 0}</strong>
+            <span>{METRIC_LABELS[metric]}</span>
+            <strong>
+              {metricValue(row ?? undefined, metric)}
+            </strong>
+          </>
+        )}
       </div>
     </div>
   )

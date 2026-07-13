@@ -26,6 +26,64 @@ pub fn extract_text(pdf_path: &str) -> Result<String, std::io::Error> {
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
+/// Extract text and fall back to deterministic page OCR for image-only PDFs.
+pub fn extract_text_with_ocr(pdf_path: &str) -> Result<String, std::io::Error> {
+    let text = extract_text(pdf_path)?;
+    if text
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .count()
+        >= 100
+    {
+        return Ok(text);
+    }
+    let directory =
+        std::env::temp_dir().join(format!("congress-tracker-ocr-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&directory)?;
+    let prefix = directory.join("page");
+    let render = Command::new("pdftoppm")
+        .args([
+            "-png",
+            "-r",
+            "200",
+            pdf_path,
+            prefix.to_string_lossy().as_ref(),
+        ])
+        .output()?;
+    if !render.status.success() {
+        let _ = std::fs::remove_dir_all(&directory);
+        return Ok(text);
+    }
+    let mut pages: Vec<_> = std::fs::read_dir(&directory)?
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|extension| extension == "png"))
+        .collect();
+    pages.sort();
+    let mut ocr = String::new();
+    for page in pages {
+        let output = Command::new("tesseract")
+            .args([page.to_string_lossy().as_ref(), "stdout", "--psm", "6"])
+            .output()?;
+        if output.status.success() {
+            ocr.push_str(&String::from_utf8_lossy(&output.stdout));
+            ocr.push('\n');
+        }
+        let _ = std::fs::remove_file(page);
+    }
+    let _ = std::fs::remove_dir(&directory);
+    if ocr
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .count()
+        >= 100
+    {
+        Ok(ocr)
+    } else {
+        Ok(text)
+    }
+}
+
 /// Fingerprint a PDF to determine which parser to use
 pub fn fingerprint(text: &str) -> DocumentLayout {
     let head: String = text.chars().take(500).collect();
@@ -49,7 +107,10 @@ pub fn fingerprint(text: &str) -> DocumentLayout {
     }
 
     // Annual reports mention "annual report" or "financial disclosure report"
-    if head_lower.contains("annual report") || head_lower.contains("financial disclosure report") {
+    if head_lower.contains("annual report")
+        || head_lower.contains("financial disclosure report")
+        || (head_lower.contains("filing type:") && head_lower.contains("value of asset"))
+    {
         // Scanned vs electronic: electronic has selectable text, scanned has image-only
         let non_whitespace: String = text
             .chars()
@@ -148,42 +209,16 @@ pub fn parse_ptr_legacy(text: &str) -> Vec<intel_backend::disclosures::ParsedPtr
 /// This extracts Schedule A (assets) and Schedule B (transactions).
 pub fn parse_annual_electronic(
     text: &str,
-) -> Vec<intel_backend::disclosures::ParsedPtrTransaction> {
-    // Annual reports are structured in labeled sections.
-    // Schedule A: Assets and Unearned Income
-    // Schedule B: Transactions (purchases, sales, exchanges)
-    // We extract Schedule B transactions using the same PTR parser
-    // since they share a similar row format.
-
-    // Find Schedule B section
-    let sched_b_marker = text
-        .find("Schedule B")
-        .or_else(|| text.find("SCHEDULE B"))
-        .or_else(|| text.find("Transactions"));
-
-    let section = match sched_b_marker {
-        Some(pos) => &text[pos..],
-        None => return Vec::new(),
-    };
-
-    // Stop at Schedule C or end of document
-    let end = section
-        .find("Schedule C")
-        .or_else(|| section.find("SCHEDULE C"))
-        .unwrap_or(section.len());
-    let section = &section[..end];
-
-    intel_backend::disclosures::parse_house_ptr_text(section)
+) -> intel_backend::annual_disclosures::ParsedAnnualReport {
+    intel_backend::annual_disclosures::parse_house_annual_text(text)
 }
 
-/// Parse scanned/image annual reports via OCR.
-/// Returns empty until Phase 3 adds tesseract integration.
+/// Parse scanned/image annual reports through the pdftoppm/Tesseract fallback.
 pub fn parse_annual_scanned(
-    _pdf_path: &str,
-) -> Vec<intel_backend::disclosures::ParsedPtrTransaction> {
-    // TODO: Phase 3 OCR — render PDF pages to images, run tesseract,
-    // then pass text through parse_annual_electronic.
-    Vec::new()
+    pdf_path: &str,
+) -> Result<intel_backend::annual_disclosures::ParsedAnnualReport, std::io::Error> {
+    let text = extract_text_with_ocr(pdf_path)?;
+    Ok(parse_annual_electronic(&text))
 }
 
 #[cfg(test)]
@@ -246,6 +281,24 @@ mod tests {
     #[test]
     fn test_extract_text_with_nonexistent_file() {
         let result = extract_text("/nonexistent/pdf/path.pdf");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn malformed_annual_text_produces_no_fabricated_records() {
+        let parsed = parse_annual_electronic(
+            "ANNUAL REPORT\nFinancial Disclosure Report\nSchedule data unavailable",
+        );
+        assert!(parsed.assets.is_empty());
+        assert!(parsed.liabilities.is_empty());
+        assert!(parsed.income.is_empty());
+        assert!(parsed.gifts.is_empty());
+        assert!(parsed.positions.is_empty());
+    }
+
+    #[test]
+    fn ocr_failure_is_returned_for_a_missing_source_file() {
+        let result = extract_text_with_ocr("/nonexistent/pdf/path.pdf");
         assert!(result.is_err());
     }
 }

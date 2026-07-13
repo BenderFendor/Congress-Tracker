@@ -2,64 +2,16 @@ import type { Feature, FeatureCollection, Geometry } from "geojson"
 import type { Topology, GeometryCollection } from "topojson-specification"
 import * as topojson from "topojson-client"
 import type { FECandidate } from "@/lib/services/fec"
+import { SUPPORTED_JURISDICTIONS } from "@/lib/county-geography.mjs"
 
 export type StateFips = string
 export type CountyFips = string
 
-// 50 states + DC. FIPS code -> { abbr, name }.
-export const STATE_FIPS_TABLE: Record<StateFips, { abbr: string; name: string }> = {
-  "01": { abbr: "AL", name: "Alabama" },
-  "02": { abbr: "AK", name: "Alaska" },
-  "04": { abbr: "AZ", name: "Arizona" },
-  "05": { abbr: "AR", name: "Arkansas" },
-  "06": { abbr: "CA", name: "California" },
-  "08": { abbr: "CO", name: "Colorado" },
-  "09": { abbr: "CT", name: "Connecticut" },
-  "10": { abbr: "DE", name: "Delaware" },
-  "11": { abbr: "DC", name: "District of Columbia" },
-  "12": { abbr: "FL", name: "Florida" },
-  "13": { abbr: "GA", name: "Georgia" },
-  "15": { abbr: "HI", name: "Hawaii" },
-  "16": { abbr: "ID", name: "Idaho" },
-  "17": { abbr: "IL", name: "Illinois" },
-  "18": { abbr: "IN", name: "Indiana" },
-  "19": { abbr: "IA", name: "Iowa" },
-  "20": { abbr: "KS", name: "Kansas" },
-  "21": { abbr: "KY", name: "Kentucky" },
-  "22": { abbr: "LA", name: "Louisiana" },
-  "23": { abbr: "ME", name: "Maine" },
-  "24": { abbr: "MD", name: "Maryland" },
-  "25": { abbr: "MA", name: "Massachusetts" },
-  "26": { abbr: "MI", name: "Michigan" },
-  "27": { abbr: "MN", name: "Minnesota" },
-  "28": { abbr: "MS", name: "Mississippi" },
-  "29": { abbr: "MO", name: "Missouri" },
-  "30": { abbr: "MT", name: "Montana" },
-  "31": { abbr: "NE", name: "Nebraska" },
-  "32": { abbr: "NV", name: "Nevada" },
-  "33": { abbr: "NH", name: "New Hampshire" },
-  "34": { abbr: "NJ", name: "New Jersey" },
-  "35": { abbr: "NM", name: "New Mexico" },
-  "36": { abbr: "NY", name: "New York" },
-  "37": { abbr: "NC", name: "North Carolina" },
-  "38": { abbr: "ND", name: "North Dakota" },
-  "39": { abbr: "OH", name: "Ohio" },
-  "40": { abbr: "OK", name: "Oklahoma" },
-  "41": { abbr: "OR", name: "Oregon" },
-  "42": { abbr: "PA", name: "Pennsylvania" },
-  "44": { abbr: "RI", name: "Rhode Island" },
-  "45": { abbr: "SC", name: "South Carolina" },
-  "46": { abbr: "SD", name: "South Dakota" },
-  "47": { abbr: "TN", name: "Tennessee" },
-  "48": { abbr: "TX", name: "Texas" },
-  "49": { abbr: "UT", name: "Utah" },
-  "50": { abbr: "VT", name: "Vermont" },
-  "51": { abbr: "VA", name: "Virginia" },
-  "53": { abbr: "WA", name: "Washington" },
-  "54": { abbr: "WV", name: "West Virginia" },
-  "55": { abbr: "WI", name: "Wisconsin" },
-  "56": { abbr: "WY", name: "Wyoming" },
-}
+// 50 states, DC, and the five territories supported by both TIGERweb and us-atlas.
+export const STATE_FIPS_TABLE: Record<StateFips, { abbr: string; name: string }> =
+  Object.fromEntries(
+    SUPPORTED_JURISDICTIONS.map(({ fips, abbr, name }) => [fips, { abbr, name }]),
+  )
 
 export const FIPS_BY_ABBR: Record<string, StateFips> = Object.entries(STATE_FIPS_TABLE).reduce(
   (acc, [fips, meta]) => {
@@ -95,16 +47,15 @@ export const OFFICE_LABELS: Record<Office, string> = {
 
 export const ALL_OFFICES: ReadonlyArray<Office> = ["H", "S", "P"]
 
-export type Metric = "rating" | "candidates" | "incumbents" | "open-seats"
+export type Metric = "candidates" | "incumbents" | "open-seats"
 
 export const METRIC_LABELS: Record<Metric, string> = {
-  rating: "Party lean",
   candidates: "Candidate rows",
   incumbents: "Incumbents running",
   "open-seats": "Open-seat filings",
 }
 
-export const ALL_METRICS: ReadonlyArray<Metric> = ["rating", "candidates", "incumbents", "open-seats"]
+export const ALL_METRICS: ReadonlyArray<Metric> = ["candidates", "incumbents", "open-seats"]
 
 export type View = "national" | "state" | "county"
 
@@ -161,10 +112,20 @@ export type CountyAggregate = {
 
 function classifyParty(party: string | undefined): PartyBucket {
   if (!party) return "other"
-  const lower = party.toLowerCase()
-  if (lower.includes("democrat")) return "democratic"
-  if (lower.includes("republican")) return "republican"
-  if (lower.includes("independent") || lower.includes("nonpartisan")) return "independent"
+  const normalized = party.trim().toUpperCase()
+  if (["D", "DEM", "DFL"].includes(normalized) || normalized.includes("DEMOCRAT")) {
+    return "democratic"
+  }
+  if (["R", "REP", "GOP"].includes(normalized) || normalized.includes("REPUBLICAN")) {
+    return "republican"
+  }
+  if (
+    ["I", "IND", "NPA"].includes(normalized) ||
+    normalized.includes("INDEPENDENT") ||
+    normalized.includes("NONPARTISAN")
+  ) {
+    return "independent"
+  }
   return "other"
 }
 
@@ -241,57 +202,11 @@ export function aggregateCandidates(candidates: FECandidate[]): Map<StateFips, S
   return map
 }
 
-export function partyLean(row: StateAggregate | DistrictAggregate | undefined): number {
-  if (!row || row.total === 0) return 0
-  return (row.democratic - row.republican) / row.total
-}
-
-export type RatingLabel =
-  | "Safe D"
-  | "Likely D"
-  | "Lean D"
-  | "Tilt D"
-  | "Toss-up"
-  | "Tilt R"
-  | "Lean R"
-  | "Likely R"
-  | "Safe R"
-  | "No data"
-
-export function ratingLabel(row: StateAggregate | DistrictAggregate | undefined): RatingLabel {
-  if (!row || row.total === 0) return "No data"
-  const lean = partyLean(row)
-  if (lean >= 0.55) return "Safe D"
-  if (lean >= 0.35) return "Likely D"
-  if (lean >= 0.18) return "Lean D"
-  if (lean >= 0.07) return "Tilt D"
-  if (lean > -0.07) return "Toss-up"
-  if (lean > -0.18) return "Tilt R"
-  if (lean > -0.35) return "Lean R"
-  if (lean > -0.55) return "Likely R"
-  return "Safe R"
-}
-
-export function pillClassForRating(rating: RatingLabel): "dem" | "rep" | "toss" | "neutral" {
-  if (rating === "No data") return "neutral"
-  if (rating === "Toss-up") return "toss"
-  if (rating.endsWith("D")) return "dem"
-  if (rating.endsWith("R")) return "rep"
-  return "neutral"
-}
-
 export function metricValue(row: StateAggregate | undefined, metric: Metric): number {
   if (!row) return 0
-  if (metric === "rating") return Math.abs(partyLean(row))
   if (metric === "candidates") return row.total
   if (metric === "incumbents") return row.incumbents
   return row.open
-}
-
-export function competitivenessScore(row: StateAggregate | undefined): number {
-  if (!row || row.total === 0) return Number.POSITIVE_INFINITY
-  const lean = Math.abs(partyLean(row))
-  return lean + (row.total < 3 ? 0.25 : 0)
 }
 
 export type UsAtlasTopology = Topology<{

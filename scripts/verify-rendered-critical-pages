@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Starts an isolated frontend with an intentionally unreachable backend and
+# verifies deterministic server-rendered loading/error/guidance states.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PORT="${RENDERED_TEST_PORT:-3099}"
+LOG="${TMPDIR:-/tmp}/congress-tracker-rendered-${PORT}.log"
+
+cd "$ROOT/frontend"
+NEXT_PUBLIC_BACKEND_URL="http://127.0.0.1:9" pnpm exec next dev -p "$PORT" >"$LOG" 2>&1 &
+SERVER_PID=$!
+cleanup() {
+  kill "$SERVER_PID" 2>/dev/null || true
+  wait "$SERVER_PID" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+for _ in $(seq 1 60); do
+  if curl -fsS "http://127.0.0.1:${PORT}/search" >/dev/null 2>&1; then
+    FRONTEND_URL="http://127.0.0.1:${PORT}" node scripts/rendered-route-smoke.mjs
+    exit 0
+  fi
+  sleep 1
+done
+
+tail -80 "$LOG" >&2
+exit 1

@@ -1,191 +1,94 @@
 "use client"
 
-import React, { useState, useEffect } from "react"
-import { useParams, useRouter } from "next/navigation"
-import { createLogger } from "@/lib/tracing"
-import { ArchivePage, ArchiveHero, ArchivePanel, ArchiveMetrics } from "@/components/ui/archive-ui"
+/* Design thesis: Network Dossier is a source-first campaign-finance brief where the evidence map is the primary reading surface. */
+
+import { useEffect, useState } from "react"
+import Link from "next/link"
+import { useParams } from "next/navigation"
+import { ArrowLeft, Building2, CheckCircle2, Loader2, Network, ShieldAlert } from "lucide-react"
+
+import { InfluenceFlowMap } from "@/components/influence-flow-map"
+import { ArchiveHero, ArchiveMetrics, ArchivePage, DataState, EvidenceSpine } from "@/components/ui/archive-ui"
 import { Badge } from "@/components/ui/badge"
-import { getInfluenceNetwork, type InfluenceNetwork } from "@/lib/services/influence"
-import { Network, Building2, DollarSign, ArrowLeft, Loader2, ShieldAlert, CheckCircle2 } from "lucide-react"
+import { getInfluenceNetwork, getInfluenceNetworkFinancials, type InfluenceNetwork, type InfluenceNetworkFinancials } from "@/lib/services/influence"
+import { createLogger } from "@/lib/tracing"
 
 const log = createLogger("InfluenceDetailPage")
+const CYCLES = [2026, 2024, 2022]
 
 export default function InfluenceNetworkDetailPage() {
   const params = useParams()
-  const router = useRouter()
   const slug = typeof params?.slug === "string" ? params.slug : ""
-
+  const [cycle, setCycle] = useState(2026)
   const [network, setNetwork] = useState<InfluenceNetwork | null>(null)
-  const [loading, setLoading] = useState<boolean>(true)
+  const [financials, setFinancials] = useState<InfluenceNetworkFinancials | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [financialLoading, setFinancialLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [financialError, setFinancialError] = useState<string | undefined>()
 
   useEffect(() => {
-    let isMounted = true
-    async function loadDetail() {
-      if (!slug) return
-      setLoading(true)
-      try {
-        const data = await getInfluenceNetwork(slug)
-        if (isMounted) {
-          setNetwork(data)
-        }
-      } catch (err) {
-        log.error("Failed to load influence network detail:", { error: String(err) })
-      } finally {
-        if (isMounted) setLoading(false)
-      }
-    }
-    loadDetail()
-    return () => { isMounted = false }
+    if (!slug) return
+    let active = true
+    setLoading(true)
+    setError(null)
+    getInfluenceNetwork(slug)
+      .then((data) => { if (active) setNetwork(data) })
+      .catch((reason) => {
+        log.error("Failed to load influence network detail", { error: String(reason) })
+        if (active) setError(reason instanceof Error ? reason.message : "Network request failed")
+      })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
   }, [slug])
 
-  const isAipac = slug.toLowerCase() === "aipac" || (network?.display_name || "").toLowerCase().includes("aipac")
-  const committees = network?.committees || []
+  useEffect(() => {
+    if (!slug || !network) return
+    let active = true
+    setFinancialLoading(true)
+    setFinancialError(undefined)
+    getInfluenceNetworkFinancials(slug, cycle)
+      .then((data) => { if (active) setFinancials(data) })
+      .catch((reason) => {
+        log.error("Failed to load influence financials", { slug, cycle, error: String(reason) })
+        if (active) {
+          setFinancials(null)
+          setFinancialError(reason instanceof Error ? reason.message : "Financial aggregate request failed")
+        }
+      })
+      .finally(() => { if (active) setFinancialLoading(false) })
+    return () => { active = false }
+  }, [slug, cycle, network])
 
   return (
     <ArchivePage>
-      <div className="mb-6">
-        <button
-          type="button"
-          onClick={() => router.push("/influence")}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-card text-xs font-semibold text-foreground hover:bg-accent transition-colors"
-        >
-          <ArrowLeft size={14} />
-          <span>Back to Influence Workbench</span>
-        </button>
-      </div>
+      <Link className="mb-5 inline-flex min-h-11 items-center gap-2 border border-border bg-card px-3 text-xs font-bold uppercase tracking-wide hover:border-primary" href="/influence"><ArrowLeft size={14} /> All influence networks</Link>
 
-      {loading ? (
-        <div className="flex flex-col items-center justify-center py-24 gap-3 text-muted-foreground">
-          <Loader2 className="animate-spin text-primary" size={32} />
-          <p className="text-sm font-medium">Loading network dossier for {slug.toUpperCase()}...</p>
-        </div>
+      {loading ? <div className="flex items-center justify-center gap-2 py-24 text-sm text-muted-foreground"><Loader2 className="animate-spin" size={22} /> Loading network dossier</div> : error ? (
+        <DataState kind="error" title="Network dossier unavailable" description={`${error}. The request failure is not presented as a missing network.`} />
       ) : !network ? (
-        <div className="p-12 text-center border border-dashed border-border rounded-xl bg-card">
-          <Network className="mx-auto mb-3 text-muted-foreground" size={32} />
-          <h2 className="text-lg font-bold text-foreground mb-1">Network Not Found</h2>
-          <p className="text-xs text-muted-foreground max-w-md mx-auto mb-6">
-            We could not find an influence network dossier matching identifier &quot;{slug}&quot;.
-          </p>
-          <button
-            type="button"
-            onClick={() => router.push("/influence")}
-            className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-semibold"
-          >
-            Return to All Networks
-          </button>
-        </div>
+        <DataState kind="empty" title="Network not found" description={`No configured influence network matches “${slug}”.`} />
       ) : (
         <>
-          <ArchiveHero
-            eyebrow="Network Dossier & Financial Flow"
-            title={network.display_name}
-            accent="Dossier"
-            description={network.description}
-            mode="network"
-            actions={
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="secondary" className="uppercase font-semibold text-xs">
-                  {network.category.replace(/_/g, " ")}
-                </Badge>
-                <Badge variant="default" className="uppercase font-semibold text-xs">
-                  Confidence: {network.confidence}
-                </Badge>
-              </div>
-            }
-          />
+          <ArchiveHero eyebrow="Federal campaign-finance dossier" title={network.display_name} accent="evidence map" description={network.description} mode="network" actions={<div className="flex flex-wrap gap-2"><Badge variant="secondary">{network.category.replaceAll("_", " ")}</Badge><Badge variant="outline">{network.confidence} identity</Badge></div>} />
 
-          {/* AIPAC 501(c)(4) Opacity Alert */}
-          {isAipac && (
-            <div className="mb-6 p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3">
-              <ShieldAlert className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" size={20} />
-              <div className="text-xs text-amber-900 dark:text-amber-200">
-                <span className="font-bold">Transparency Disclosure:</span> Opaque 501(c)(4) donor sources are not attributed. Public FEC data only attributes direct PAC contributions and independent expenditure filings. Attribution requires deterministic FEC entity links.
-              </div>
-            </div>
-          )}
+          {slug === "aipac" ? <div className="mb-6 flex gap-3 border border-amber-600/30 bg-amber-500/10 p-4 text-xs leading-5 text-amber-900 dark:text-amber-200"><ShieldAlert className="mt-0.5 shrink-0" size={18} /><p><strong>Disclosure boundary:</strong> opaque 501(c)(4) donor sources are not attributed. The dossier includes only deterministic committee identities and public FEC transactions.</p></div> : null}
 
-          <ArchiveMetrics
-            metrics={[
-              {
-                label: "Affiliated Entities",
-                value: committees.length || 3,
-                detail: "Linked PACs & filers",
-                icon: <Building2 size={20} className="text-primary" />
-              },
-              {
-                label: "Attribution Level",
-                value: network.confidence.toUpperCase(),
-                detail: "Deterministic FEC crosswalk",
-                icon: <CheckCircle2 size={20} className="text-primary" />
-              },
-              {
-                label: "Primary Category",
-                value: network.category.replace(/_/g, " ").toUpperCase(),
-                detail: "Classification profile",
-                icon: <Network size={20} className="text-primary" />
-              },
-              {
-                label: "Tracked Cycle",
-                value: "2026",
-                detail: "Current reporting window",
-                icon: <DollarSign size={20} className="text-primary" />
-              }
-            ]}
-          />
+          <ArchiveMetrics metrics={[
+            { label: "Verified committees", value: network.committees.length || "Unavailable", detail: "Committee identities in this source run", icon: <Building2 size={20} /> },
+            { label: "Identity confidence", value: network.confidence.toUpperCase(), detail: "Network-to-committee crosswalk", icon: <CheckCircle2 size={20} /> },
+            { label: "Network category", value: network.category.replaceAll("_", " ").toUpperCase(), detail: "Configured classification", icon: <Network size={20} /> },
+            { label: "Financial cycle", value: cycle, detail: "Selected OpenFEC reporting period", icon: <Network size={20} /> },
+          ]} />
 
-          <ArchivePanel title="Affiliated Political Action Committees & Spending Entities" kicker="Infrastructure">
-            <div className="overflow-x-auto border border-border rounded-lg bg-card mb-8">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-border bg-muted/40 text-[11px] font-semibold text-muted-foreground uppercase">
-                    <th className="p-3">Committee Name</th>
-                    <th className="p-3">FEC Identifier</th>
-                    <th className="p-3">Designated Role</th>
-                    <th className="p-3">Confidence Level</th>
-                    <th className="p-3">Source Citation</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border text-xs">
-                  {committees.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="p-6 text-center text-muted-foreground">
-                        No committees explicitly linked in current source run.
-                      </td>
-                    </tr>
-                  ) : (
-                    committees.map((c) => (
-                      <tr key={c.committee_id} className="hover:bg-muted/20">
-                        <td className="p-3 font-medium text-foreground">{c.committee_name}</td>
-                        <td className="p-3 font-mono text-[11px] text-muted-foreground">{c.committee_id}</td>
-                        <td className="p-3">
-                          <Badge variant="outline" className="text-[10px] capitalize font-medium">
-                            {c.role ? c.role.replace(/_/g, " ") : "PAC Entity"}
-                          </Badge>
-                        </td>
-                        <td className="p-3">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold uppercase ${
-                            c.confidence === "verified" ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-muted text-muted-foreground"
-                          }`}>
-                            {c.confidence || "Verified"}
-                          </span>
-                        </td>
-                        <td className="p-3 text-[11px] text-muted-foreground">
-                          {c.source_citation || network.source_citation || "OpenFEC Official"}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+          <div className="mb-4 flex flex-wrap items-end justify-between gap-3 border-y border-border bg-card/60 p-3">
+            <div><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">View reporting cycle</p><p className="mt-1 text-xs text-muted-foreground">Identity membership is cycle-independent. Financial records refresh with this control.</p></div>
+            <label className="grid gap-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Election cycle<select className="h-11 min-w-36 border border-border bg-background px-3 text-xs text-foreground" value={cycle} onChange={(event) => setCycle(Number(event.target.value))}>{CYCLES.map((option) => <option key={option} value={option}>{option} cycle</option>)}</select></label>
+          </div>
 
-            <ArchivePanel title="Financial and relationship evidence" kicker="Canonical source records">
-              <p className="p-6 text-sm text-muted-foreground">
-                Financial flows and relationship topology will appear here when the canonical FEC
-                records are ingested. No estimated allocations or inferred members are displayed.
-              </p>
-            </ArchivePanel>
-          </ArchivePanel>
+          {financialLoading ? <div className="flex items-center justify-center gap-2 border border-border py-24 text-sm text-muted-foreground"><Loader2 className="animate-spin" size={20} /> Loading {cycle} FEC records</div> : <InfluenceFlowMap network={network} financials={financials} cycle={cycle} financialError={financialError} />}
+
+          <EvidenceSpine identifier={network.network_slug} source={network.source_citation || "OpenFEC committee and transaction records"} status={financialError ? "Identity loaded; financial request failed" : financialLoading ? "Financial records loading" : "Loaded"} coverage={`${network.committees.length} verified committee identities; ${cycle} financial aggregate; LDA excluded`} />
         </>
       )}
     </ArchivePage>

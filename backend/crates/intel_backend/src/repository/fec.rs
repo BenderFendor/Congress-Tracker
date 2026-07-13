@@ -1,9 +1,10 @@
 use crate::models::{
-    CommitteeFunding, DonorSummary, InfluenceNetworkFunding, MemberFunding, PacInfo,
-    ProvenanceSource, ProvenanceSummary,
+    CommitteeFunding, DonorSummary, InfluenceNetworkFunding, LeadershipPacFunding, MemberFunding,
+    PacInfo, ProvenanceSource, ProvenanceSummary,
 };
 use crate::repository::Repository;
-use chrono::NaiveDate;
+use chrono::{DateTime, NaiveDate, Utc};
+use std::collections::HashSet;
 use tracing::Instrument;
 
 pub struct FecCandidateUpsert<'a> {
@@ -15,6 +16,7 @@ pub struct FecCandidateUpsert<'a> {
     pub district: Option<&'a str>,
     pub office: Option<&'a str>,
     pub incumbent_challenge: Option<&'a str>,
+    pub principal_committee_id: Option<&'a str>,
     pub active_through: Option<i32>,
     pub first_file_date: Option<NaiveDate>,
     pub last_file_date: Option<NaiveDate>,
@@ -58,6 +60,30 @@ pub struct FecTransactionUpsert<'a> {
     pub source_run_id: Option<uuid::Uuid>,
 }
 
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct FecBulkImportRecord {
+    pub dataset_name: String,
+    pub election_cycle: i32,
+    pub sha256: String,
+    pub status: String,
+    pub etag: Option<String>,
+    pub source_modified_at: Option<DateTime<Utc>>,
+    pub archive_path: Option<String>,
+    pub compressed_bytes: Option<i64>,
+}
+
+pub struct FecBulkImportUpsert<'a> {
+    pub dataset_name: &'a str,
+    pub election_cycle: i32,
+    pub source_url: &'a str,
+    pub sha256: &'a str,
+    pub compressed_bytes: i64,
+    pub source_modified_at: Option<DateTime<Utc>>,
+    pub etag: Option<&'a str>,
+    pub archive_path: &'a str,
+    pub source_run_id: uuid::Uuid,
+}
+
 impl Repository {
     /// Insert or update an FEC candidate row.
     pub async fn upsert_fec_candidate(
@@ -67,8 +93,9 @@ impl Repository {
         sqlx::query(
             r#"INSERT INTO fec_candidates
                (candidate_id, bioguide_id, name, party, state, district, office,
-                incumbent_challenge, active_through, first_file_date, last_file_date, source_run_id)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                incumbent_challenge, principal_committee_id, active_through,
+                first_file_date, last_file_date, source_run_id)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
                ON CONFLICT (candidate_id) DO UPDATE SET
                  bioguide_id        = COALESCE(EXCLUDED.bioguide_id, fec_candidates.bioguide_id),
                  name               = EXCLUDED.name,
@@ -77,6 +104,7 @@ impl Repository {
                  district           = COALESCE(EXCLUDED.district, fec_candidates.district),
                  office             = COALESCE(EXCLUDED.office, fec_candidates.office),
                  incumbent_challenge = COALESCE(EXCLUDED.incumbent_challenge, fec_candidates.incumbent_challenge),
+                 principal_committee_id = COALESCE(EXCLUDED.principal_committee_id, fec_candidates.principal_committee_id),
                  active_through     = COALESCE(EXCLUDED.active_through, fec_candidates.active_through),
                  first_file_date    = COALESCE(EXCLUDED.first_file_date, fec_candidates.first_file_date),
                  last_file_date     = COALESCE(EXCLUDED.last_file_date, fec_candidates.last_file_date)"#,
@@ -89,6 +117,7 @@ impl Repository {
         .bind(input.district)
         .bind(input.office)
         .bind(input.incumbent_challenge)
+        .bind(input.principal_committee_id)
         .bind(input.active_through)
         .bind(input.first_file_date)
         .bind(input.last_file_date)
@@ -260,7 +289,11 @@ impl Repository {
         // Top committees by committee_id -> fec_committees name
         let top_committees: Vec<CommitteeFunding> = sqlx::query_as::<_, CommFundingRow>(
             r#"SELECT ft.committee_id, COALESCE(fc.name, ft.committee_id) AS committee_name,
-                      SUM(ft.amount) AS amount
+                      SUM(ft.amount) AS amount,
+                      'contribution'::text AS relationship_type,
+                      CASE WHEN fc.committee_id IS NULL THEN 'unresolved'
+                           ELSE 'resolved' END AS resolution_status,
+                      COUNT(*)::bigint AS transaction_count
                FROM fec_transactions ft
                LEFT JOIN fec_committees fc ON fc.committee_id = ft.committee_id
                WHERE ft.bioguide_id = $1
@@ -279,6 +312,9 @@ impl Repository {
             committee_id: c.committee_id,
             committee_name: c.committee_name,
             amount: c.amount,
+            relationship_type: Some(c.relationship_type),
+            resolution_status: Some(c.resolution_status),
+            transaction_count: Some(c.transaction_count),
         })
         .collect();
 
@@ -335,6 +371,8 @@ impl Repository {
             independent_expenditures_supporting: mv.independent_expenditures_supporting,
             independent_expenditures_opposing: mv.independent_expenditures_opposing,
             top_donors,
+            committee_relationships: top_committees.clone(),
+            leadership_pacs: Vec::new(),
             top_committees,
             influence_networks: network_funding,
             has_successful_fec_run: has_run,
@@ -478,6 +516,8 @@ impl Repository {
                 independent_expenditures_opposing: 0.0,
                 top_donors: Vec::new(),
                 top_committees: Vec::new(),
+                committee_relationships: Vec::new(),
+                leadership_pacs: Vec::new(),
                 influence_networks: Vec::new(),
                 has_successful_fec_run: true,
                 provenance,
@@ -534,26 +574,72 @@ impl Repository {
 
     // ── Bulk import tracking ────────────────────────────────────────────
 
-    /// Record a successful bulk ZIP import.
-    pub async fn insert_bulk_import(
+    /// Return the most recently checked immutable archive for a dataset.
+    pub async fn latest_bulk_import(
         &self,
         dataset_name: &str,
-        election_cycle: i32,
-        source_url: &str,
-        sha256: &str,
-        compressed_bytes: i64,
+    ) -> Result<Option<FecBulkImportRecord>, sqlx::Error> {
+        sqlx::query_as(
+            r#"SELECT dataset_name, election_cycle, sha256, status, etag,
+                      source_modified_at, archive_path, compressed_bytes
+               FROM fec_bulk_imports
+               WHERE dataset_name = $1
+               ORDER BY checked_at DESC, downloaded_at DESC
+               LIMIT 1"#,
+        )
+        .bind(dataset_name)
+        .fetch_optional(self.pool())
+        .await
+    }
+
+    /// Record or refresh metadata for a content-addressed bulk archive.
+    pub async fn upsert_bulk_import(
+        &self,
+        input: FecBulkImportUpsert<'_>,
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
             r#"INSERT INTO fec_bulk_imports
-               (dataset_name, election_cycle, source_url, sha256, compressed_bytes, status)
-               VALUES ($1, $2, $3, $4, $5, 'downloaded')
-               ON CONFLICT (dataset_name, sha256) DO NOTHING"#,
+               (dataset_name, election_cycle, source_url, sha256, compressed_bytes,
+                source_modified_at, etag, archive_path, source_run_id, status, checked_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'downloaded', now())
+               ON CONFLICT (dataset_name, sha256) DO UPDATE SET
+                 source_url         = EXCLUDED.source_url,
+                 compressed_bytes   = EXCLUDED.compressed_bytes,
+                 source_modified_at = EXCLUDED.source_modified_at,
+                 etag               = EXCLUDED.etag,
+                 archive_path       = EXCLUDED.archive_path,
+                 source_run_id      = EXCLUDED.source_run_id,
+                 checked_at         = now()"#,
         )
+        .bind(input.dataset_name)
+        .bind(input.election_cycle)
+        .bind(input.source_url)
+        .bind(input.sha256)
+        .bind(input.compressed_bytes)
+        .bind(input.source_modified_at)
+        .bind(input.etag)
+        .bind(input.archive_path)
+        .bind(input.source_run_id)
+        .execute(self.pool())
+        .await?;
+        Ok(())
+    }
+
+    /// Record a no-download remote metadata check for an unchanged archive.
+    pub async fn touch_bulk_import(
+        &self,
+        dataset_name: &str,
+        sha256: &str,
+        source_run_id: uuid::Uuid,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            "UPDATE fec_bulk_imports
+             SET checked_at = now(), source_run_id = $1
+             WHERE dataset_name = $2 AND sha256 = $3",
+        )
+        .bind(source_run_id)
         .bind(dataset_name)
-        .bind(election_cycle)
-        .bind(source_url)
         .bind(sha256)
-        .bind(compressed_bytes)
         .execute(self.pool())
         .await?;
         Ok(())
@@ -568,9 +654,13 @@ impl Repository {
         extracted_rows: i64,
         error_message: Option<&str>,
     ) -> Result<(), sqlx::Error> {
-        sqlx::query(
+        let result = sqlx::query(
             r#"UPDATE fec_bulk_imports
-               SET status = $1, extracted_rows = $2, error_message = $3
+               SET status = $1,
+                   extracted_rows = GREATEST(COALESCE(extracted_rows, 0), $2),
+                   error_message = $3,
+                   checked_at = now(),
+                   canonicalized_at = CASE WHEN $1 = 'canonicalized' THEN now() ELSE canonicalized_at END
                WHERE dataset_name = $4 AND sha256 = $5"#,
         )
         .bind(status)
@@ -580,11 +670,18 @@ impl Repository {
         .bind(sha256)
         .execute(self.pool())
         .await?;
+        if result.rows_affected() == 0 {
+            return Err(sqlx::Error::RowNotFound);
+        }
         Ok(())
     }
 
     /// Check if a given dataset+sha256 was already downloaded (idempotency).
-    pub async fn bulk_import_exists(&self, dataset_name: &str, sha256: &str) -> Result<bool, sqlx::Error> {
+    pub async fn bulk_import_exists(
+        &self,
+        dataset_name: &str,
+        sha256: &str,
+    ) -> Result<bool, sqlx::Error> {
         let row: Option<(bool,)> = sqlx::query_as(
             "SELECT true FROM fec_bulk_imports WHERE dataset_name = $1 AND sha256 = $2",
         )
@@ -593,6 +690,76 @@ impl Repository {
         .fetch_optional(self.pool())
         .await?;
         Ok(row.is_some())
+    }
+
+    /// Authorized House and Senate candidate committees for a two-year cycle.
+    pub async fn congressional_committee_ids(
+        &self,
+        election_cycle: i32,
+    ) -> Result<HashSet<String>, sqlx::Error> {
+        let ids: Vec<String> = sqlx::query_scalar(
+            r#"SELECT DISTINCT cc.committee_id
+               FROM fec_candidate_committees cc
+               JOIN fec_candidates candidate ON candidate.candidate_id = cc.candidate_id
+               WHERE cc.election_cycle = $1
+                 AND candidate.office IN ('H', 'S')"#,
+        )
+        .bind(election_cycle)
+        .fetch_all(self.pool())
+        .await?;
+        Ok(ids.into_iter().collect())
+    }
+
+    /// Preserve an official cross-file linkage that cannot yet satisfy FKs.
+    pub async fn record_fec_linkage_issue(
+        &self,
+        election_cycle: i32,
+        candidate_id: &str,
+        committee_id: &str,
+        issue_type: &str,
+        source_run_id: uuid::Uuid,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"INSERT INTO fec_linkage_issues
+               (election_cycle, candidate_id, committee_id, issue_type, source_run_id)
+               VALUES ($1, $2, $3, $4, $5)
+               ON CONFLICT (election_cycle, candidate_id, committee_id, issue_type)
+               DO UPDATE SET
+                 source_run_id = EXCLUDED.source_run_id,
+                 last_seen_at = now(),
+                 resolved = false,
+                 resolved_at = NULL"#,
+        )
+        .bind(election_cycle)
+        .bind(candidate_id)
+        .bind(committee_id)
+        .bind(issue_type)
+        .bind(source_run_id)
+        .execute(self.pool())
+        .await?;
+        Ok(())
+    }
+
+    pub async fn resolve_fec_linkage_issues(
+        &self,
+        election_cycle: i32,
+        candidate_id: &str,
+        committee_id: &str,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"UPDATE fec_linkage_issues
+               SET resolved = true, resolved_at = now()
+               WHERE election_cycle = $1
+                 AND candidate_id = $2
+                 AND committee_id = $3
+                 AND resolved = false"#,
+        )
+        .bind(election_cycle)
+        .bind(candidate_id)
+        .bind(committee_id)
+        .execute(self.pool())
+        .await?;
+        Ok(())
     }
 
     // ── Staging inserts (batched) ────────────────────────────────────────
@@ -612,33 +779,40 @@ impl Repository {
                 contributor_city, contributor_state, contributor_zip,
                 contributor_employer, contributor_occupation, transaction_date,
                 transaction_amount, other_id, tran_id, filing_num, memo_code,
-                memo_text, file_year, import_batch
-            ) "
+                memo_text, file_year, import_batch, record_kind, include_in_totals
+            ) ",
         );
         builder.push_values(rows, |mut b, row| {
+            let classification = crate::fec_bulk::classify::classify_individual(
+                row.transaction_type.as_deref(),
+                row.memo_code.as_deref(),
+                row.transaction_amount,
+            );
             b.push_bind(row.sub_id)
-             .push_bind(&row.committee_id)
-             .push_bind(row.amendment_ind.as_deref())
-             .push_bind(row.report_type.as_deref())
-             .push_bind(row.transaction_pgi.as_deref())
-             .push_bind(row.image_num.as_deref())
-             .push_bind(row.transaction_type.as_deref())
-             .push_bind(row.entity_type.as_deref())
-             .push_bind(row.contributor_name.as_deref())
-             .push_bind(row.contributor_city.as_deref())
-             .push_bind(row.contributor_state.as_deref())
-             .push_bind(row.contributor_zip.as_deref())
-             .push_bind(row.contributor_employer.as_deref())
-             .push_bind(row.contributor_occupation.as_deref())
-             .push_bind(row.transaction_date)
-             .push_bind(row.transaction_amount)
-             .push_bind(row.other_id.as_deref())
-             .push_bind(row.tran_id.as_deref())
-             .push_bind(row.filing_num)
-             .push_bind(row.memo_code.as_deref())
-             .push_bind(row.memo_text.as_deref())
-             .push_bind(file_year)
-             .push_bind(import_batch);
+                .push_bind(&row.committee_id)
+                .push_bind(row.amendment_ind.as_deref())
+                .push_bind(row.report_type.as_deref())
+                .push_bind(row.transaction_pgi.as_deref())
+                .push_bind(row.image_num.as_deref())
+                .push_bind(row.transaction_type.as_deref())
+                .push_bind(row.entity_type.as_deref())
+                .push_bind(row.contributor_name.as_deref())
+                .push_bind(row.contributor_city.as_deref())
+                .push_bind(row.contributor_state.as_deref())
+                .push_bind(row.contributor_zip.as_deref())
+                .push_bind(row.contributor_employer.as_deref())
+                .push_bind(row.contributor_occupation.as_deref())
+                .push_bind(row.transaction_date)
+                .push_bind(row.transaction_amount)
+                .push_bind(row.other_id.as_deref())
+                .push_bind(row.tran_id.as_deref())
+                .push_bind(row.filing_num)
+                .push_bind(row.memo_code.as_deref())
+                .push_bind(row.memo_text.as_deref())
+                .push_bind(file_year)
+                .push_bind(import_batch)
+                .push_bind(classification.kind)
+                .push_bind(classification.include_in_totals);
         });
         builder.push(" ON CONFLICT (sub_id, import_batch) DO NOTHING");
         let result = builder.build().execute(self.pool()).await?;
@@ -660,33 +834,40 @@ impl Repository {
                 contributor_city, contributor_state, contributor_zip,
                 contributor_employer, contributor_occupation, transaction_date,
                 transaction_amount, other_id, tran_id, filing_num, memo_code,
-                memo_text, file_year, import_batch
-            ) "
+                memo_text, file_year, import_batch, relationship_type, include_in_totals
+            ) ",
         );
         builder.push_values(rows, |mut b, row| {
+            let classification = crate::fec_bulk::classify::classify_committee(
+                row.transaction_type.as_deref(),
+                row.memo_code.as_deref(),
+                row.transaction_amount,
+            );
             b.push_bind(row.sub_id)
-             .push_bind(&row.committee_id)
-             .push_bind(row.amendment_ind.as_deref())
-             .push_bind(row.report_type.as_deref())
-             .push_bind(row.transaction_pgi.as_deref())
-             .push_bind(row.image_num.as_deref())
-             .push_bind(row.transaction_type.as_deref())
-             .push_bind(row.entity_type.as_deref())
-             .push_bind(row.contributor_name.as_deref())
-             .push_bind(row.contributor_city.as_deref())
-             .push_bind(row.contributor_state.as_deref())
-             .push_bind(row.contributor_zip.as_deref())
-             .push_bind(row.contributor_employer.as_deref())
-             .push_bind(row.contributor_occupation.as_deref())
-             .push_bind(row.transaction_date)
-             .push_bind(row.transaction_amount)
-             .push_bind(row.other_id.as_deref())
-             .push_bind(row.tran_id.as_deref())
-             .push_bind(row.filing_num)
-             .push_bind(row.memo_code.as_deref())
-             .push_bind(row.memo_text.as_deref())
-             .push_bind(file_year)
-             .push_bind(import_batch);
+                .push_bind(&row.committee_id)
+                .push_bind(row.amendment_ind.as_deref())
+                .push_bind(row.report_type.as_deref())
+                .push_bind(row.transaction_pgi.as_deref())
+                .push_bind(row.image_num.as_deref())
+                .push_bind(row.transaction_type.as_deref())
+                .push_bind(row.entity_type.as_deref())
+                .push_bind(row.contributor_name.as_deref())
+                .push_bind(row.contributor_city.as_deref())
+                .push_bind(row.contributor_state.as_deref())
+                .push_bind(row.contributor_zip.as_deref())
+                .push_bind(row.contributor_employer.as_deref())
+                .push_bind(row.contributor_occupation.as_deref())
+                .push_bind(row.transaction_date)
+                .push_bind(row.transaction_amount)
+                .push_bind(row.other_id.as_deref())
+                .push_bind(row.tran_id.as_deref())
+                .push_bind(row.filing_num)
+                .push_bind(row.memo_code.as_deref())
+                .push_bind(row.memo_text.as_deref())
+                .push_bind(file_year)
+                .push_bind(import_batch)
+                .push_bind(classification.kind)
+                .push_bind(classification.include_in_totals);
         });
         builder.push(" ON CONFLICT (sub_id, import_batch) DO NOTHING");
         let result = builder.build().execute(self.pool()).await?;
@@ -718,7 +899,7 @@ impl Repository {
         .bind(row.party.as_deref())
         .bind(row.state.as_deref())
         .bind(row.treasurer_name.as_deref())
-        .bind(row.candidate_id.as_deref().and_then(|_| None::<uuid::Uuid>))
+        .bind(None::<uuid::Uuid>)
         .execute(self.pool())
         .await?;
         Ok(())
@@ -729,6 +910,12 @@ impl Repository {
         &self,
         row: &crate::fec_bulk::parse::CclRow,
     ) -> Result<(), sqlx::Error> {
+        let election_cycle = row.election_cycle().ok_or_else(|| {
+            sqlx::Error::Protocol(format!(
+                "candidate-committee linkage {} / {} has no FEC cycle",
+                row.candidate_id, row.committee_id
+            ))
+        })?;
         sqlx::query(
             r#"INSERT INTO fec_candidate_committees
                (candidate_id, committee_id, election_cycle, committee_type, committee_designation, linkage_id)
@@ -739,7 +926,7 @@ impl Repository {
         )
         .bind(&row.candidate_id)
         .bind(&row.committee_id)
-        .bind(row.candidate_election_year.unwrap_or(0))
+        .bind(election_cycle)
         .bind(row.committee_type.as_deref())
         .bind(row.committee_designation.as_deref())
         .bind(row.linkage_id)
@@ -756,13 +943,29 @@ impl Repository {
         &self,
         election_cycle: i32,
         import_batch: uuid::Uuid,
+        source_run_id: uuid::Uuid,
     ) -> Result<(), sqlx::Error> {
-        crate::fec_bulk::canonicalize::canonicalize_individuals(self.pool(), election_cycle, import_batch).await?;
-        crate::fec_bulk::canonicalize::canonicalize_committee_txns(self.pool(), election_cycle, import_batch).await?;
-        crate::fec_bulk::rankings::build_donor_rankings(self.pool(), election_cycle).await?;
-        crate::fec_bulk::rankings::build_committee_rankings(self.pool(), election_cycle).await?;
-        crate::fec_bulk::rankings::refresh_funding_mv(self.pool()).await?;
-        crate::fec_bulk::canonicalize::clear_staging_batch(self.pool(), import_batch).await?;
+        let mut transaction = self.pool().begin().await?;
+        crate::fec_bulk::canonicalize::canonicalize_individuals(
+            &mut transaction,
+            election_cycle,
+            import_batch,
+            source_run_id,
+        )
+        .await?;
+        crate::fec_bulk::canonicalize::canonicalize_committee_txns(
+            &mut transaction,
+            election_cycle,
+            import_batch,
+            source_run_id,
+        )
+        .await?;
+        crate::fec_bulk::rankings::build_donor_rankings(&mut transaction, election_cycle).await?;
+        crate::fec_bulk::rankings::build_committee_rankings(&mut transaction, election_cycle)
+            .await?;
+        crate::fec_bulk::rankings::refresh_funding_mv(&mut transaction).await?;
+        crate::fec_bulk::canonicalize::clear_staging_batch(&mut transaction, import_batch).await?;
+        transaction.commit().await?;
         Ok(())
     }
 
@@ -775,51 +978,65 @@ impl Repository {
         bioguide_id: &str,
         cycle: i32,
     ) -> Result<Option<MemberFunding>, sqlx::Error> {
-        // Look up FEC candidate_id from member_identifiers
-        let fec_id: Option<(String,)> = sqlx::query_as(
-            "SELECT value FROM member_identifiers WHERE bioguide_id = $1 AND scheme = 'fec'"
+        // A member can have multiple FEC candidate IDs after changing chamber
+        // or district. Aggregate every official ID for the selected cycle.
+        let candidate_ids: Vec<String> = sqlx::query_scalar(
+            "SELECT DISTINCT value FROM member_identifiers
+             WHERE bioguide_id = $1 AND scheme = 'fec'",
         )
         .bind(bioguide_id)
-        .fetch_optional(self.pool())
+        .fetch_all(self.pool())
         .await?;
-
-        let candidate_id = match fec_id {
-            Some((id,)) => id,
-            None => return Ok(None),
-        };
+        if candidate_ids.is_empty() {
+            return Ok(None);
+        }
 
         // Compute totals from canonical tables via candidate-committee crosswalk.
         // This is the correct source when bulk data has been ingested.
-        let totals: Option<(f64, f64)> = sqlx::query_as(
+        let totals: Option<(f64, f64, f64, f64)> = sqlx::query_as(
             r#"
             WITH my_committees AS (
                 SELECT committee_id FROM fec_candidate_committees
-                WHERE candidate_id = $1 AND election_cycle = $2
+                WHERE candidate_id = ANY($1::text[]) AND election_cycle = $2
             )
             SELECT
-                COALESCE((SELECT SUM(amount) FROM fec_canonical_individual_receipts
+                COALESCE((SELECT SUM(amount)::double precision FROM fec_canonical_individual_receipts
                           WHERE committee_id IN (SELECT committee_id FROM my_committees)
-                            AND election_cycle = $2 AND is_current = true), 0),
-                COALESCE((SELECT SUM(amount) FROM fec_canonical_committee_receipts
+                            AND election_cycle = $2
+                            AND is_current = true
+                            AND include_in_totals = true), 0),
+                COALESCE((SELECT SUM(amount)::double precision FROM fec_canonical_committee_receipts
                           WHERE recipient_committee_id IN (SELECT committee_id FROM my_committees)
-                            AND election_cycle = $2 AND is_current = true), 0)
+                            AND election_cycle = $2
+                            AND is_current = true
+                            AND include_in_totals = true), 0),
+                COALESCE((SELECT SUM(amount)::double precision FROM fec_independent_expenditures
+                          WHERE candidate_id = ANY($1::text[])
+                            AND election_cycle = $2
+                            AND support_oppose = 'S'), 0),
+                COALESCE((SELECT SUM(amount)::double precision FROM fec_independent_expenditures
+                          WHERE candidate_id = ANY($1::text[])
+                            AND election_cycle = $2
+                            AND support_oppose = 'O'), 0)
             "#,
         )
-        .bind(&candidate_id)
+        .bind(&candidate_ids)
         .bind(cycle)
         .fetch_optional(self.pool())
         .await?;
 
         // Get top donors from rankings
         let top_donors: Vec<DonorSummary> = sqlx::query_as::<_, DonorRow>(
-            r#"SELECT display_name AS contributor_name,
-                      total_amount::double precision AS amount,
-                      contribution_count::bigint AS cnt
+            r#"SELECT MAX(display_name) AS contributor_name,
+                      SUM(total_amount)::double precision AS amount,
+                      SUM(contribution_count)::bigint AS cnt
                FROM fec_candidate_donor_rankings
-               WHERE candidate_id = $1 AND election_cycle = $2
-               ORDER BY rank ASC"#,
+               WHERE candidate_id = ANY($1::text[]) AND election_cycle = $2
+               GROUP BY donor_key
+               ORDER BY SUM(total_amount) DESC, SUM(contribution_count) DESC
+               LIMIT 20"#,
         )
-        .bind(&candidate_id)
+        .bind(&candidate_ids)
         .bind(cycle)
         .fetch_all(self.pool())
         .await?
@@ -831,18 +1048,24 @@ impl Repository {
         })
         .collect();
 
-        // Get top committees from rankings
-        let top_committees: Vec<CommitteeFunding> = sqlx::query_as::<_, CommFundingRow>(
+        // Keep direct contributions, authorized-committee transfers, and later
+        // leadership/outside-spending relationships distinct.
+        let committee_relationships: Vec<CommitteeFunding> = sqlx::query_as::<_, CommFundingRow>(
             r#"SELECT r.committee_id,
-                      COALESCE(fc.name, r.committee_id) AS committee_name,
-                      r.total_amount::double precision AS amount
+                      MAX(COALESCE(fc.name, r.committee_name)) AS committee_name,
+                      SUM(r.total_amount)::double precision AS amount,
+                      r.ranking_type AS relationship_type,
+                      CASE WHEN bool_or(r.committee_resolution_status = 'unresolved')
+                           THEN 'unresolved' ELSE 'resolved' END AS resolution_status,
+                      SUM(r.transaction_count)::bigint AS transaction_count
                FROM fec_candidate_committee_rankings r
                LEFT JOIN fec_committees fc ON fc.committee_id = r.committee_id
-               WHERE r.candidate_id = $1 AND r.election_cycle = $2
-                 AND r.ranking_type = 'contribution'
-               ORDER BY r.rank ASC"#,
+               WHERE r.candidate_id = ANY($1::text[]) AND r.election_cycle = $2
+               GROUP BY r.committee_id, r.ranking_type
+               ORDER BY r.ranking_type, SUM(r.total_amount) DESC
+               LIMIT 80"#,
         )
-        .bind(&candidate_id)
+        .bind(&candidate_ids)
         .bind(cycle)
         .fetch_all(self.pool())
         .await?
@@ -851,25 +1074,131 @@ impl Repository {
             committee_id: c.committee_id,
             committee_name: c.committee_name,
             amount: c.amount,
+            relationship_type: Some(c.relationship_type),
+            resolution_status: Some(c.resolution_status),
+            transaction_count: Some(c.transaction_count),
         })
         .collect();
+        let top_committees: Vec<CommitteeFunding> = committee_relationships
+            .iter()
+            .filter(|committee| committee.relationship_type.as_deref() == Some("contribution"))
+            .cloned()
+            .collect();
 
-        let has_rankings = !top_donors.is_empty() || !top_committees.is_empty();
-        let (indiv, pac) = totals.unwrap_or_default();
+        let network_funding: Vec<InfluenceNetworkFunding> = sqlx::query_as::<_, NetworkFundingRow>(
+            r#"SELECT network.network_slug, network.display_name,
+                          member.direct_amount::double precision AS direct_pac,
+                          member.support_ie_amount::double precision AS independent_supporting,
+                          member.oppose_ie_amount::double precision AS independent_opposing,
+                          'verified'::text AS confidence
+                   FROM influence_network_member_mv member
+                   JOIN influence_networks network
+                     ON network.network_slug = member.network_slug
+                   WHERE member.bioguide_id = $1 AND member.cycle = $2
+                   ORDER BY member.direct_amount + member.support_ie_amount
+                            + member.oppose_ie_amount DESC"#,
+        )
+        .bind(bioguide_id)
+        .bind(cycle)
+        .fetch_all(self.pool())
+        .await?
+        .into_iter()
+        .map(|network| InfluenceNetworkFunding {
+            network_slug: network.network_slug,
+            display_name: network.display_name,
+            direct_pac: network.direct_pac,
+            independent_supporting: network.independent_supporting,
+            independent_opposing: network.independent_opposing,
+            confidence: network.confidence,
+        })
+        .collect();
+        let leadership_pacs: Vec<LeadershipPacFunding> = sqlx::query_as(
+            r#"SELECT committee_id, committee_name,
+                      NULLIF(sponsor_name, '') AS sponsor_name,
+                      cash_on_hand::double precision AS cash_on_hand,
+                      total_disbursements::double precision AS total_disbursements,
+                      total_receipts::double precision AS total_receipts,
+                      coverage_end_date,
+                      NULLIF(filing_url, '') AS source_url,
+                      sponsor_resolution_status AS resolution_status
+               FROM fec_leadership_pacs
+               WHERE sponsor_bioguide_id = $1 AND election_cycle = $2
+               ORDER BY total_receipts DESC NULLS LAST, committee_name"#,
+        )
+        .bind(bioguide_id)
+        .bind(cycle)
+        .fetch_all(self.pool())
+        .await?;
+        let has_bulk_source: bool = sqlx::query_scalar(
+            r#"SELECT COUNT(DISTINCT dataset_name) = 2
+               FROM fec_bulk_imports
+               WHERE election_cycle = $1
+                 AND status = 'canonicalized'
+                 AND dataset_name IN ($2, $3)"#,
+        )
+        .bind(cycle)
+        .bind(format!("indiv{}", cycle % 100))
+        .bind(format!("oth{}", cycle % 100))
+        .fetch_one(self.pool())
+        .await?;
+        let has_ie_source: bool = sqlx::query_scalar(
+            "SELECT EXISTS(
+               SELECT 1 FROM fec_bulk_imports
+               WHERE election_cycle = $1
+                 AND dataset_name = $2
+                 AND status = 'canonicalized'
+             )",
+        )
+        .bind(cycle)
+        .bind(format!("independent_expenditure_{cycle}"))
+        .fetch_one(self.pool())
+        .await?;
+        let has_rankings =
+            !top_donors.is_empty() || !top_committees.is_empty() || !network_funding.is_empty();
+        let (indiv, pac, ie_supporting, ie_opposing) = totals.unwrap_or_default();
         let direct = indiv + pac;
 
+        let unresolved_committees = committee_relationships
+            .iter()
+            .filter(|committee| committee.resolution_status.as_deref() == Some("unresolved"))
+            .count();
+        let mut warnings = vec![
+            "Named donor rankings cover itemized receipts reported with entity type IND; unitemized contributions have no public donor identity."
+                .to_string(),
+            "Committee contributions and authorized-committee transfers are reported as separate relationship types."
+                .to_string(),
+            "Independent expenditures are outside spending and were not received or controlled by the candidate's campaign."
+                .to_string(),
+        ];
+        if !has_ie_source {
+            warnings.push(
+                "Independent expenditures are unavailable until the separate FEC outside-spending file is canonicalized."
+                    .to_string(),
+            );
+        }
+        if !has_rankings {
+            warnings.push(
+                "No canonical FEC rankings are loaded for this member and cycle.".to_string(),
+            );
+        }
+        if unresolved_committees > 0 {
+            warnings.push(format!(
+                "{unresolved_committees} ranked committee IDs are absent from the cycle committee-master snapshot and remain unresolved."
+            ));
+        }
         let provenance = ProvenanceSummary {
             sources: vec![ProvenanceSource {
-                source: "openfec".to_string(),
-                status: if has_rankings { "loaded" } else { "not_seeded" }.to_string(),
+                source: "fec_bulk".to_string(),
+                status: if has_bulk_source {
+                    "loaded"
+                } else {
+                    "not_seeded"
+                }
+                .to_string(),
                 fetched_at: None,
                 confidence: Some("verified".to_string()),
             }],
-            warnings: if !has_rankings {
-                vec!["No FEC transactions loaded. Run fec-bulk ingest for this cycle.".to_string()]
-            } else {
-                Vec::new()
-            },
+            warnings,
         };
 
         Ok(Some(MemberFunding {
@@ -878,15 +1207,16 @@ impl Repository {
             direct_receipts: direct,
             pac_receipts: pac,
             individual_receipts: indiv,
-            independent_expenditures_supporting: 0.0,
-            independent_expenditures_opposing: 0.0,
+            independent_expenditures_supporting: ie_supporting,
+            independent_expenditures_opposing: ie_opposing,
             top_donors,
             top_committees,
-            influence_networks: Vec::new(),
-            has_successful_fec_run: has_rankings,
+            committee_relationships,
+            leadership_pacs,
+            influence_networks: network_funding,
+            has_successful_fec_run: has_bulk_source && has_ie_source,
             provenance,
         }))
-
     }
 }
 // ── Private row types ───────────────────────────────────────────────────
@@ -912,6 +1242,9 @@ struct CommFundingRow {
     committee_id: String,
     committee_name: String,
     amount: f64,
+    relationship_type: String,
+    resolution_status: String,
+    transaction_count: i64,
 }
 
 #[derive(sqlx::FromRow)]

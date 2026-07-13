@@ -4,10 +4,12 @@ import type { ProvenanceSummary } from "./provenance";
 export type InfluenceNetwork = {
   network_slug: string;
   display_name: string;
+  aliases: string[];
   description: string;
   category: string;
   confidence: string;
   source_citation: string;
+  cycle?: number | null;
   committees: Array<{
     committee_id: string;
     committee_name: string;
@@ -21,6 +23,7 @@ export type InfluenceNetwork = {
 export type InfluenceNetworkSummary = {
   network_slug: string;
   display_name: string;
+  aliases: string[];
   description: string;
   category: string;
   confidence: string;
@@ -41,8 +44,28 @@ export type InfluenceNetworkFinancials = {
   total_independent_supporting: number;
   total_independent_opposing: number;
   total_all: number;
-  committees: Array<{ committee_id: string; committee_name: string; total_received: number }>;
-  top_recipients: Array<{ bioguide_id: string; member_name: string; amount: number }>;
+  committees: Array<{
+    committee_id: string;
+    committee_name: string;
+    role: string;
+    direct_contributions: number;
+    independent_supporting: number;
+    independent_opposing: number;
+    total: number;
+  }>;
+  top_recipients: Array<{
+    bioguide_id: string;
+    first_name: string;
+    last_name: string;
+    party: string;
+    chamber: string;
+    state: string;
+    total_received: number;
+    direct_contributions: number;
+    independent_supporting: number;
+    independent_opposing: number;
+    total_activity: number;
+  }>;
 };
 
 export async function getInfluenceNetworks(): Promise<InfluenceNetworkSummary[]> {

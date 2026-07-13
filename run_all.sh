@@ -25,6 +25,39 @@ set -a
 source .env
 set +a
 
+# ── Ensure PostgreSQL is running ──────────────────────────────────────────────
+pg_ready() {
+    if command -v pg_isready &> /dev/null; then
+        pg_isready -q && return 0
+    fi
+    if command -v psql &> /dev/null; then
+        psql -h localhost -U congress_tracker -d congress_tracker -c "SELECT 1" &>/dev/null && return 0
+    fi
+    return 1
+}
+
+if ! pg_ready; then
+    echo "PostgreSQL is not running. Attempting to start..."
+    if command -v systemctl &> /dev/null; then
+        sudo systemctl start postgresql 2>/dev/null || true
+    elif command -v brew &> /dev/null; then
+        brew services start postgresql 2>/dev/null || true
+    fi
+    # Wait up to 10s for PG to accept connections.
+    for i in $(seq 1 20); do
+        if pg_ready; then
+            echo "PostgreSQL is ready."
+            break
+        fi
+        sleep 0.5
+    done
+    if ! pg_ready; then
+        echo "ERROR: PostgreSQL failed to start."
+        echo "Check: sudo systemctl status postgresql"
+        exit 1
+    fi
+fi
+
 echo "Killing any process on ports 4020 and 3000..."
 # Kill any process using port 4020 or 3000
 for port in 4020 3000; do

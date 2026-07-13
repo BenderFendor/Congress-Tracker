@@ -1,0 +1,21 @@
+{
+  "classification": [
+    "timeout"
+  ],
+  "command": [
+    "env",
+    "DATABASE_URL=postgres://congress_tracker:congress_tracker@127.0.0.1:5432/congress_tracker",
+    "FEC_ARCHIVE_DIR=/mnt/Big storage/congress-tracker/fec",
+    "target/debug/ingest",
+    "fec-bulk",
+    "--cycles",
+    "2022"
+  ],
+  "cwd": "/home/bender/classwork/congress-tracker/backend",
+  "duration_seconds": 1800.156,
+  "max_rss_kb": 32340,
+  "returncode": null,
+  "stderr_tail": "",
+  "stdout_tail": "2026-07-11T16:55:50.256679Z  INFO sqlx::postgres::notice: relation \"_sqlx_migrations\" already exists, skipping\n2026-07-11T16:55:52.239558Z  INFO intel_backend::fec_bulk::download: FEC archive stored dataset=\"cn22\" path=/mnt/Big storage/congress-tracker/fec/raw/2022/cn22/84f01fb2d645fc4acf092b29329dd2715a85fc4ad7c6e7b9f1dfb8556db24b77.zip compressed_bytes=313255 sha256=\"84f01fb2d645fc4acf092b29329dd2715a85fc4ad7c6e7b9f1dfb8556db24b77\"\n2026-07-11T16:55:54.030778Z  INFO intel_backend::fec_bulk::download: FEC archive stored dataset=\"cm22\" path=/mnt/Big storage/congress-tracker/fec/raw/2022/cm22/dd9bdd63e887d60eef4ba8981ed19b47cc5b97bba15f7515f557d26ed941dca0.zip compressed_bytes=838268 sha256=\"dd9bdd63e887d60eef4ba8981ed19b47cc5b97bba15f7515f557d26ed941dca0\"\n2026-07-11T16:55:55.748331Z  INFO intel_backend::fec_bulk::download: FEC archive stored dataset=\"ccl22\" path=/mnt/Big storage/congress-tracker/fec/raw/2022/ccl22/d08e92e56f83fdddaf72b04bb3d90f9422e4935e21d79ed34f335de1365c206c.zip compressed_bytes=84031 sha256=\"d08e92e56f83fdddaf72b04bb3d90f9422e4935e21d79ed34f335de1365c206c\"",
+  "timed_out": true
+}

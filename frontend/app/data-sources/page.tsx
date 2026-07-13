@@ -1,15 +1,19 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Shield, ExternalLink, Clock, Database, Lock, Layers } from "lucide-react"
+import { useEffect, useState } from "react"
+import { Shield, ExternalLink, Clock, Lock, Layers } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { ArchivePage, DataState } from "@/components/ui/archive-ui"
+import { CompactMasthead } from "@/components/ui/mockup-visuals"
 
 interface SourceRunRecord {
   id?: string
   source: string
   endpoint?: string
-  status: string
+  status?: string | null
+  freshness?: string
+  fetched_at?: string
   started_at?: string
   finished_at?: string
   rows_seen?: number
@@ -20,11 +24,12 @@ interface SourceRunRecord {
 export default function DataSourcesPage() {
   const [sourceRuns, setSourceRuns] = useState<SourceRunRecord[]>([])
   const [loadingRuns, setLoadingRuns] = useState(true)
+  const [sourceRunsError, setSourceRunsError] = useState<string | null>(null)
 
   useEffect(() => {
     async function fetchSourceRuns() {
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4020"}/api/admin/source-runs`)
+        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4020"}/api/sources/status`)
         if (res.ok) {
           const data = await res.json()
           if (Array.isArray(data)) {
@@ -32,9 +37,11 @@ export default function DataSourcesPage() {
           } else if (data && Array.isArray(data.runs)) {
             setSourceRuns(data.runs)
           }
+        } else {
+          setSourceRunsError(`Freshness request failed (${res.status})`)
         }
-      } catch {
-        // Backend offline or endpoint not yet seeded; keep default state
+      } catch (error) {
+        setSourceRunsError(error instanceof Error ? error.message : "Freshness request failed")
       } finally {
         setLoadingRuns(false)
       }
@@ -141,21 +148,15 @@ export default function DataSourcesPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background py-10 px-4 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-6xl space-y-12">
-        {/* Page Header */}
-        <div className="space-y-4 border-b border-border pb-8">
-          <div className="flex items-center gap-2 text-accent">
-            <Database className="h-6 w-6" />
-            <span className="text-sm font-semibold uppercase tracking-wider">System Architecture</span>
-          </div>
-          <h1 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
-            Data Sources & Pipeline Freshness
-          </h1>
-          <p className="max-w-3xl text-lg text-muted-foreground leading-relaxed">
-            CongressTracker unifies disparate legislative, campaign finance, lobbying, and financial disclosure datasets into a single PostgreSQL-backed intelligence layer. Every record preserves strict data provenance and verification audit trails.
-          </p>
-        </div>
+    <ArchivePage>
+      <div className="editorial-reference-page">
+        <CompactMasthead
+          eyebrow="System architecture / source register"
+          title="Data sources &"
+          accent="freshness."
+          description="A public register of the official, academic, and community records behind CongressTracker, with live pipeline state kept separate from source coverage."
+        />
+        <div className="editorial-reference-content">
 
         {/* Postgres-Backed Source Freshness */}
         <Card className="border-border bg-card shadow-sm">
@@ -175,7 +176,9 @@ export default function DataSourcesPage() {
           </CardHeader>
           <CardContent>
             {loadingRuns ? (
-              <div className="py-6 text-center text-sm text-muted-foreground">Checking live ingestion pipeline runs...</div>
+              <DataState title="Checking pipeline freshness" description="Requesting the latest canonical source-run records." />
+            ) : sourceRunsError ? (
+              <DataState kind="error" title="Pipeline freshness unavailable" description={`${sourceRunsError}. The source catalog remains available, but no live run status is inferred.`} />
             ) : sourceRuns.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
@@ -193,19 +196,19 @@ export default function DataSourcesPage() {
                         <td className="py-3 font-mono font-medium text-foreground">{run.source}</td>
                         <td className="py-3">
                           <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                            run.status === "success" ? "bg-green-500/10 text-green-700 dark:text-green-400" :
+                            (run.status || run.freshness) === "success" || run.freshness === "fresh" ? "bg-green-500/10 text-green-700 dark:text-green-400" :
                             run.status === "running" ? "bg-blue-500/10 text-blue-700 dark:text-blue-400" :
-                            run.status === "partial" ? "bg-amber-500/10 text-amber-700 dark:text-amber-400" :
+                            run.status === "partial" || run.freshness === "stale" ? "bg-amber-500/10 text-amber-700 dark:text-amber-400" :
                             "bg-red-500/10 text-red-700 dark:text-red-400"
                           }`}>
-                            {run.status.toUpperCase()}
+                            {(run.status || run.freshness || "missing").toUpperCase()}
                           </span>
                         </td>
                         <td className="py-3 text-muted-foreground">
-                          {run.rows_written !== undefined ? `${run.rows_written} written` : `${run.rows_seen || 0} seen`}
+                          {run.rows_written != null ? `${run.rows_written} written` : run.rows_seen != null ? `${run.rows_seen} seen` : "Not loaded"}
                         </td>
                         <td className="py-3 text-muted-foreground">
-                          {run.finished_at ? new Date(run.finished_at).toLocaleString() : run.started_at ? new Date(run.started_at).toLocaleString() : "Pending"}
+                          {run.fetched_at ? new Date(run.fetched_at).toLocaleString() : run.finished_at ? new Date(run.finished_at).toLocaleString() : run.started_at ? new Date(run.started_at).toLocaleString() : "Not loaded"}
                         </td>
                       </tr>
                     ))}
@@ -347,6 +350,7 @@ export default function DataSourcesPage() {
           </div>
         </div>
       </div>
-    </div>
+      </div>
+    </ArchivePage>
   )
 }
