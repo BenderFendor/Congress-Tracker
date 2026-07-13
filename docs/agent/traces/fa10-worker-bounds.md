@@ -26,6 +26,17 @@ and explicitly opted-in burst profiles.
 - `cargo check -p intel_worker`: passed.
 - `cargo test -p intel_worker --bin intel_worker`: passed, 26 tests.
 - `cargo clippy -p intel_worker --all-targets -- -D warnings`: passed.
+- `cargo build -p intel_worker --bin intel_worker`: passed; rebuilt the exact
+  current-checkout binary before the live exercise.
+- Live PostgreSQL reclaim exercise against orphaned job `31878`: passed. The
+  job began `running` under owner
+  `8e098c40-f261-45e9-b0aa-9edce9089e59`, was reclaimed by worker
+  `05726add-a19f-4ecc-8241-ee19a116370f`, advanced from attempt `0` to `1`,
+  and renewed its lease while native parsing ran.
+- Stale-owner terminal-update injection: passed with zero affected rows; the
+  replacement owner and `running` state remained unchanged.
+- Controlled worker shutdown and cleanup: passed; the proof job was returned
+  to `pending` with no owner so the exercise did not strand a live lease.
 - `git diff --check`: passed.
 
 ## Tests added
@@ -38,8 +49,9 @@ and explicitly opted-in burst profiles.
 - Terminal job transitions reject missing or ambiguous ownership.
 
 Existing `job_policy` tests continue to prove interrupted-job retry exhaustion
-and bounded retry delays. A populated PostgreSQL multi-worker fault-injection
-run remains release evidence rather than a deterministic unit test.
+and bounded retry delays. The populated PostgreSQL exercise additionally proves
+real orphan reclaim, lease renewal, and rejection of the former owner's
+terminal transition.
 
 ## Assumptions
 
@@ -53,9 +65,10 @@ run remains release evidence rather than a deterministic unit test.
 
 ## Risk tier
 
-Medium. Ownership checks and native resource enforcement are deterministic, but
-a live two-worker PostgreSQL kill/reclaim exercise is still required for full
-operational proof.
+Medium. Ownership checks and native resource enforcement are deterministic and
+the live PostgreSQL reclaim path has been exercised against a genuine orphaned
+job. Deployment-specific pressure behavior remains observable through worker
+logs and health endpoints.
 
 ## Rollback
 
@@ -64,6 +77,7 @@ restores the former one-shot lease and unbounded native-process behavior.
 
 ## Status
 
-Implemented in commit `c5612c4`. The integrated `scripts/self-test` passed.
-Live multi-worker fault injection remains a release-level proof item, so FA-10
-and its final tag remain open.
+Done. Implemented in commit `c5612c4`; the integrated `scripts/self-test`
+passed, and the live orphan-reclaim/old-owner rejection exercise passed on
+2026-07-12. The proof worker was stopped and its claimed job was safely returned
+to `pending` after verification.

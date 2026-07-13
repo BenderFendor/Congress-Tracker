@@ -189,7 +189,7 @@ where applicable, worksheet, focused commit, and milestone tag all exist.
 | FA-07 | Critical | M5 | M5 was labeled complete although M3 and major M5 requirements remain open. | Keep M5 open until every M5 exit criterion and dependency passes. |
 | FA-08 | Critical | M5 | The money-votes design names cycle and recipient-committee-type summaries as donor-industry data; the documented `network_type` column does not exist. | Approve a licensed donor-industry source and schema; define numeric sample gates; reconcile every pattern to receipts and votes. |
 | FA-09 | Critical | M2 | Nullable transaction conflict keys permit duplicate semantic rows; annual and PTR persistence is not document-atomic; one row can mark a partial filing parsed. | Add null-safe uniqueness and cleanup; use document-scoped transactions; require section, page, row, and confidence completeness before success. |
-| FA-10 | Critical | M2, M6 | Worker leases are not renewed and OCR subprocesses have no hard time, page, output, memory, disk, or ownership bounds. | Add lease renewal and owner-checked completion; enforce subprocess and resource budgets; pass kill/retry and Pi/Ryzen coexistence tests. |
+| FA-10 | Closed | M2, M6 | Worker leases were not renewed and OCR subprocesses lacked hard time, page, output, memory, disk, and ownership bounds. | Closed by lease renewal, owner-checked completion, bounded native subprocesses, deterministic resource-profile tests, and a live orphan-reclaim/stale-owner rejection exercise. |
 | FA-11 | High | M1 | The default receipts page converts absent amount bounds to zero and candidate links use the wrong search parameter. | Test an unfiltered default request, filter round trips, candidate links, result totals, and latency. |
 | FA-12 | High | M5 | County results are absent and projected county rings can render as full-extent complement rectangles. | Normalize geometry, compare representative shapes and bounds, load certified results, and add screenshot plus exact-total tests. |
 | FA-13 | High | M5 | Candidate and Member directories silently truncate; candidate committee fields are discarded; candidate dossiers do not exist. | Add paginated totals and server filters, preserve committee identity, cover every current Member, and implement candidate dossiers. |
@@ -254,11 +254,13 @@ where applicable, worksheet, focused commit, and milestone tag all exist.
   success requires A/C/D/E/G section and row completeness. Evidence:
   `docs/agent/traces/fa09-disclosure-atomicity.md`, tag
   `fa09-disclosure-atomicity`.
-- **FA-10 implementation complete, live reclaim proof pending:** running jobs
-  renew leases; terminal transitions require the owner; native parsing enforces
-  process-group, time, CPU, memory, input, output, page, and scratch bounds with
-  Pi/interactive/burst profiles. A live two-worker kill/reclaim exercise remains
-  required before closure. Evidence: `docs/agent/traces/fa10-worker-bounds.md`.
+- **FA-10 closed:** running jobs renew leases; terminal transitions require the
+  owner; native parsing enforces process-group, time, CPU, memory, input,
+  output, page, and scratch bounds with Pi/interactive/burst profiles. A live
+  PostgreSQL exercise reclaimed orphaned job `31878`, renewed it under a
+  replacement owner, and proved the former owner affected zero rows when it
+  attempted a terminal update. Evidence:
+  `docs/agent/traces/fa10-worker-bounds.md`, tag `fa10-worker-bounds`.
 - **FA-16 closed:** populated bill detail no longer fails NUMERIC decoding,
   sponsors load in one joined query, finance uses two bounded bulk queries for
   the bill cycle, and direct/support/opposition stay separate. H.R. 8205 loaded
