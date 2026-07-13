@@ -33,6 +33,55 @@ pub fn senate_refresh_enabled(terms_acceptance: Option<&str>) -> bool {
     terms_acceptance == Some("1")
 }
 
+pub fn lda_refresh_years(current_year: i32, configured: Option<&str>) -> Vec<i32> {
+    let mut years = configured
+        .into_iter()
+        .flat_map(|value| value.split(','))
+        .filter_map(|value| value.trim().parse::<i32>().ok())
+        .filter(|year| (2012..=current_year).contains(year))
+        .collect::<Vec<_>>();
+    if years.is_empty() {
+        years = vec![
+            current_year.saturating_sub(1).max(2012),
+            current_year.max(2012),
+        ];
+    }
+    years.sort_unstable();
+    years.dedup();
+    if years.len() > 4 {
+        years.drain(..years.len() - 4);
+    }
+    years
+}
+
+pub fn bounded_lda_page_size(value: Option<&str>) -> u32 {
+    value
+        .and_then(|raw| raw.parse().ok())
+        .unwrap_or(100)
+        .clamp(10, 100)
+}
+
+pub fn bounded_lda_page_limit(value: Option<&str>) -> u32 {
+    value
+        .and_then(|raw| raw.parse().ok())
+        .unwrap_or(50)
+        .clamp(1, 100)
+}
+
+pub fn lda_job_identity(year: i32, page: u32, page_size: u32) -> String {
+    format!("filings:{year}:page:{page}:size:{page_size}")
+}
+
+pub fn parse_lda_job_identity(value: &str) -> Option<(u32, u32)> {
+    let parts = value.split(':').collect::<Vec<_>>();
+    match parts.as_slice() {
+        ["filings", _, "page", page, "size", page_size] => {
+            Some((page.parse().ok()?, page_size.parse().ok()?))
+        }
+        _ => None,
+    }
+}
+
 pub fn retry_delay_seconds(attempts: i32, fixed_delay_seconds: Option<i64>, jitter: u64) -> i64 {
     fixed_delay_seconds.unwrap_or_else(|| {
         let exponent = u32::try_from(attempts.clamp(0, 10)).unwrap_or(0);
@@ -68,6 +117,24 @@ mod tests {
         assert!(!senate_refresh_enabled(Some("true")));
         assert!(!senate_refresh_enabled(Some("0")));
         assert!(senate_refresh_enabled(Some("1")));
+    }
+
+    #[test]
+    fn lda_refresh_scope_is_recent_deduplicated_and_bounded() {
+        assert_eq!(lda_refresh_years(2026, None), vec![2025, 2026]);
+        assert_eq!(
+            lda_refresh_years(2026, Some("2026, 2011,2024,2024,2023,2022,2021")),
+            vec![2022, 2023, 2024, 2026]
+        );
+        assert_eq!(lda_refresh_years(2012, Some("invalid")), vec![2012]);
+        assert_eq!(bounded_lda_page_size(None), 100);
+        assert_eq!(bounded_lda_page_size(Some("500")), 100);
+        assert_eq!(bounded_lda_page_limit(Some("0")), 1);
+        assert_eq!(bounded_lda_page_limit(Some("500")), 100);
+        let identity = lda_job_identity(2026, 51, 25);
+        assert_eq!(identity, "filings:2026:page:51:size:25");
+        assert_eq!(parse_lda_job_identity(&identity), Some((51, 25)));
+        assert_eq!(parse_lda_job_identity("filings:2026:page:51"), None);
     }
 
     #[test]

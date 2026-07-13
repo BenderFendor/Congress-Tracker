@@ -16,7 +16,7 @@ pub use types::{
 };
 
 /// The Senate LDA REST API base URL.
-pub const LDA_API_BASE: &str = "https://lda.senate.gov/api/v1";
+pub const LDA_API_BASE: &str = "https://lda.gov/api/v1";
 
 /// Client for the Senate Lobbying Disclosure Act (LDA) API.
 ///
@@ -25,6 +25,7 @@ pub const LDA_API_BASE: &str = "https://lda.senate.gov/api/v1";
 pub struct LobbyingClient {
     client: reqwest::Client,
     api_key: Option<String>,
+    base_url: String,
 }
 
 impl LobbyingClient {
@@ -40,6 +41,7 @@ impl LobbyingClient {
         Ok(Self {
             client: reqwest::Client::new(),
             api_key,
+            base_url: configured_base_url(),
         })
     }
 
@@ -48,6 +50,7 @@ impl LobbyingClient {
         Self {
             client: reqwest::Client::new(),
             api_key: Some(api_key.into()),
+            base_url: configured_base_url(),
         }
     }
 
@@ -56,6 +59,7 @@ impl LobbyingClient {
         Self {
             client: reqwest::Client::new(),
             api_key: None,
+            base_url: configured_base_url(),
         }
     }
 
@@ -63,12 +67,16 @@ impl LobbyingClient {
         self.api_key.as_ref().map(|key| format!("Token {}", key))
     }
 
+    fn endpoint(&self, path: &str) -> String {
+        format!("{}/{}/", self.base_url, path.trim_matches('/'))
+    }
+
     /// List lobbying filings matching the query criteria.
     pub async fn get_filings(
         &self,
         query: &FilingQuery,
     ) -> Result<PaginatedResponse<Filing>, LobbyingError> {
-        let url = format!("{}/filings/", LDA_API_BASE);
+        let url = self.endpoint("filings");
         let mut req = self.client.get(&url);
         if let Some(ref auth) = self.auth_header() {
             req = req.header("Authorization", auth);
@@ -88,7 +96,7 @@ impl LobbyingClient {
 
     /// Retrieve a single filing by UUID.
     pub async fn get_filing_by_id(&self, uuid: &str) -> Result<Filing, LobbyingError> {
-        let url = format!("{}/filings/{}/", LDA_API_BASE, uuid);
+        let url = self.endpoint(&format!("filings/{uuid}"));
         let mut req = self.client.get(&url);
         if let Some(ref auth) = self.auth_header() {
             req = req.header("Authorization", auth);
@@ -110,7 +118,7 @@ impl LobbyingClient {
         &self,
         query: &RegistrantQuery,
     ) -> Result<PaginatedResponse<Registrant>, LobbyingError> {
-        let url = format!("{}/registrants/", LDA_API_BASE);
+        let url = self.endpoint("registrants");
         let mut req = self.client.get(&url);
         if let Some(ref auth) = self.auth_header() {
             req = req.header("Authorization", auth);
@@ -133,7 +141,7 @@ impl LobbyingClient {
         &self,
         query: &ClientQuery,
     ) -> Result<PaginatedResponse<Client>, LobbyingError> {
-        let url = format!("{}/clients/", LDA_API_BASE);
+        let url = self.endpoint("clients");
         let mut req = self.client.get(&url);
         if let Some(ref auth) = self.auth_header() {
             req = req.header("Authorization", auth);
@@ -156,7 +164,7 @@ impl LobbyingClient {
         &self,
         query: &LobbyistQuery,
     ) -> Result<PaginatedResponse<Lobbyist>, LobbyingError> {
-        let url = format!("{}/lobbyists/", LDA_API_BASE);
+        let url = self.endpoint("lobbyists");
         let mut req = self.client.get(&url);
         if let Some(ref auth) = self.auth_header() {
             req = req.header("Authorization", auth);
@@ -179,7 +187,7 @@ impl LobbyingClient {
         &self,
         query: &ContributionQuery,
     ) -> Result<PaginatedResponse<Contribution>, LobbyingError> {
-        let url = format!("{}/contributions/", LDA_API_BASE);
+        let url = self.endpoint("contributions");
         let mut req = self.client.get(&url);
         if let Some(ref auth) = self.auth_header() {
             req = req.header("Authorization", auth);
@@ -207,6 +215,13 @@ impl LobbyingClient {
     }
 }
 
+fn configured_base_url() -> String {
+    std::env::var("LDA_API_BASE_URL")
+        .unwrap_or_else(|_| LDA_API_BASE.to_string())
+        .trim_end_matches('/')
+        .to_string()
+}
+
 impl Default for LobbyingClient {
     fn default() -> Self {
         Self::new()
@@ -221,6 +236,25 @@ mod tests {
     fn test_client_construction_without_key() {
         let client = LobbyingClient::new();
         assert!(client.api_key.is_none());
+        assert!(!client.base_url.ends_with('/'));
+    }
+
+    #[test]
+    fn official_endpoint_keeps_the_required_v1_prefix() {
+        let client = LobbyingClient {
+            client: reqwest::Client::new(),
+            api_key: None,
+            base_url: LDA_API_BASE.to_string(),
+        };
+        assert_eq!(LDA_API_BASE, "https://lda.gov/api/v1");
+        assert_eq!(
+            client.endpoint("filings"),
+            "https://lda.gov/api/v1/filings/"
+        );
+        assert_eq!(
+            client.endpoint("/filings/example-uuid/"),
+            "https://lda.gov/api/v1/filings/example-uuid/"
+        );
     }
 
     #[test]

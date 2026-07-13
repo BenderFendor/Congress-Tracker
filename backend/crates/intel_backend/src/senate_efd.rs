@@ -5,6 +5,7 @@
 //! links and the exact JSON response are staged first, so parser changes never
 //! require re-querying the public search endpoint.
 
+use chrono::Datelike;
 use serde_json::Value;
 
 use crate::annual_disclosures::{
@@ -59,6 +60,26 @@ pub fn looks_like_terms_page(body: &str) -> bool {
     body.contains("prohibition_agreement") || body.contains("agree to the following terms")
 }
 
+pub fn discovery_year_is_terminal(
+    year: i32,
+    window_start: chrono::NaiveDate,
+    window_end: chrono::NaiveDate,
+    today: chrono::NaiveDate,
+) -> bool {
+    let Some(year_start) = chrono::NaiveDate::from_ymd_opt(year, 1, 1) else {
+        return false;
+    };
+    let required_end = if year == today.year() {
+        today
+    } else {
+        let Some(year_end) = chrono::NaiveDate::from_ymd_opt(year, 12, 31) else {
+            return false;
+        };
+        year_end
+    };
+    window_start <= year_start && window_end >= required_end
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SenateReportLink {
     pub source_report_id: String,
@@ -72,6 +93,75 @@ pub struct SenateReportLink {
 pub struct SenateDiscoveryPage {
     pub links: Vec<SenateReportLink>,
     pub records_filtered: Option<usize>,
+    pub row_count: usize,
+}
+
+/// Provider pagination state. Completion is accepted only after every row the
+/// provider advertised has been returned; an empty or short intermediate page
+/// is a truncation error, never a successful terminal page.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SenateDiscoveryProgress {
+    pub next_start: usize,
+    pub expected_total: Option<usize>,
+    seen_report_ids: std::collections::HashSet<String>,
+}
+
+impl SenateDiscoveryProgress {
+    pub fn observe_report_identities(&mut self, links: &[SenateReportLink]) -> Result<(), String> {
+        for link in links {
+            if !self.seen_report_ids.insert(link.source_report_id.clone()) {
+                return Err(format!(
+                    "Senate eFD repeated report identity {} across discovery pages",
+                    link.source_report_id
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    pub fn observe_page(
+        &mut self,
+        page: &SenateDiscoveryPage,
+        requested_length: usize,
+    ) -> Result<bool, String> {
+        if requested_length == 0 {
+            return Err("Senate eFD page length must be positive".to_string());
+        }
+        let total = page.records_filtered.ok_or_else(|| {
+            "Senate eFD discovery omitted its total row count; exhaustive completion cannot be proved"
+                .to_string()
+        })?;
+        if let Some(expected) = self.expected_total {
+            if total != expected {
+                return Err(format!(
+                    "Senate eFD discovery total changed during pagination ({expected} to {total})"
+                ));
+            }
+        } else {
+            self.expected_total = Some(total);
+        }
+        if self.next_start > total {
+            return Err("Senate eFD pagination advanced beyond the advertised total".to_string());
+        }
+        let remaining = total.saturating_sub(self.next_start);
+        if page.row_count > requested_length || page.row_count > remaining {
+            return Err(
+                "Senate eFD returned more rows than the requested or remaining page size"
+                    .to_string(),
+            );
+        }
+        self.next_start += page.row_count;
+        if self.next_start == total {
+            return Ok(true);
+        }
+        if page.row_count < requested_length {
+            return Err(format!(
+                "Senate eFD truncated discovery at {} of {total} rows",
+                self.next_start
+            ));
+        }
+        Ok(false)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -639,13 +729,33 @@ pub fn parse_discovery_page(payload: &Value) -> Result<SenateDiscoveryPage, Stri
                 })
         })
         .transpose()?;
-    let links = extract_report_links(payload);
-    if !rows.is_empty() && links.is_empty() {
-        return Err("Senate eFD discovery rows contain no recognizable report links".to_string());
+    let mut links = Vec::with_capacity(rows.len());
+    for (index, row) in rows.iter().enumerate() {
+        let row_links = extract_report_links(row);
+        if row_links.len() != 1 {
+            return Err(format!(
+                "Senate eFD discovery row {index} produced {} report identities; expected exactly one",
+                row_links.len()
+            ));
+        }
+        links.push(
+            row_links
+                .into_iter()
+                .next()
+                .expect("one link checked above"),
+        );
+    }
+    let mut identities = std::collections::HashSet::with_capacity(links.len());
+    if links
+        .iter()
+        .any(|link| !identities.insert(link.source_report_id.as_str()))
+    {
+        return Err("Senate eFD discovery page contains duplicate report identities".to_string());
     }
     Ok(SenateDiscoveryPage {
         links,
         records_filtered,
+        row_count: rows.len(),
     })
 }
 
@@ -830,6 +940,101 @@ mod tests {
     }
 
     #[test]
+    fn pagination_exhausts_more_than_one_thousand_rows() {
+        let mut progress = SenateDiscoveryProgress::default();
+        for page_index in 0..10 {
+            let page = SenateDiscoveryPage {
+                links: Vec::new(),
+                records_filtered: Some(1_205),
+                row_count: 100,
+            };
+            assert!(!progress.observe_page(&page, 100).unwrap());
+            assert_eq!(progress.next_start, (page_index + 1) * 100);
+        }
+        let page = SenateDiscoveryPage {
+            links: Vec::new(),
+            records_filtered: Some(1_205),
+            row_count: 100,
+        };
+        assert!(!progress.observe_page(&page, 100).unwrap());
+        let page = SenateDiscoveryPage {
+            links: Vec::new(),
+            records_filtered: Some(1_205),
+            row_count: 100,
+        };
+        assert!(!progress.observe_page(&page, 100).unwrap());
+        let terminal = SenateDiscoveryPage {
+            links: Vec::new(),
+            records_filtered: Some(1_205),
+            row_count: 5,
+        };
+        assert!(progress.observe_page(&terminal, 100).unwrap());
+        assert_eq!(progress.next_start, 1_205);
+    }
+
+    #[test]
+    fn pagination_rejects_truncated_or_unverifiable_success() {
+        let mut progress = SenateDiscoveryProgress::default();
+        let short = SenateDiscoveryPage {
+            links: Vec::new(),
+            records_filtered: Some(1_205),
+            row_count: 5,
+        };
+        let error = progress.observe_page(&short, 100).unwrap_err();
+        assert!(error.contains("truncated discovery at 5 of 1205"));
+
+        let mut progress = SenateDiscoveryProgress::default();
+        let missing_total = SenateDiscoveryPage {
+            links: Vec::new(),
+            records_filtered: None,
+            row_count: 0,
+        };
+        assert!(progress.observe_page(&missing_total, 100).is_err());
+    }
+
+    #[test]
+    fn pagination_rejects_duplicate_identity_across_pages() {
+        fn link(id: &str) -> SenateReportLink {
+            SenateReportLink {
+                source_report_id: id.to_string(),
+                filer_name: "Example Senator".to_string(),
+                report_type: "PTR".to_string(),
+                report_url: format!("https://efdsearch.senate.gov/search/view/ptr/{id}/"),
+                submitted_date: None,
+            }
+        }
+
+        let mut progress = SenateDiscoveryProgress::default();
+        progress
+            .observe_report_identities(&[link("ptr-001"), link("ptr-002")])
+            .unwrap();
+        let error = progress
+            .observe_report_identities(&[link("ptr-002"), link("ptr-003")])
+            .expect_err("a repeated identity on page two must fail discovery");
+        assert!(error.contains("repeated report identity ptr-002"));
+    }
+
+    #[test]
+    fn terminal_years_require_complete_calendar_or_current_to_date_windows() {
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 7, 12).unwrap();
+        let full_start = chrono::NaiveDate::from_ymd_opt(2012, 1, 1).unwrap();
+        assert!(discovery_year_is_terminal(2012, full_start, today, today));
+        assert!(discovery_year_is_terminal(2026, full_start, today, today));
+        assert!(!discovery_year_is_terminal(
+            2012,
+            chrono::NaiveDate::from_ymd_opt(2012, 2, 1).unwrap(),
+            today,
+            today
+        ));
+        assert!(!discovery_year_is_terminal(
+            2025,
+            full_start,
+            chrono::NaiveDate::from_ymd_opt(2025, 12, 30).unwrap(),
+            today
+        ));
+    }
+
+    #[test]
     fn malformed_discovery_payloads_fail_loudly() {
         assert!(parse_discovery_page(&json!([])).is_err());
         assert!(parse_discovery_page(&json!({"recordsFiltered": 2})).is_err());
@@ -843,6 +1048,15 @@ mod tests {
             "data": [["unexpected markup", "05/12/2026"]]
         }))
         .is_err());
+        let mixed = parse_discovery_page(&json!({
+            "recordsFiltered": 2,
+            "data": [
+                ["<a href=\"/search/view/ptr/valid-001/\">Valid Filer</a>", "05/12/2026"],
+                ["provider row without a report link", "05/11/2026"]
+            ]
+        }))
+        .expect_err("one malformed row must invalidate the complete page");
+        assert!(mixed.contains("row 1 produced 0 report identities"));
     }
 
     #[test]

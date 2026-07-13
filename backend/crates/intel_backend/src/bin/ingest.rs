@@ -23,7 +23,10 @@ use intel_backend::{
         entity_resolution::EntityResolutionQueueInput,
         fec::{FecCandidateUpsert, FecCommitteeUpsert, FecTransactionUpsert},
         influence::{InfluenceNetworkCommitteeUpsert, InfluenceNetworkUpsert},
-        lobbying::{LobbyingFilingUpsert, LobbyingLobbyistUpsert, LobbyingRegistrantUpsert},
+        lobbying::{
+            LobbyingActivityUpsert, LobbyingFilingUpsert, LobbyingLobbyistUpsert,
+            LobbyingRegistrantUpsert,
+        },
         members::{CommitteeAssignmentUpsert, MemberTermUpsert, MemberUpsert},
         relationships::RelationshipEvidenceInsert,
         votes::RollCallVoteUpsert,
@@ -155,12 +158,15 @@ enum Command {
     },
     /// Discover Senate eFD report links through the terms-gated official search.
     SenateEfd {
-        #[arg(long, default_value = "01/01/2021")]
-        submitted_start_date: String,
-        #[arg(long, default_value = "12/31/2026")]
-        submitted_end_date: String,
-        #[arg(long, default_value_t = 1000)]
-        limit: usize,
+        /// Inclusive start date. Defaults to the beginning of required coverage.
+        #[arg(long)]
+        submitted_start_date: Option<String>,
+        /// Inclusive end date. Defaults to the day the command runs.
+        #[arg(long)]
+        submitted_end_date: Option<String>,
+        /// Provider page size; this is not a row cap.
+        #[arg(long, default_value_t = 100)]
+        page_size: usize,
     },
     /// Refresh SEC company/ticker identifiers for disclosure assets.
     SecAssetCrosswalk,
@@ -168,6 +174,10 @@ enum Command {
     LobbyingFilings {
         #[arg(long)]
         year: u32,
+        #[arg(long, default_value = "1")]
+        start_page: u32,
+        #[arg(long)]
+        run_correlation_id: Option<String>,
         #[arg(long, default_value = "50")]
         page_size: u32,
         #[arg(long, default_value = "5")]
@@ -317,11 +327,13 @@ async fn main() {
         Command::SenateEfd {
             submitted_start_date,
             submitted_end_date,
-            limit,
+            page_size,
         } => {
-            if let Err(error) =
-                cmd_senate_efd(&repo, submitted_start_date, submitted_end_date, *limit).await
-            {
+            let start = submitted_start_date.as_deref().unwrap_or("01/01/2012");
+            let end = submitted_end_date
+                .clone()
+                .unwrap_or_else(|| chrono::Utc::now().format("%m/%d/%Y").to_string());
+            if let Err(error) = cmd_senate_efd(&repo, start, &end, *page_size).await {
                 tracing::error!(error = %error, "Senate eFD discovery failed");
                 std::process::exit(1);
             }
@@ -339,9 +351,21 @@ async fn main() {
         } => cmd_fec_independent_expenditures(&repo, *cycle, committee_id, *limit).await,
         Command::LobbyingFilings {
             year,
+            start_page,
+            run_correlation_id,
             page_size,
             limit_pages,
-        } => cmd_lobbying_filings(&repo, *year, *page_size, *limit_pages).await,
+        } => {
+            cmd_lobbying_filings(
+                &repo,
+                *year,
+                *start_page,
+                run_correlation_id.as_deref(),
+                *page_size,
+                *limit_pages,
+            )
+            .await
+        }
         Command::CongressAmendments { congress, limit } => {
             cmd_congress_amendments(&repo, *congress, *limit).await
         }
@@ -2535,19 +2559,147 @@ async fn try_fec_independent_expenditures(
 
 // ── Lobbying Filings ──────────────────────────────────────────────────────
 
-async fn cmd_lobbying_filings(repo: &Repository, year: u32, page_size: u32, limit_pages: u32) {
+#[derive(Debug)]
+struct LobbyingIngestError {
+    seen: i64,
+    written: i64,
+    message: String,
+}
+
+impl LobbyingIngestError {
+    fn at(seen: i64, written: i64, error: impl std::fmt::Display) -> Self {
+        Self {
+            seen,
+            written,
+            message: error.to_string(),
+        }
+    }
+}
+
+impl std::fmt::Display for LobbyingIngestError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for LobbyingIngestError {}
+
+fn activity_lobbyist_identity(
+    entries: &[lobbying_client::types::LobbyistActivityEntry],
+) -> serde_json::Value {
+    let mut identity = entries
+        .iter()
+        .map(|entry| {
+            let lobbyist = entry.lobbyist.as_ref();
+            let person = match lobbyist.and_then(|value| value.id) {
+                Some(id) => serde_json::json!({ "id": id }),
+                None => serde_json::json!({
+                    "first_name": lobbyist
+                        .and_then(|value| value.first_name.as_deref())
+                        .unwrap_or_default().trim().to_lowercase(),
+                    "middle_name": lobbyist
+                        .and_then(|value| value.middle_name.as_deref())
+                        .unwrap_or_default().trim().to_lowercase(),
+                    "last_name": lobbyist
+                        .and_then(|value| value.last_name.as_deref())
+                        .unwrap_or_default().trim().to_lowercase(),
+                    "suffix": lobbyist
+                        .and_then(|value| value.suffix.as_deref())
+                        .unwrap_or_default().trim().to_lowercase(),
+                }),
+            };
+            serde_json::json!({
+                "person": person,
+                "covered_position": entry.covered_position,
+                "is_new": entry.new,
+            })
+        })
+        .collect::<Vec<_>>();
+    identity.sort_by_key(serde_json::Value::to_string);
+    serde_json::Value::Array(identity)
+}
+
+fn government_entity_identity(
+    entries: &[lobbying_client::types::GovernmentEntity],
+) -> serde_json::Value {
+    let mut identity = entries
+        .iter()
+        .map(|entity| match entity.id {
+            Some(id) => serde_json::json!({ "id": id }),
+            None => serde_json::json!({
+                "name": entity.name.as_deref().unwrap_or_default().trim().to_lowercase()
+            }),
+        })
+        .collect::<Vec<_>>();
+    identity.sort_by_key(serde_json::Value::to_string);
+    identity.dedup();
+    serde_json::Value::Array(identity)
+}
+
+async fn cmd_lobbying_filings(
+    repo: &Repository,
+    year: u32,
+    start_page: u32,
+    run_correlation_id: Option<&str>,
+    page_size: u32,
+    limit_pages: u32,
+) {
     let lda_key = std::env::var("SENATE_LDA_API_KEY").ok();
     let run_id = repo
         .create_source_run(
             SOURCE_LDA,
             &format!("/filings?filing_year={}", year),
-            serde_json::json!({ "year": year, "page_size": page_size, "limit_pages": limit_pages }),
+            serde_json::json!({
+                "year": year,
+                "start_page": start_page,
+                "run_correlation_id": run_correlation_id,
+                "page_size": page_size,
+                "limit_pages": limit_pages
+            }),
         )
         .await
         .expect("Failed to create source_run");
 
-    let result = try_lobbying_filings(repo, run_id, lda_key, year, page_size, limit_pages).await;
-    finish_api_run(repo, run_id, result).await;
+    let result = try_lobbying_filings(
+        repo,
+        run_id,
+        lda_key,
+        year,
+        start_page,
+        page_size,
+        limit_pages,
+    )
+    .await;
+    match result {
+        Ok((seen, written, complete)) => {
+            let (status, error) = if complete {
+                ("success", None)
+            } else {
+                (
+                    "partial",
+                    Some("page limit reached while the provider still had more filings"),
+                )
+            };
+            repo.finish_source_run(run_id, status, seen, written, error)
+                .await
+                .expect("Failed to finish lobbying source_run");
+        }
+        Err(error) => {
+            eprintln!("Lobbying ingest failed: {error}");
+            repo.finish_source_run(
+                run_id,
+                "failed",
+                error.seen,
+                error.written,
+                Some(&error.to_string()),
+            )
+            .await
+            .expect("Failed to finish lobbying source_run");
+            if std::env::var("INGEST_CONTINUE_ON_ERROR").as_deref() != Ok("1") {
+                std::process::exit(1);
+            }
+        }
+    }
 }
 
 async fn try_lobbying_filings(
@@ -2555,9 +2707,11 @@ async fn try_lobbying_filings(
     run_id: uuid::Uuid,
     lda_key: Option<String>,
     year: u32,
+    start_page: u32,
     page_size: u32,
     limit_pages: u32,
-) -> Result<(i64, i64), Box<dyn std::error::Error>> {
+) -> Result<(i64, i64, bool), LobbyingIngestError> {
+    let authenticated = lda_key.is_some();
     let client = match lda_key {
         Some(k) => lobbying_client::LobbyingClient::with_key(k),
         None => lobbying_client::LobbyingClient::new(),
@@ -2565,14 +2719,29 @@ async fn try_lobbying_filings(
 
     let mut seen = 0i64;
     let mut written = 0i64;
+    macro_rules! progress {
+        ($operation:expr) => {
+            match $operation {
+                Ok(value) => value,
+                Err(error) => {
+                    return Err(LobbyingIngestError {
+                        seen,
+                        written,
+                        message: error.to_string(),
+                    })
+                }
+            }
+        };
+    }
 
-    for page in 1..=limit_pages {
+    let end_page = start_page.saturating_add(limit_pages);
+    for page in start_page..end_page {
         let mut query = lobbying_client::types::FilingQuery::default()
             .with_year(year)
             .with_page_size(page_size);
         query.page = Some(page);
 
-        let resp = client.get_filings(&query).await?;
+        let resp = progress!(client.get_filings(&query).await);
         seen += resp.results.len() as i64;
 
         for filing in &resp.results {
@@ -2590,10 +2759,11 @@ async fn try_lobbying_filings(
                         description: reg.description.as_deref(),
                         state: reg.state.as_deref(),
                         country: reg.country.as_deref(),
-                        raw_json: serde_json::to_value(reg)?,
+                        raw_json: progress!(serde_json::to_value(reg)),
                         source_run_id: Some(run_id),
                     })
-                    .await?;
+                    .await
+                    .map_err(|error| LobbyingIngestError::at(seen, written, error))?;
                     written += 1;
                 }
             }
@@ -2606,10 +2776,11 @@ async fn try_lobbying_filings(
                         cl.name.as_deref().unwrap_or(""),
                         cl.state.as_deref(),
                         cl.country.as_deref(),
-                        serde_json::to_value(cl)?,
+                        progress!(serde_json::to_value(cl)),
                         Some(run_id),
                     )
-                    .await?;
+                    .await
+                    .map_err(|error| LobbyingIngestError::at(seen, written, error))?;
                     written += 1;
                 }
             }
@@ -2636,10 +2807,11 @@ async fn try_lobbying_filings(
                 registrant_id: filing.registrant.as_ref().and_then(|r| r.id),
                 client_id: filing.client.as_ref().and_then(|c| c.id),
                 dt_posted,
-                raw_json: serde_json::to_value(filing)?,
+                raw_json: progress!(serde_json::to_value(filing)),
                 source_run_id: Some(run_id),
             })
-            .await?;
+            .await
+            .map_err(|error| LobbyingIngestError::at(seen, written, error))?;
             written += 1;
 
             if let Some(lobbyists) = &filing.lobbyists {
@@ -2658,10 +2830,11 @@ async fn try_lobbying_filings(
                             .suffix_display
                             .as_deref()
                             .or(lobbyist.suffix.as_deref()),
-                        raw_json: serde_json::to_value(lobbyist)?,
+                        raw_json: progress!(serde_json::to_value(lobbyist)),
                         source_run_id: Some(run_id),
                     })
-                    .await?;
+                    .await
+                    .map_err(|error| LobbyingIngestError::at(seen, written, error))?;
                     repo.link_lobbyist_to_filing(
                         &filing_uuid,
                         lobbyist_id,
@@ -2669,7 +2842,8 @@ async fn try_lobbying_filings(
                         None,
                         Some(run_id),
                     )
-                    .await?;
+                    .await
+                    .map_err(|error| LobbyingIngestError::at(seen, written, error))?;
                     written += 2;
                 }
             }
@@ -2677,21 +2851,25 @@ async fn try_lobbying_filings(
             // Activities
             if let Some(activities) = &filing.lobbying_activities {
                 for activity in activities {
-                    let gov_entities = filing
-                        .government_entities
-                        .as_ref()
-                        .map(|ge| serde_json::to_value(ge).unwrap_or_default())
-                        .unwrap_or(serde_json::Value::Array(vec![]));
-
-                    repo.upsert_lobbying_activity(
-                        &filing_uuid,
-                        activity.general_issue_code.as_deref(),
-                        activity.general_issue_code.as_deref(), // display name may differ
-                        activity.description.as_deref(),
-                        gov_entities,
-                        Some(run_id),
-                    )
-                    .await?;
+                    let gov_entities = government_entity_identity(
+                        activity.government_entities.as_deref().unwrap_or_default(),
+                    );
+                    let lobbyist_identity = activity_lobbyist_identity(
+                        activity.lobbyists.as_deref().unwrap_or_default(),
+                    );
+                    let activity_id = repo
+                        .upsert_lobbying_activity(LobbyingActivityUpsert {
+                            filing_uuid: &filing_uuid,
+                            issue_code: activity.general_issue_code.as_deref(),
+                            issue_display: activity.general_issue_code_display.as_deref(),
+                            description: activity.description.as_deref(),
+                            foreign_entity_issues: activity.foreign_entity_issues.as_deref(),
+                            government_entities: gov_entities,
+                            lobbyist_identity,
+                            source_run_id: Some(run_id),
+                        })
+                        .await
+                        .map_err(|error| LobbyingIngestError::at(seen, written, error))?;
                     written += 1;
 
                     if let Some(activity_lobbyists) = &activity.lobbyists {
@@ -2713,10 +2891,11 @@ async fn try_lobbying_filings(
                                     .suffix_display
                                     .as_deref()
                                     .or(lobbyist.suffix.as_deref()),
-                                raw_json: serde_json::to_value(lobbyist)?,
+                                raw_json: progress!(serde_json::to_value(lobbyist)),
                                 source_run_id: Some(run_id),
                             })
-                            .await?;
+                            .await
+                            .map_err(|error| LobbyingIngestError::at(seen, written, error))?;
                             repo.link_lobbyist_to_filing(
                                 &filing_uuid,
                                 lobbyist_id,
@@ -2724,8 +2903,18 @@ async fn try_lobbying_filings(
                                 entry.new,
                                 Some(run_id),
                             )
-                            .await?;
-                            written += 2;
+                            .await
+                            .map_err(|error| LobbyingIngestError::at(seen, written, error))?;
+                            repo.link_lobbyist_to_activity(
+                                activity_id,
+                                lobbyist_id,
+                                entry.covered_position.as_deref(),
+                                entry.new,
+                                Some(run_id),
+                            )
+                            .await
+                            .map_err(|error| LobbyingIngestError::at(seen, written, error))?;
+                            written += 3;
                         }
                     }
                 }
@@ -2733,11 +2922,15 @@ async fn try_lobbying_filings(
         }
 
         if resp.next.is_none() {
-            break;
+            return Ok((seen, written, true));
+        }
+        if page.saturating_add(1) < end_page {
+            let delay_ms = if authenticated { 550 } else { 4_100 };
+            tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
         }
     }
 
-    Ok((seen, written))
+    Ok((seen, written, false))
 }
 
 // ── Voteview Data ─────────────────────────────────────────────────────────
@@ -3198,8 +3391,11 @@ async fn cmd_senate_efd(
     repo: &Repository,
     submitted_start_date: &str,
     submitted_end_date: &str,
-    limit: usize,
+    page_size: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    if !(1..=100).contains(&page_size) {
+        return Err("Senate eFD page size must be between 1 and 100".into());
+    }
     if !senate_efd::operator_terms_accepted(
         std::env::var(senate_efd::TERMS_ACCEPTANCE_ENV)
             .ok()
@@ -3214,7 +3410,8 @@ async fn cmd_senate_efd(
             serde_json::json!({
                 "submitted_start_date": submitted_start_date,
                 "submitted_end_date": submitted_end_date,
-                "limit": limit,
+                "page_size": page_size,
+                "pagination": "exhaustive",
             }),
         )
         .await?;
@@ -3223,7 +3420,7 @@ async fn cmd_senate_efd(
         run_id,
         submitted_start_date,
         submitted_end_date,
-        limit,
+        page_size,
     )
     .await;
     match result {
@@ -3246,7 +3443,7 @@ async fn try_senate_efd(
     run_id: uuid::Uuid,
     submitted_start_date: &str,
     submitted_end_date: &str,
-    limit: usize,
+    page_size: usize,
 ) -> Result<(i64, i64), Box<dyn std::error::Error>> {
     let client = reqwest::Client::builder()
         .cookie_store(true)
@@ -3274,11 +3471,12 @@ async fn try_senate_efd(
         .await?
         .error_for_status()?;
     let header_name = ["X-CSRF", "Token"].concat();
-    let mut start = 0usize;
+    let mut progress = senate_efd::SenateDiscoveryProgress::default();
     let mut links = Vec::new();
     let mut written = 0i64;
-    while start < limit {
-        let page_length = (limit - start).min(100);
+    loop {
+        let start = progress.next_start;
+        let page_length = page_size;
         let form = vec![
             ("draw", "1".to_string()),
             ("start", start.to_string()),
@@ -3322,9 +3520,15 @@ async fn try_senate_efd(
         .execute(repo.pool())
         .await?;
 
-        let page_links = senate_efd::parse_discovery_page(&payload)
-            .map_err(|error| format!("invalid Senate eFD discovery payload: {error}"))?
-            .links;
+        let page = senate_efd::parse_discovery_page(&payload)
+            .map_err(|error| format!("invalid Senate eFD discovery payload: {error}"))?;
+        progress
+            .observe_report_identities(&page.links)
+            .map_err(|error| format!("incomplete Senate eFD discovery: {error}"))?;
+        let complete = progress
+            .observe_page(&page, page_length)
+            .map_err(|error| format!("incomplete Senate eFD discovery: {error}"))?;
+        let page_links = page.links;
         for link in &page_links {
             written += sqlx::query(
                 r#"INSERT INTO senate_disclosure_reports
@@ -3348,15 +3552,8 @@ async fn try_senate_efd(
             .await?
             .rows_affected() as i64;
         }
-        let returned = page_links.len();
         links.extend(page_links);
-        let total = payload
-            .get("recordsFiltered")
-            .or_else(|| payload.get("recordsTotal"))
-            .and_then(serde_json::Value::as_u64)
-            .map(|value| value as usize);
-        start += page_length;
-        if returned == 0 || total.is_some_and(|total| start >= total) {
+        if complete {
             break;
         }
     }
@@ -3564,7 +3761,8 @@ async fn try_senate_efd(
     )
     .execute(repo.pool())
     .await?;
-    Ok((links.len() as i64, written))
+    let discovered = progress.expected_total.unwrap_or_default() as i64;
+    Ok((discovered, written))
 }
 
 async fn cmd_sec_asset_crosswalk(repo: &Repository) -> Result<(), Box<dyn std::error::Error>> {
@@ -3934,5 +4132,92 @@ mod member_portrait_tests {
         );
         assert_eq!(bioguide_portrait_url("not-an-id"), None);
         assert_eq!(bioguide_portrait_url(""), None);
+    }
+}
+
+#[cfg(test)]
+mod lobbying_ingest_tests {
+    use super::{activity_lobbyist_identity, government_entity_identity, LobbyingIngestError};
+    use lobbying_client::types::LobbyistActivityEntry;
+
+    fn entry(value: serde_json::Value) -> LobbyistActivityEntry {
+        serde_json::from_value(value).expect("valid lobbyist fixture")
+    }
+
+    #[test]
+    fn stable_lobbyist_ids_ignore_name_corrections_but_keep_role_identity() {
+        let original = activity_lobbyist_identity(&[entry(serde_json::json!({
+            "lobbyist": { "id": 7, "first_name": "Pat", "last_name": "Lee" },
+            "covered_position": "Former staff",
+            "new": false
+        }))]);
+        let corrected_name = activity_lobbyist_identity(&[entry(serde_json::json!({
+            "lobbyist": { "id": 7, "first_name": "Patricia", "last_name": "Li" },
+            "covered_position": "Former staff",
+            "new": false
+        }))]);
+        let different_id = activity_lobbyist_identity(&[entry(serde_json::json!({
+            "lobbyist": { "id": 8, "first_name": "Pat", "last_name": "Lee" },
+            "covered_position": "Former staff",
+            "new": false
+        }))]);
+        let different_role = activity_lobbyist_identity(&[entry(serde_json::json!({
+            "lobbyist": { "id": 7, "first_name": "Pat", "last_name": "Lee" },
+            "covered_position": "Former member",
+            "new": true
+        }))]);
+        assert_eq!(original, corrected_name);
+        assert_ne!(original, different_id);
+        assert_ne!(original, different_role);
+    }
+
+    #[test]
+    fn ingestion_errors_retain_progress_from_prior_committed_rows() {
+        let error = LobbyingIngestError::at(125, 418, "provider timeout");
+        assert_eq!(error.seen, 125);
+        assert_eq!(error.written, 418);
+        assert_eq!(error.to_string(), "provider timeout");
+    }
+
+    #[test]
+    fn stable_government_ids_ignore_renames_but_fallback_names_remain_distinct() {
+        let original: Vec<lobbying_client::types::GovernmentEntity> =
+            serde_json::from_value(serde_json::json!([
+                { "id": 4, "name": "Department of Energy" }
+            ]))
+            .expect("valid entity fixture");
+        let renamed: Vec<lobbying_client::types::GovernmentEntity> =
+            serde_json::from_value(serde_json::json!([
+                { "id": 4, "name": "U.S. Department of Energy" }
+            ]))
+            .expect("valid entity fixture");
+        let different_id: Vec<lobbying_client::types::GovernmentEntity> =
+            serde_json::from_value(serde_json::json!([
+                { "id": 5, "name": "Department of Energy" }
+            ]))
+            .expect("valid entity fixture");
+        let fallback_name: Vec<lobbying_client::types::GovernmentEntity> =
+            serde_json::from_value(serde_json::json!([
+                { "name": " Department of Energy " }
+            ]))
+            .expect("valid entity fixture");
+        let other_fallback: Vec<lobbying_client::types::GovernmentEntity> =
+            serde_json::from_value(serde_json::json!([
+                { "name": "Department of Commerce" }
+            ]))
+            .expect("valid entity fixture");
+
+        assert_eq!(
+            government_entity_identity(&original),
+            government_entity_identity(&renamed)
+        );
+        assert_ne!(
+            government_entity_identity(&original),
+            government_entity_identity(&different_id)
+        );
+        assert_ne!(
+            government_entity_identity(&fallback_name),
+            government_entity_identity(&other_fallback)
+        );
     }
 }

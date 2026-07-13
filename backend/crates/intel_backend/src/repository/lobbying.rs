@@ -36,6 +36,17 @@ pub struct LobbyingLobbyistUpsert<'a> {
     pub source_run_id: Option<uuid::Uuid>,
 }
 
+pub struct LobbyingActivityUpsert<'a> {
+    pub filing_uuid: &'a str,
+    pub issue_code: Option<&'a str>,
+    pub issue_display: Option<&'a str>,
+    pub description: Option<&'a str>,
+    pub foreign_entity_issues: Option<&'a str>,
+    pub government_entities: serde_json::Value,
+    pub lobbyist_identity: serde_json::Value,
+    pub source_run_id: Option<uuid::Uuid>,
+}
+
 impl Repository {
     pub async fn upsert_lobbying_lobbyist(
         &self,
@@ -193,27 +204,66 @@ impl Repository {
     /// Insert or update a lobbying activity row.
     pub async fn upsert_lobbying_activity(
         &self,
-        filing_uuid: &str,
-        issue_code: Option<&str>,
-        issue_display: Option<&str>,
-        description: Option<&str>,
-        government_entities: serde_json::Value,
+        input: LobbyingActivityUpsert<'_>,
+    ) -> Result<i64, sqlx::Error> {
+        sqlx::query_scalar(
+            r#"INSERT INTO lobbying_activities
+               (filing_uuid, issue_code, issue_display, description, foreign_entity_issues,
+                government_entities, lobbyist_identity, source_run_id)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+               ON CONFLICT (
+                 md5(
+                   length(COALESCE(filing_uuid, ''))::text || ':' || COALESCE(filing_uuid, '') ||
+                   length(COALESCE(issue_code, ''))::text || ':' || COALESCE(issue_code, '') ||
+                   length(COALESCE(issue_display, ''))::text || ':' || COALESCE(issue_display, '') ||
+                   length(COALESCE(description, ''))::text || ':' || COALESCE(description, '') ||
+                   length(COALESCE(foreign_entity_issues, ''))::text || ':' ||
+                     COALESCE(foreign_entity_issues, '') ||
+                   length(government_entities::text)::text || ':' || government_entities::text ||
+                   length(lobbyist_identity::text)::text || ':' || lobbyist_identity::text
+                 )
+               ) DO UPDATE SET source_run_id = EXCLUDED.source_run_id
+               RETURNING id"#,
+        )
+        .bind(input.filing_uuid)
+        .bind(input.issue_code)
+        .bind(input.issue_display)
+        .bind(input.description)
+        .bind(input.foreign_entity_issues)
+        .bind(input.government_entities)
+        .bind(input.lobbyist_identity)
+        .bind(input.source_run_id)
+        .fetch_one(self.pool())
+        .await
+    }
+
+    pub async fn link_lobbyist_to_activity(
+        &self,
+        activity_id: i64,
+        lobbyist_id: i64,
+        covered_position: Option<&str>,
+        is_new: Option<bool>,
         source_run_id: Option<uuid::Uuid>,
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
-            r#"INSERT INTO lobbying_activities
-               (filing_uuid, issue_code, issue_display, description, government_entities, source_run_id)
-               VALUES ($1, $2, $3, $4, $5, $6)"#,
+            r#"INSERT INTO lobbying_activity_lobbyists
+               (activity_id, lobbyist_id, covered_position, is_new, source_run_id)
+               VALUES ($1, $2, $3, $4, $5)
+               ON CONFLICT (
+                 activity_id,
+                 lobbyist_id,
+                 COALESCE(covered_position, ''),
+                 COALESCE(is_new::text, '')
+               ) DO UPDATE SET
+                 source_run_id = EXCLUDED.source_run_id"#,
         )
-        .bind(filing_uuid)
-        .bind(issue_code)
-        .bind(issue_display)
-        .bind(description)
-        .bind(government_entities)
+        .bind(activity_id)
+        .bind(lobbyist_id)
+        .bind(covered_position)
+        .bind(is_new)
         .bind(source_run_id)
         .execute(self.pool())
         .await?;
-
         Ok(())
     }
 

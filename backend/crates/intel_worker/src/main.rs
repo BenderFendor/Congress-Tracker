@@ -15,8 +15,9 @@ pub mod job_policy;
 pub mod parsers;
 
 use job_policy::{
-    download_disposition, retry_delay_seconds, retry_disposition, senate_refresh_enabled,
-    DownloadDisposition, RetryDisposition,
+    bounded_lda_page_limit, bounded_lda_page_size, download_disposition, lda_job_identity,
+    lda_refresh_years, parse_lda_job_identity, retry_delay_seconds, retry_disposition,
+    senate_refresh_enabled, DownloadDisposition, RetryDisposition,
 };
 
 struct ParsedDocument {
@@ -157,6 +158,12 @@ async fn main() {
         .unwrap_or(21_600)
         .max(3_600);
     let mut senate_efd_tick = tokio::time::interval(Duration::from_secs(senate_refresh_seconds));
+    let lda_refresh_seconds = std::env::var("LDA_REFRESH_SECONDS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(21_600)
+        .max(3_600);
+    let mut lda_refresh_tick = tokio::time::interval(Duration::from_secs(lda_refresh_seconds));
     let mut sec_crosswalk_tick = tokio::time::interval(Duration::from_secs(30 * 24 * 60 * 60));
 
     loop {
@@ -222,6 +229,16 @@ async fn main() {
                 tokio::spawn(async move {
                     if let Err(error) = run_senate_efd_refresh(&refresh_pool).await {
                         warn!(error = %error, "Senate eFD refresh failed");
+                    }
+                });
+            }
+            _ = lda_refresh_tick.tick() => {
+                if cli.backfill { continue; }
+                let refresh_pool = pool.clone();
+                let refresh_owner = instance_id.clone();
+                tokio::spawn(async move {
+                    if let Err(error) = run_lda_refresh(&refresh_pool, &refresh_owner).await {
+                        warn!(error = %error, "LDA refresh failed");
                     }
                 });
             }
@@ -423,6 +440,29 @@ async fn run_fec_bulk_refresh(pool: &PgPool) -> Result<(), Box<dyn std::error::E
     }
 }
 
+async fn run_process_group_bounded(
+    command: &mut TokioCommand,
+    timeout: Duration,
+) -> Result<std::process::ExitStatus, std::io::Error> {
+    command.process_group(0).kill_on_drop(true);
+    let mut child = command.spawn()?;
+    match tokio::time::timeout(timeout, child.wait()).await {
+        Ok(status) => status,
+        Err(_) => {
+            if let Some(process_group) = child.id() {
+                unsafe {
+                    libc::kill(-(process_group as i32), libc::SIGKILL);
+                }
+            }
+            let _ = child.wait().await;
+            Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                format!("process exceeded {}s", timeout.as_secs_f64()),
+            ))
+        }
+    }
+}
+
 async fn run_senate_efd_refresh(pool: &PgPool) -> Result<(), Box<dyn std::error::Error>> {
     if !senate_refresh_enabled(std::env::var("SENATE_EFD_ACCEPT_TERMS").ok().as_deref()) {
         info!("Senate eFD refresh disabled until operator accepts source terms");
@@ -440,24 +480,297 @@ async fn run_senate_efd_refresh(pool: &PgPool) -> Result<(), Box<dyn std::error:
     }
     let binary =
         std::env::var("INTEL_INGEST_BIN").unwrap_or_else(|_| "target/debug/ingest".to_string());
-    let result = tokio::time::timeout(
-        Duration::from_secs(1_800),
-        TokioCommand::new(binary)
-            .args(["senate-efd"])
-            .env("DATABASE_URL", std::env::var("DATABASE_URL")?)
-            .status(),
-    )
-    .await;
+    let mut command = TokioCommand::new(binary);
+    command
+        .args(["senate-efd"])
+        .env("DATABASE_URL", std::env::var("DATABASE_URL")?);
+    let result = run_process_group_bounded(&mut command, Duration::from_secs(1_800)).await;
     let _: bool = sqlx::query_scalar("SELECT pg_advisory_unlock($1)")
         .bind(SENATE_EFD_LOCK)
         .fetch_one(&mut *lock_connection)
         .await?;
     match result {
-        Ok(Ok(status)) if status.success() => Ok(()),
-        Ok(Ok(status)) => Err(format!("senate-efd exited with {status}").into()),
-        Ok(Err(error)) => Err(error.into()),
-        Err(_) => Err("senate-efd exceeded the 30-minute timeout".into()),
+        Ok(status) if status.success() => Ok(()),
+        Ok(status) => Err(format!("senate-efd exited with {status}").into()),
+        Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {
+            Err("senate-efd exceeded the 30-minute timeout".into())
+        }
+        Err(error) => Err(error.into()),
     }
+}
+
+async fn run_lda_refresh(pool: &PgPool, owner: &str) -> Result<(), WorkerError> {
+    const LDA_LOCK: i64 = 43_043_043_043;
+    let mut lock_connection = pool.acquire().await?;
+    let locked: bool = sqlx::query_scalar("SELECT pg_try_advisory_lock($1)")
+        .bind(LDA_LOCK)
+        .fetch_one(&mut *lock_connection)
+        .await?;
+    if !locked {
+        info!("LDA refresh already running on another worker");
+        return Ok(());
+    }
+
+    let result = run_lda_refresh_locked(pool, owner).await;
+    let _: bool = sqlx::query_scalar("SELECT pg_advisory_unlock($1)")
+        .bind(LDA_LOCK)
+        .fetch_one(&mut *lock_connection)
+        .await?;
+    result
+}
+
+async fn run_lda_refresh_locked(pool: &PgPool, owner: &str) -> Result<(), WorkerError> {
+    sqlx::query(
+        "UPDATE ingest_jobs
+         SET status = CASE WHEN attempts >= max_attempts
+                           THEN 'failed'::ingest_job_status
+                           ELSE 'pending'::ingest_job_status END,
+             available_at = now(), locked_by = NULL, locked_at = NULL,
+             error_message = 'worker lease expired before completion'
+         WHERE job_type = 'refresh_lobbying' AND source_name = 'lda'
+           AND status = 'running' AND locked_at < now() - interval '45 minutes'",
+    )
+    .execute(pool)
+    .await?;
+    sqlx::query(
+        "UPDATE source_runs
+         SET status = 'failed', finished_at = now(),
+             error_message = COALESCE(error_message, 'scheduled worker exited before completion')
+         WHERE source = 'lda' AND status = 'running'
+           AND started_at < now() - interval '45 minutes'",
+    )
+    .execute(pool)
+    .await?;
+
+    let current_year = chrono::Utc::now().year();
+    let configured_years = std::env::var("LDA_REFRESH_YEARS").ok();
+    let years = lda_refresh_years(current_year, configured_years.as_deref());
+    let initial_page_size =
+        bounded_lda_page_size(std::env::var("LDA_REFRESH_PAGE_SIZE").ok().as_deref());
+    for year in years {
+        sqlx::query(
+            "INSERT INTO ingest_jobs
+             (job_type, source_name, source_year, source_document_id, priority, max_attempts)
+             SELECT 'refresh_lobbying', 'lda', $1, $2, 20, 5
+             WHERE NOT EXISTS (
+               SELECT 1 FROM ingest_jobs
+               WHERE job_type='refresh_lobbying' AND source_name='lda'
+                 AND source_year=$1 AND status IN ('pending', 'running')
+             )
+             ON CONFLICT DO NOTHING",
+        )
+        .bind(year)
+        .bind(lda_job_identity(year, 1, initial_page_size))
+        .execute(pool)
+        .await?;
+    }
+
+    for _ in 0..4 {
+        let Some((job_id, year, document_id, attempts, max_attempts)) =
+            claim_lda_refresh_job(pool, owner).await?
+        else {
+            break;
+        };
+        let _lease = LeaseRenewer::start(pool.clone(), job_id, owner.to_string());
+        let (start_page, page_size) = parse_lda_job_identity(&document_id)
+            .ok_or_else(|| format!("invalid LDA refresh job identity {document_id}"))?;
+        let page_limit =
+            bounded_lda_page_limit(std::env::var("LDA_REFRESH_PAGE_LIMIT").ok().as_deref());
+        let binary =
+            std::env::var("INTEL_INGEST_BIN").unwrap_or_else(|_| "target/debug/ingest".to_string());
+        let mut command = TokioCommand::new(binary);
+        let run_correlation_id = uuid::Uuid::new_v4().to_string();
+        command.args([
+            "lobbying-filings",
+            "--year",
+            &year.to_string(),
+            "--start-page",
+            &start_page.to_string(),
+            "--run-correlation-id",
+            &run_correlation_id,
+            "--page-size",
+            &page_size.to_string(),
+            "--limit-pages",
+            &page_limit.to_string(),
+        ]);
+        let result = run_process_group_bounded(&mut command, Duration::from_secs(1_800)).await;
+
+        match result {
+            Ok(status) if status.success() => {
+                let source_status = sqlx::query_scalar::<_, String>(
+                    "SELECT status::text FROM source_runs
+                     WHERE source='lda' AND params->>'run_correlation_id'=$1",
+                )
+                .bind(&run_correlation_id)
+                .fetch_optional(pool)
+                .await;
+                let continuation = match source_status {
+                    Ok(status) => lda_continuation_required(status.as_deref()),
+                    Err(error) => Err(format!("correlated source_run lookup failed: {error}")),
+                };
+                let continuation = match continuation {
+                    Ok(value) => value,
+                    Err(message) => {
+                        retry_lda_refresh_job(
+                            pool,
+                            job_id,
+                            owner,
+                            attempts,
+                            max_attempts,
+                            &message,
+                        )
+                        .await?;
+                        continue;
+                    }
+                };
+                if let Err(error) = complete_lda_refresh_job(
+                    pool,
+                    LdaCompletion {
+                        job_id,
+                        owner,
+                        year,
+                        start_page,
+                        page_size,
+                        page_limit,
+                        continuation,
+                    },
+                )
+                .await
+                {
+                    retry_lda_refresh_job(
+                        pool,
+                        job_id,
+                        owner,
+                        attempts,
+                        max_attempts,
+                        &format!("LDA completion transition failed: {error}"),
+                    )
+                    .await?;
+                }
+            }
+            outcome => {
+                let message = match outcome {
+                    Ok(status) => format!("lobbying ingest exited with {status}"),
+                    Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {
+                        "lobbying ingest exceeded the 30-minute timeout".to_string()
+                    }
+                    Err(error) => error.to_string(),
+                };
+                retry_lda_refresh_job(pool, job_id, owner, attempts, max_attempts, &message)
+                    .await?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn lda_continuation_required(status: Option<&str>) -> Result<bool, String> {
+    match status {
+        Some("success") => Ok(false),
+        Some("partial") => Ok(true),
+        Some(other) => Err(format!(
+            "lobbying ingest exited successfully but correlated source_run ended {other}"
+        )),
+        None => Err("lobbying ingest exited successfully without a correlated source_run".into()),
+    }
+}
+
+struct LdaCompletion<'a> {
+    job_id: i64,
+    owner: &'a str,
+    year: i32,
+    start_page: u32,
+    page_size: u32,
+    page_limit: u32,
+    continuation: bool,
+}
+
+async fn complete_lda_refresh_job(
+    pool: &PgPool,
+    completion: LdaCompletion<'_>,
+) -> Result<(), WorkerError> {
+    let mut transaction = pool.begin().await?;
+    let update = sqlx::query(
+        "UPDATE ingest_jobs SET status='completed', finished_at=now(),
+         locked_by=NULL, locked_at=NULL, error_message=NULL
+         WHERE id=$1 AND status='running' AND locked_by=$2",
+    )
+    .bind(completion.job_id)
+    .bind(completion.owner)
+    .execute(&mut *transaction)
+    .await?;
+    require_owned_transition(update.rows_affected())?;
+    if completion.continuation {
+        let next_page = completion.start_page.saturating_add(completion.page_limit);
+        sqlx::query(
+            "INSERT INTO ingest_jobs
+             (job_type, source_name, source_year, source_document_id,
+              priority, max_attempts)
+             VALUES ('refresh_lobbying', 'lda', $1, $2, 20, 5)
+             ON CONFLICT DO NOTHING",
+        )
+        .bind(completion.year)
+        .bind(lda_job_identity(
+            completion.year,
+            next_page,
+            completion.page_size,
+        ))
+        .execute(&mut *transaction)
+        .await?;
+    }
+    transaction.commit().await?;
+    Ok(())
+}
+
+async fn retry_lda_refresh_job(
+    pool: &PgPool,
+    job_id: i64,
+    owner: &str,
+    attempts: i32,
+    max_attempts: i32,
+    message: &str,
+) -> Result<(), WorkerError> {
+    let terminal = attempts >= max_attempts;
+    let update = sqlx::query(
+        "UPDATE ingest_jobs
+         SET status = CASE WHEN $2 THEN 'failed'::ingest_job_status
+                           ELSE 'pending'::ingest_job_status END,
+             available_at = CASE WHEN $2 THEN available_at
+                                 ELSE now() + interval '15 minutes' END,
+             finished_at = CASE WHEN $2 THEN now() ELSE NULL END,
+             locked_by=NULL, locked_at=NULL, error_message=$3
+         WHERE id=$1 AND status='running' AND locked_by=$4",
+    )
+    .bind(job_id)
+    .bind(terminal)
+    .bind(message)
+    .bind(owner)
+    .execute(pool)
+    .await?;
+    require_owned_transition(update.rows_affected())
+}
+
+async fn claim_lda_refresh_job(
+    pool: &PgPool,
+    owner: &str,
+) -> Result<Option<(i64, i32, String, i32, i32)>, sqlx::Error> {
+    sqlx::query_as(
+        "WITH candidate AS (
+           SELECT id FROM ingest_jobs
+           WHERE job_type='refresh_lobbying' AND source_name='lda'
+             AND status='pending' AND available_at <= now()
+           ORDER BY priority DESC, created_at ASC
+           FOR UPDATE SKIP LOCKED LIMIT 1
+         )
+         UPDATE ingest_jobs jobs
+         SET status='running', attempts=attempts+1, locked_by=$1, locked_at=now()
+         FROM candidate WHERE jobs.id=candidate.id
+         RETURNING jobs.id, jobs.source_year, jobs.source_document_id,
+                   jobs.attempts, jobs.max_attempts",
+    )
+    .bind(owner)
+    .fetch_optional(pool)
+    .await
 }
 
 async fn run_sec_crosswalk_refresh(pool: &PgPool) -> Result<(), Box<dyn std::error::Error>> {
@@ -2124,11 +2437,35 @@ fn truncate_utf8(input: &str, max_bytes: usize) -> &str {
 #[cfg(test)]
 mod tests {
     use super::{
-        recovery_priorities, require_owned_transition, required_annual_sections_are_present,
-        required_rows_present, supported_house_filing_type, truncate_utf8, IndexEntry,
-        RECOVER_DOWNLOAD_SQL, RECOVER_PARSE_SQL,
+        lda_continuation_required, recovery_priorities, require_owned_transition,
+        required_annual_sections_are_present, required_rows_present, run_process_group_bounded,
+        supported_house_filing_type, truncate_utf8, IndexEntry, RECOVER_DOWNLOAD_SQL,
+        RECOVER_PARSE_SQL,
     };
     use crate::parsers::DocumentLayout;
+
+    #[tokio::test]
+    async fn bounded_async_process_kills_descendants_before_returning() {
+        let marker = std::env::temp_dir().join(format!(
+            "senate-timeout-descendant-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let script = format!(
+            "(sleep 0.25; printf survived > '{}') & sleep 5",
+            marker.display()
+        );
+        let mut command = tokio::process::Command::new("sh");
+        command.args(["-c", &script]);
+        let error = run_process_group_bounded(&mut command, std::time::Duration::from_millis(50))
+            .await
+            .expect_err("the process group must exceed its wall budget");
+        assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
+        tokio::time::sleep(std::time::Duration::from_millis(350)).await;
+        assert!(
+            !marker.exists(),
+            "timed-out descendants must be dead before the helper returns"
+        );
+    }
 
     #[test]
     fn parses_real_house_clerk_index_shape() {
@@ -2259,5 +2596,17 @@ mod tests {
         assert!(require_owned_transition(1).is_ok());
         assert!(require_owned_transition(0).is_err());
         assert!(require_owned_transition(2).is_err());
+    }
+
+    #[test]
+    fn lda_source_run_validation_retries_missing_and_unexpected_outcomes() {
+        assert_eq!(lda_continuation_required(Some("success")), Ok(false));
+        assert_eq!(lda_continuation_required(Some("partial")), Ok(true));
+        assert!(lda_continuation_required(None)
+            .expect_err("missing correlated run must retry")
+            .contains("without a correlated source_run"));
+        assert!(lda_continuation_required(Some("failed"))
+            .expect_err("unexpected correlated status must retry")
+            .contains("ended failed"));
     }
 }

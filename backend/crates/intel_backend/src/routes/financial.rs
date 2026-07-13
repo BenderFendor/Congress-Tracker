@@ -67,8 +67,22 @@ pub struct SenateReportQuery {
 #[derive(Debug, Serialize)]
 pub struct SenateDisclosureResponse {
     pub reports: Vec<SenateDisclosureReport>,
+    pub coverage_by_year_form: Vec<SenateYearFormCoverage>,
     pub coverage: String,
     pub provenance: ProvenanceSummary,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SenateYearFormCoverage {
+    pub year: i32,
+    pub report_type: String,
+    pub terminal: bool,
+    pub discovered: i64,
+    pub downloaded: i64,
+    pub parsed: i64,
+    pub partial: i64,
+    pub failed: i64,
+    pub unresolved: i64,
 }
 
 /// GET /api/financial-snapshots?year=2025&limit=200
@@ -177,24 +191,87 @@ pub async fn list_senate_disclosures(
             .ok()
             .as_deref(),
     );
-    let ambiguous_identity_count = reports
-        .iter()
-        .filter(|report| report.bioguide_id.is_none())
-        .count();
+    let ambiguous_identity_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM senate_disclosure_reports WHERE bioguide_id IS NULL",
+    )
+    .fetch_one(state.repo.pool())
+    .await
+    .map_err(|error| crate::models::AppError::Internal(format!("database error: {error}")))?;
     let parser_failure_count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM senate_disclosure_reports WHERE parse_error IS NOT NULL",
     )
     .fetch_one(state.repo.pool())
     .await
     .map_err(|error| crate::models::AppError::Internal(format!("database error: {error}")))?;
+    let aggregate_rows = sqlx::query_as::<_, (i32, String, i64, i64, i64, i64, i64, i64)>(
+        r#"SELECT EXTRACT(YEAR FROM submitted_date)::int AS year,
+                  upper(report_type) AS report_type,
+                  COUNT(*)::bigint AS discovered,
+                  COUNT(*) FILTER (WHERE fetched_at IS NOT NULL)::bigint AS downloaded,
+                  COUNT(*) FILTER (WHERE status = 'parsed')::bigint AS parsed,
+                  COUNT(*) FILTER (WHERE status = 'partial')::bigint AS partial,
+                  COUNT(*) FILTER (WHERE status = 'failed' OR parse_error IS NOT NULL)::bigint AS failed,
+                  COUNT(*) FILTER (WHERE bioguide_id IS NULL)::bigint AS unresolved
+             FROM senate_disclosure_reports
+            WHERE submitted_date IS NOT NULL
+            GROUP BY EXTRACT(YEAR FROM submitted_date), upper(report_type)"#,
+    )
+    .fetch_all(state.repo.pool())
+    .await
+    .map_err(|error| crate::models::AppError::Internal(format!("database error: {error}")))?;
+    let exhaustive_windows = sqlx::query_as::<_, (String, String)>(
+        r#"SELECT params->>'submitted_start_date', params->>'submitted_end_date'
+             FROM source_runs
+            WHERE source = 'senate_efd'
+              AND endpoint = '/search/report/data/'
+              AND status = 'success'
+              AND params->>'pagination' = 'exhaustive'
+            ORDER BY finished_at DESC NULLS LAST"#,
+    )
+    .fetch_all(state.repo.pool())
+    .await
+    .map_err(|error| crate::models::AppError::Internal(format!("database error: {error}")))?
+    .into_iter()
+    .filter_map(|(start, end)| {
+        Some((
+            chrono::NaiveDate::parse_from_str(&start, "%m/%d/%Y").ok()?,
+            chrono::NaiveDate::parse_from_str(&end, "%m/%d/%Y").ok()?,
+        ))
+    })
+    .collect::<Vec<_>>();
+    let today = chrono::Utc::now().date_naive();
+    let current_year = today.year();
+    let mut coverage_by_year_form = Vec::new();
+    for year in 2012..=current_year {
+        for report_type in ["PTR", "ANNUAL"] {
+            let counts = aggregate_rows
+                .iter()
+                .find(|row| row.0 == year && row.1 == report_type);
+            let terminal = exhaustive_windows.iter().any(|(start, end)| {
+                crate::senate_efd::discovery_year_is_terminal(year, *start, *end, today)
+            });
+            coverage_by_year_form.push(SenateYearFormCoverage {
+                year,
+                report_type: report_type.to_string(),
+                terminal,
+                discovered: counts.map_or(0, |row| row.2),
+                downloaded: counts.map_or(0, |row| row.3),
+                parsed: counts.map_or(0, |row| row.4),
+                partial: counts.map_or(0, |row| row.5),
+                failed: counts.map_or(0, |row| row.6),
+                unresolved: counts.map_or(0, |row| row.7),
+            });
+        }
+    }
     let coverage = crate::senate_efd::coverage_status_detailed(
         reports.len(),
         terms_accepted,
-        ambiguous_identity_count,
+        ambiguous_identity_count as usize,
         parser_failure_count as usize,
     );
     Ok(Json(SenateDisclosureResponse {
         reports,
+        coverage_by_year_form,
         coverage: coverage.to_string(),
         provenance: ProvenanceSummary {
             sources: vec![ProvenanceSource {

@@ -69,6 +69,76 @@ async fn assert_worker_duplicate_delivery_is_idempotent(pool: &PgPool) {
         count, 1,
         "one active source document must have one active job"
     );
+
+    for identity in [
+        "filings:2026:page:1:size:25",
+        "filings:2026:page:1:size:25",
+        "filings:2026:page:26:size:25",
+    ] {
+        sqlx::query(
+            "INSERT INTO ingest_jobs
+             (job_type, source_name, source_year, source_document_id)
+             VALUES ('refresh_lobbying', 'lda', 2026, $1)
+             ON CONFLICT DO NOTHING",
+        )
+        .bind(identity)
+        .execute(pool)
+        .await
+        .expect("LDA refresh page enqueue remains conflict-safe");
+    }
+    let lda_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM ingest_jobs
+         WHERE job_type='refresh_lobbying' AND source_name='lda' AND source_year=2026",
+    )
+    .fetch_one(pool)
+    .await
+    .expect("LDA refresh jobs remain queryable");
+    assert_eq!(
+        lda_count, 2,
+        "duplicate pages collapse but continuation pages remain distinct"
+    );
+}
+
+async fn assert_lobbying_continuation_transition(pool: &PgPool) {
+    let job_id: i64 = sqlx::query_scalar(
+        "UPDATE ingest_jobs SET status='running', locked_by='migration-test', locked_at=now()
+         WHERE job_type='refresh_lobbying' AND source_name='lda'
+           AND source_year=2026 AND source_document_id='filings:2026:page:1:size:25'
+         RETURNING id",
+    )
+    .fetch_one(pool)
+    .await
+    .expect("first LDA page can be claimed");
+    let mut transaction = pool.begin().await.expect("LDA transition begins");
+    sqlx::query(
+        "UPDATE ingest_jobs SET status='completed', finished_at=now(),
+         locked_by=NULL, locked_at=NULL WHERE id=$1 AND status='running'
+         AND locked_by='migration-test'",
+    )
+    .bind(job_id)
+    .execute(&mut *transaction)
+    .await
+    .expect("owned LDA page completes");
+    sqlx::query(
+        "INSERT INTO ingest_jobs
+         (job_type, source_name, source_year, source_document_id)
+         VALUES ('refresh_lobbying', 'lda', 2026, 'filings:2026:page:51:size:25')",
+    )
+    .execute(&mut *transaction)
+    .await
+    .expect("continuation page enqueues in the same transaction");
+    transaction.commit().await.expect("LDA transition commits");
+
+    let states: (i64, i64) = sqlx::query_as(
+        "SELECT COUNT(*) FILTER (WHERE status='completed')::bigint,
+                COUNT(*) FILTER (WHERE status='pending')::bigint
+         FROM ingest_jobs WHERE job_type='refresh_lobbying' AND source_name='lda'
+           AND source_year=2026",
+    )
+    .fetch_one(pool)
+    .await
+    .expect("LDA transition states remain queryable");
+    assert_eq!(states, (1, 2));
 }
 
 async fn insert_nullable_disclosure_duplicate(pool: &PgPool, suffix: &str) -> i64 {
@@ -129,6 +199,166 @@ async fn assert_nullable_disclosure_identity_is_unique(pool: &PgPool, document_i
     assert_eq!(count_after_retry, 1);
 }
 
+async fn insert_lobbying_activity_duplicates(pool: &PgPool, filing_uuid: &str) {
+    sqlx::query("INSERT INTO lobbying_filings (filing_uuid) VALUES ($1)")
+        .bind(filing_uuid)
+        .execute(pool)
+        .await
+        .expect("lobbying filing fixture inserts");
+    for _ in 0..2 {
+        sqlx::query(
+            "INSERT INTO lobbying_activities
+             (filing_uuid, issue_code, issue_display, description, government_entities)
+             VALUES ($1, 'TAX', 'Taxation', 'Section 45 credits', '[{\"name\":\"Treasury\"}]')",
+        )
+        .bind(filing_uuid)
+        .execute(pool)
+        .await
+        .expect("legacy duplicate lobbying activity inserts");
+    }
+}
+
+async fn assert_lobbying_activity_identity_is_unique(pool: &PgPool, filing_uuid: &str) {
+    let count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM lobbying_activities WHERE filing_uuid = $1")
+            .bind(filing_uuid)
+            .fetch_one(pool)
+            .await
+            .expect("lobbying activity fixture remains queryable");
+    assert_eq!(count, 1, "migration must collapse semantic LDA duplicates");
+
+    sqlx::query(
+        "INSERT INTO lobbying_activities
+         (filing_uuid, issue_code, issue_display, description, government_entities)
+         VALUES ($1, 'TAX', 'Taxation', 'Section 45 credits', '[{\"name\":\"treasury\"}]')
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(filing_uuid)
+    .execute(pool)
+    .await
+    .expect("lobbying activity rerun is conflict-safe");
+    let count_after_retry: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM lobbying_activities WHERE filing_uuid = $1")
+            .bind(filing_uuid)
+            .fetch_one(pool)
+            .await
+            .expect("retried lobbying activity fixture remains queryable");
+    assert_eq!(count_after_retry, 1);
+}
+
+async fn assert_lobbying_source_discriminators_remain_distinct(pool: &PgPool) {
+    sqlx::query("INSERT INTO lobbying_filings (filing_uuid) VALUES ('identity-lda')")
+        .execute(pool)
+        .await
+        .expect("identity filing inserts");
+    for (foreign_issues, lobbyist_identity) in [
+        ("Country A", serde_json::json!([])),
+        ("Country B", serde_json::json!([])),
+        (
+            "Country A",
+            serde_json::json!([{"person":{"id":7},"covered_position":"staff","is_new":false}]),
+        ),
+        (
+            "Country A",
+            serde_json::json!([{"person":{"id":8},"covered_position":"staff","is_new":false}]),
+        ),
+    ] {
+        sqlx::query(
+            "INSERT INTO lobbying_activities
+             (filing_uuid, issue_code, issue_display, description,
+              foreign_entity_issues, government_entities, lobbyist_identity)
+             VALUES ('identity-lda', 'TAX', 'Taxation', 'Credits', $1, '[]', $2)",
+        )
+        .bind(foreign_issues)
+        .bind(lobbyist_identity)
+        .execute(pool)
+        .await
+        .expect("distinct source activity inserts");
+    }
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM lobbying_activities WHERE filing_uuid='identity-lda'",
+    )
+    .fetch_one(pool)
+    .await
+    .expect("source activity identities remain queryable");
+    assert_eq!(count, 4);
+
+    for lobbyist_id in [7_i64, 8_i64] {
+        sqlx::query("INSERT INTO lobbying_lobbyists (id, last_name) VALUES ($1, $2)")
+            .bind(lobbyist_id)
+            .bind(format!("Lobbyist {lobbyist_id}"))
+            .execute(pool)
+            .await
+            .expect("activity lobbyist fixture inserts");
+        sqlx::query(
+            "INSERT INTO lobbying_activity_lobbyists
+             (activity_id, lobbyist_id, covered_position, is_new)
+             SELECT id, $1, 'staff', false FROM lobbying_activities
+             WHERE filing_uuid='identity-lda'
+               AND lobbyist_identity @> $2::jsonb",
+        )
+        .bind(lobbyist_id)
+        .bind(serde_json::json!([{"person":{"id":lobbyist_id}}]))
+        .execute(pool)
+        .await
+        .expect("activity-scoped lobbyist association inserts");
+    }
+    let association_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM lobbying_activity_lobbyists associations
+         JOIN lobbying_activities activities ON activities.id=associations.activity_id
+         WHERE activities.filing_uuid='identity-lda'",
+    )
+    .fetch_one(pool)
+    .await
+    .expect("activity-scoped associations remain queryable");
+    assert_eq!(association_count, 2);
+}
+
+async fn insert_repeated_government_entity_fixture(pool: &PgPool) {
+    sqlx::query("INSERT INTO lobbying_filings (filing_uuid) VALUES ('government-rename-lda')")
+        .execute(pool)
+        .await
+        .expect("government identity filing inserts");
+    sqlx::query(
+        "INSERT INTO lobbying_activities
+         (filing_uuid, issue_code, description, government_entities)
+         VALUES ('government-rename-lda', 'ENG', 'Energy policy',
+                 '[{\"id\":4,\"name\":\"DOE\"},{\"id\":4,\"name\":\"Department of Energy\"}]')",
+    )
+    .execute(pool)
+    .await
+    .expect("repeated government entity fixture inserts");
+}
+
+async fn assert_government_entity_identity_is_stable(pool: &PgPool) {
+    let identity: serde_json::Value = sqlx::query_scalar(
+        "SELECT government_entities FROM lobbying_activities
+         WHERE filing_uuid='government-rename-lda'",
+    )
+    .fetch_one(pool)
+    .await
+    .expect("canonical government identity remains queryable");
+    assert_eq!(identity, serde_json::json!([{"id": 4}]));
+    sqlx::query(
+        "INSERT INTO lobbying_activities
+         (filing_uuid, issue_code, description, government_entities,
+          foreign_entity_issues, lobbyist_identity)
+         VALUES ('government-rename-lda', 'ENG', 'Energy policy',
+                 '[{\"id\":4}]', NULL, '[]') ON CONFLICT DO NOTHING",
+    )
+    .execute(pool)
+    .await
+    .expect("renamed government entity rerun is conflict-safe");
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM lobbying_activities
+         WHERE filing_uuid='government-rename-lda'",
+    )
+    .fetch_one(pool)
+    .await
+    .expect("government identity rerun remains queryable");
+    assert_eq!(count, 1);
+}
+
 #[tokio::test]
 #[ignore = "requires a disposable PostgreSQL database"]
 async fn migration_fresh_database() {
@@ -144,6 +374,7 @@ async fn migration_fresh_database() {
         .expect("fresh migration rerun is idempotent");
     assert_complete(&pool, &migrator).await;
     assert_worker_duplicate_delivery_is_idempotent(&pool).await;
+    assert_lobbying_continuation_transition(&pool).await;
 
     let document_id: i64 = sqlx::query_scalar(
         "INSERT INTO disclosure_documents
@@ -165,6 +396,21 @@ async fn migration_fresh_database() {
     .await
     .expect("fresh nullable disclosure row inserts");
     assert_nullable_disclosure_identity_is_unique(&pool, document_id).await;
+    sqlx::query("INSERT INTO lobbying_filings (filing_uuid) VALUES ('fresh-lda')")
+        .execute(&pool)
+        .await
+        .expect("fresh lobbying filing fixture inserts");
+    sqlx::query(
+        "INSERT INTO lobbying_activities
+         (filing_uuid, issue_code, issue_display, description, government_entities)
+         VALUES ('fresh-lda', 'TAX', 'Taxation', 'Section 45 credits',
+                 '[{\"name\":\"treasury\"}]')",
+    )
+    .execute(&pool)
+    .await
+    .expect("fresh lobbying activity fixture inserts");
+    assert_lobbying_activity_identity_is_unique(&pool, "fresh-lda").await;
+    assert_lobbying_source_discriminators_remain_distinct(&pool).await;
 }
 
 #[tokio::test]
@@ -200,6 +446,8 @@ async fn migration_upgrade_from_prior_committed_schema() {
     assert_eq!(prior_latest, PRIOR_COMMITTED_VERSION);
 
     let nullable_document_id = insert_nullable_disclosure_duplicate(&pool, "upgrade").await;
+    insert_lobbying_activity_duplicates(&pool, "upgrade-lda").await;
+    insert_repeated_government_entity_fixture(&pool).await;
 
     sqlx::query("INSERT INTO members (bioguide_id, depiction_url) VALUES ($1, $2)")
         .bind("a000370")
@@ -214,6 +462,9 @@ async fn migration_upgrade_from_prior_committed_schema() {
         .expect("upgraded migration rerun is idempotent");
     assert_complete(&pool, &full).await;
     assert_nullable_disclosure_identity_is_unique(&pool, nullable_document_id).await;
+    assert_lobbying_activity_identity_is_unique(&pool, "upgrade-lda").await;
+    assert_government_entity_identity_is_stable(&pool).await;
+    assert_lobbying_source_discriminators_remain_distinct(&pool).await;
 
     let depiction_url: String =
         sqlx::query_scalar("SELECT depiction_url FROM members WHERE bioguide_id = 'a000370'")
