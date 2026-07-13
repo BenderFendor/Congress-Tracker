@@ -66,6 +66,12 @@ export interface TradesResponse {
   limit: number;
   offset: number;
   tickers: string[];
+  coverage: {
+    status: "loaded" | "not_loaded";
+    message: string;
+    has_more: boolean;
+    excluded_date_anomalies: number;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -100,9 +106,14 @@ export async function getRecentTrades(
   return data.trades;
 }
 
-export async function getTradesByTicker(ticker: string): Promise<StockTrade[]> {
+export async function getTradesByTicker(
+  ticker: string,
+  limit = 100,
+  offset = 0,
+): Promise<TradesResponse> {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   const response = await fetch(
-    `${BACKEND_URL}/api/intel/trades/${encodeURIComponent(ticker)}`,
+    `${BACKEND_URL}/api/intel/trades/${encodeURIComponent(ticker)}?${params}`,
     { next: { revalidate: 3600 } },
   );
 
@@ -113,9 +124,23 @@ export async function getTradesByTicker(ticker: string): Promise<StockTrade[]> {
   return response.json();
 }
 
-export async function getTradesByPoliticianId(politicianId: string, signal?: AbortSignal): Promise<StockTrade[]> {
-  const data = await getIntelTrades(200, 0, signal);
-  return data.trades.filter(t => t.politician_id === politicianId);
+export async function getTradesByMemberId(
+  memberId: string,
+  limit = 100,
+  offset = 0,
+  signal?: AbortSignal,
+): Promise<TradesResponse> {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  const response = await fetch(
+    `${BACKEND_URL}/api/members/${encodeURIComponent(memberId)}/trades?${params}`,
+    { next: { revalidate: 3600 }, signal },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Backend API error: ${response.status} ${response.statusText}`);
+  }
+
+  return response.json();
 }
 
 // ---------------------------------------------------------------------------

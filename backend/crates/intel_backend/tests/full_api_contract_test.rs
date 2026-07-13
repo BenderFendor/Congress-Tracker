@@ -665,6 +665,9 @@ async fn test_all_api_endpoints() {
         assert_json_error(status, &body);
     } else {
         assert_eq!(status, StatusCode::OK, "trades by ticker");
+        assert!(body.get("trades").is_some_and(Value::is_array));
+        assert!(body.get("total").is_some_and(Value::is_number));
+        assert!(body["coverage"]["has_more"].is_boolean());
     }
 
     let (status, body) = check_endpoint(
@@ -679,6 +682,45 @@ async fn test_all_api_endpoints() {
         body.is_array() || body.get("trades").is_some(),
         "transactions should be array or have trades field"
     );
+
+    let (status, body) = check_endpoint(
+        &client,
+        &base_url,
+        "/api/stocks/transactions?ticker=AAPL",
+        "removed-global-ticker-filter",
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "unsupported ticker query");
+    assert_json_error(status, &body);
+
+    let (status, body) = check_endpoint(
+        &client,
+        &base_url,
+        &format!("/api/members/{TEST_MEMBER}/trades?limit=5&offset=0"),
+        "member-stock-transactions",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "member stock transactions");
+    assert!(body.get("trades").is_some_and(Value::is_array));
+    assert!(body.get("total").is_some_and(Value::is_number));
+    assert_eq!(body["limit"], 5);
+    assert!(body["coverage"]["status"].is_string());
+    assert!(body["coverage"]["has_more"].is_boolean());
+    assert!(body["coverage"]["excluded_date_anomalies"].is_number());
+
+    let (status, body) = check_endpoint(
+        &client,
+        &base_url,
+        &format!("/api/members/{UNKNOWN_MEMBER}/trades?limit=5"),
+        "unknown-member-stock-transactions",
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "unknown member stock transactions"
+    );
+    assert_json_error(status, &body);
 
     let (status, body) = check_endpoint(
         &client,

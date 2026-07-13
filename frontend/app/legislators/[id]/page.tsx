@@ -2,6 +2,7 @@
 
 import { createLogger } from "@/lib/tracing"
 import { useState, useEffect } from "react"
+import type { KeyboardEvent, MouseEvent } from "react"
 import Link from "next/link"
 import {
   ArrowLeft,
@@ -16,7 +17,8 @@ import { getMemberFunding, MemberFunding } from "@/lib/services/funding"
 import { classifyFundingCoverage } from "@/lib/funding-coverage.mjs"
 import { ProvenanceSummary } from "@/lib/services/provenance"
 import { getMemberVotes, MemberVotesResult, Vote } from "@/lib/services/voting"
-import { formatAmountRange } from "@/lib/services/stocks"
+import { formatAmountRange, getTradesByMemberId } from "@/lib/services/stocks"
+import type { StockTrade } from "@/lib/services/stocks"
 import { ArchivePage, ArchivePanel, EvidenceSpine } from "@/components/ui/archive-ui"
 import { getMemberDisclosures, getRelationships, MemberDisclosures, RelationshipEvidence } from "@/lib/services/relationships"
 import { MemberPortrait } from "@/components/ui/member-identity"
@@ -80,6 +82,31 @@ function externalIdentifierUrl(scheme: string, value: string) {
 
 const log = createLogger("LegislatorPage")
 
+const MEMBER_TABS = [
+  { id: "overview", label: "Overview" },
+  { id: "donations", label: "Funding" },
+  { id: "voting", label: "Votes" },
+  { id: "bills", label: "Bills" },
+  { id: "trades", label: "Trades" },
+  { id: "connections", label: "Connections" },
+  { id: "disclosures", label: "Disclosures" },
+  { id: "biography", label: "Biography" },
+] as const
+
+function tradeConflictEvidence(trade: StockTrade) {
+  if (trade.conflict_flag_count <= 0) {
+    return { label: "No detected overlap", detail: null, flagged: false }
+  }
+  const severity = trade.highest_conflict_severity.trim() || "Potential overlap"
+  const firstConflict = trade.committee_conflicts[0]
+  const committeeDetail = firstConflict?.description || trade.committee_names.join(", ") || null
+  return {
+    label: `${severity} · ${trade.conflict_flag_count} ${trade.conflict_flag_count === 1 ? "flag" : "flags"}`,
+    detail: committeeDetail,
+    flagged: true,
+  }
+}
+
 export default function LegislatorProfilePage({ params }: { params: { id: string } }) {
   const [activeTab, setActiveTab] = useState("overview")
   const [legislator, setLegislator] = useState<Legislator | null>(null)
@@ -92,6 +119,77 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
   const [relationships, setRelationships] = useState<RelationshipEvidence[]>([])
   const [disclosures, setDisclosures] = useState<MemberDisclosures | null>(null)
   const [loading, setLoading] = useState(true)
+  const [tradePageState, setTradePageState] = useState<{
+    memberId: string
+    status: "idle" | "loading" | "error"
+    error: string | null
+    offset: number
+  }>({ memberId: "", status: "idle", error: null, offset: 0 })
+
+  function selectTab(tabId: string, target: HTMLButtonElement) {
+    setActiveTab(tabId)
+    target.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" })
+  }
+
+  function handleTabClick(tabId: string, event: MouseEvent<HTMLButtonElement>) {
+    selectTab(tabId, event.currentTarget)
+  }
+
+  function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return
+    const tabList = event.currentTarget.closest('[role="tablist"]')
+    const tabs = Array.from(tabList?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? [])
+    const currentIndex = tabs.indexOf(event.currentTarget)
+    if (currentIndex < 0 || tabs.length === 0) return
+
+    event.preventDefault()
+    const nextIndex = event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? tabs.length - 1
+        : (currentIndex + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length
+    tabs[nextIndex]?.focus()
+    tabs[nextIndex]?.click()
+  }
+
+  async function loadTradePage(targetOffset: number) {
+    if (!legislator) return
+    const memberId = legislator.bioguide_id
+    const offset = Math.max(0, targetOffset)
+    setTradePageState({ memberId, status: "loading", error: null, offset })
+
+    try {
+      const response = await getTradesByMemberId(memberId, 100, offset)
+      setLegislator((current) => {
+        if (!current || current.bioguide_id !== memberId) return current
+        return {
+          ...current,
+          recentTrades: response.trades,
+          tradeCoverage: {
+            ...current.tradeCoverage,
+            status: response.coverage.status,
+            message: response.coverage.message,
+            total: response.total,
+            hasMore: response.coverage.has_more,
+            excludedDateAnomalies: response.coverage.excluded_date_anomalies,
+            offset: response.offset,
+          },
+        }
+      })
+      setTradePageState((current) => current.memberId === memberId
+        ? { memberId, status: "idle", error: null, offset: response.offset }
+        : current)
+    } catch (error) {
+      setTradePageState((current) => current.memberId === memberId
+        ? {
+            memberId,
+            status: "error",
+            error: error instanceof Error ? error.message : "Older disclosure records could not be loaded.",
+            offset,
+          }
+        : current)
+    }
+  }
 
   useEffect(() => {
     const request = createMemberDossierRequest(params.id)
@@ -106,6 +204,7 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
     setCosponsoredBills([])
     setRelationships([])
     setDisclosures(null)
+    setTradePageState({ memberId: request.memberId, status: "idle", error: null, offset: 0 })
     setLoading(true)
 
     async function loadData() {
@@ -342,22 +441,24 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
         </div>
 
         {/* Tabs Navigation */}
-        <div className="flex border-b border-border mb-8 overflow-x-auto">
-          {[
-            { id: 'overview', label: 'Overview' },
-            { id: 'donations', label: 'Funding' },
-            { id: 'voting', label: 'Votes' },
-            { id: 'bills', label: 'Bills' },
-            { id: 'trades', label: 'Trades' },
-            { id: 'connections', label: 'Connections' },
-            { id: 'disclosures', label: 'Disclosures' },
-            { id: 'biography', label: 'Biography' }
-          ].map((tab) => {
+        <div
+          role="tablist"
+          aria-label="Member record sections"
+          className="flex border-b border-border mb-8 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
+          {MEMBER_TABS.map((tab) => {
             const isActive = activeTab === tab.id;
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                id={`member-tab-${tab.id}`}
+                role="tab"
+                type="button"
+                aria-selected={isActive}
+                aria-controls={`member-panel-${tab.id}`}
+                tabIndex={isActive ? 0 : -1}
+                onClick={(event) => handleTabClick(tab.id, event)}
+                onKeyDown={handleTabKeyDown}
                 className={`px-6 py-4 font-sans text-sm tracking-wide transition-all border-b-4 whitespace-nowrap ${
                   isActive
                     ? 'border-accent text-foreground font-bold'
@@ -371,7 +472,13 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
         </div>
 
         {/* Tab Content */}
-        <div className="min-h-[400px]">
+        <div
+          id={`member-panel-${activeTab}`}
+          role="tabpanel"
+          aria-labelledby={`member-tab-${activeTab}`}
+          tabIndex={0}
+          className="min-h-[400px]"
+        >
           {activeTab === 'overview' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               <ArchivePanel title="Service Timeline" kicker="Congressional Tenure">
@@ -826,39 +933,82 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
           {activeTab === 'trades' && (
             <ArchivePanel title="Recent Stock Trades" kicker="Canonical disclosure records">
               {legislator.recentTrades.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full border-collapse font-sans text-sm">
-                    <thead>
-                      <tr className="border-b border-border text-left font-mono text-xs uppercase text-muted-foreground">
-                        <th className="p-4">Ticker</th>
-                        <th className="p-4">Asset Description</th>
-                        <th className="p-4">Type</th>
-                        <th className="p-4">Amount / Value</th>
-                        <th className="p-4">Date</th>
-                        <th className="p-4">Committee Oversight Conflict</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {legislator.recentTrades.map((t, idx) => (
-                            <tr key={idx} className="border-b border-border hover:bg-muted/40 transition-colors">
+                <div>
+                  <p className="mb-4 text-sm text-muted-foreground">
+                    Showing {legislator.tradeCoverage.offset + 1}–{legislator.tradeCoverage.offset + legislator.recentTrades.length} of {legislator.tradeCoverage.total} linked canonical disclosure transactions.
+                    {legislator.tradeCoverage.excludedDateAnomalies > 0
+                      ? ` ${legislator.tradeCoverage.excludedDateAnomalies} record(s) with implausible source dates are excluded from this chronology.`
+                      : ""}
+                  </p>
+                  <p className="mb-4 border-l-2 border-accent/60 pl-3 text-xs leading-5 text-muted-foreground">
+                    Committee-overlap flags are a screening aid based on disclosed assets and committee jurisdiction. A missing flag is not proof that no conflict exists.
+                  </p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse font-sans text-sm">
+                      <thead>
+                        <tr className="border-b border-border text-left font-mono text-xs uppercase text-muted-foreground">
+                          <th className="p-4">Ticker</th>
+                          <th className="p-4">Asset Description</th>
+                          <th className="p-4">Type</th>
+                          <th className="p-4">Amount / Value</th>
+                          <th className="p-4">Date</th>
+                          <th className="p-4">Committee Oversight Conflict</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {legislator.recentTrades.map((t) => {
+                          const conflict = tradeConflictEvidence(t)
+                          return (
+                            <tr key={t.trade_id} className="border-b border-border hover:bg-muted/40 transition-colors">
                               <td className="p-4 font-mono font-bold text-foreground">{t.ticker || "N/A"}</td>
                               <td className="p-4 font-serif">{t.asset_name || "Asset"}</td>
                               <td className="p-4 font-mono text-xs font-bold uppercase">{t.tx_type}</td>
                               <td className="p-4 font-mono text-xs">{formatAmountRange(t.amount_min, t.amount_max)}</td>
                               <td className="p-4 font-mono text-xs text-muted-foreground">{t.transaction_date || t.disclosure_date || "N/A"}</td>
                               <td className="p-4">
-                                <span className="px-2.5 py-1 text-xs font-mono bg-muted text-muted-foreground border border-border rounded-sm">
-                                  Standard Filing
+                                <span className={`inline-flex px-2.5 py-1 text-xs font-mono border rounded-sm ${conflict.flagged ? "border-accent/60 bg-accent/10 text-accent" : "border-border bg-muted text-muted-foreground"}`}>
+                                  {conflict.label}
                                 </span>
+                                {conflict.detail ? <p className="mt-2 max-w-xs text-xs leading-5 text-muted-foreground">{conflict.detail}</p> : null}
                               </td>
                             </tr>
-                          ))}
-                    </tbody>
-                  </table>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="mt-5 flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => loadTradePage(legislator.tradeCoverage.offset - 100)}
+                      disabled={legislator.tradeCoverage.offset === 0 || (tradePageState.memberId === legislator.bioguide_id && tradePageState.status === "loading")}
+                      className="border border-border bg-card px-4 py-2 font-mono text-xs font-semibold uppercase tracking-wide text-foreground transition-colors hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Previous
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => loadTradePage(legislator.tradeCoverage.offset + 100)}
+                      disabled={!legislator.tradeCoverage.hasMore || (tradePageState.memberId === legislator.bioguide_id && tradePageState.status === "loading")}
+                      className="border border-border bg-card px-4 py-2 font-mono text-xs font-semibold uppercase tracking-wide text-foreground transition-colors hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {tradePageState.memberId === legislator.bioguide_id && tradePageState.status === "loading"
+                        ? "Loading page…"
+                        : "Next"}
+                    </button>
+                    <span className="font-mono text-xs text-muted-foreground">
+                      Page {Math.floor(legislator.tradeCoverage.offset / 100) + 1} of {Math.ceil(legislator.tradeCoverage.total / 100)}
+                    </span>
+                  </div>
+                  {tradePageState.memberId === legislator.bioguide_id && tradePageState.status === "error" ? (
+                    <div role="alert" className="mt-3 border-l-2 border-destructive pl-3 text-sm text-destructive">
+                      {tradePageState.error} <button type="button" onClick={() => loadTradePage(tradePageState.offset)} className="font-semibold underline">Retry</button>
+                    </div>
+                  ) : null}
                 </div>
               ) : (
                 <div className="text-muted-foreground font-mono italic p-6 text-center border border-border">
-                  No stock disclosures found for this member.
+                  {legislator.tradeCoverage.message}
                 </div>
               )}
             </ArchivePanel>

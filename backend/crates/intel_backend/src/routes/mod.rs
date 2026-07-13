@@ -182,6 +182,10 @@ pub fn build_router(repo: Repository, cache: Arc<CacheLayer>) -> Router {
             axum::routing::get(trades::list_trades),
         )
         .route(
+            "/api/members/:member_id/trades",
+            axum::routing::get(trades::member_trades),
+        )
+        .route(
             "/api/intel/portfolio/summary",
             axum::routing::get(portfolio::summary),
         )

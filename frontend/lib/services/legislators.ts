@@ -1,4 +1,5 @@
-import { getTradesByPoliticianId, StockTrade } from "./stocks";
+import { getTradesByMemberId } from "./stocks";
+import type { StockTrade } from "./stocks";
 import { createLogger } from "@/lib/tracing";
 
 import { BACKEND_URL } from "@/lib/constants";
@@ -43,6 +44,14 @@ export type Legislator = {
     topDonors?: Array<{ name: string; amount: number; industry?: string }>;
     recentBills?: Array<{ id?: string; title: string; status?: string; date: string }>;
     recentTrades: StockTrade[];
+    tradeCoverage: {
+        status: "loaded" | "not_loaded" | "unavailable";
+        message: string;
+        total: number;
+        hasMore: boolean;
+        excludedDateAnomalies: number;
+        offset: number;
+    };
     url: string;
     twitter_account: string;
     facebook_account: string;
@@ -108,7 +117,18 @@ type LegislatorsResponse = {
     members?: Array<Record<string, unknown>>;
 };
 
-function mapLegislator(raw: Record<string, unknown>, recentTrades: StockTrade[] = []): Legislator {
+function mapLegislator(
+    raw: Record<string, unknown>,
+    recentTrades: StockTrade[] = [],
+    tradeCoverage: Legislator["tradeCoverage"] = {
+        status: "not_loaded",
+        message: "No linked disclosure transactions are loaded; this is a coverage state, not evidence of no trading.",
+        total: 0,
+        hasMore: false,
+        excludedDateAnomalies: 0,
+        offset: 0,
+    },
+): Legislator {
     const tradeSummary = raw.trade_summary as LegislatorTradeSummary | null | undefined;
 
     return {
@@ -130,6 +150,7 @@ function mapLegislator(raw: Record<string, unknown>, recentTrades: StockTrade[] 
         bio: String(raw.bio || ""),
         billsSponsored: Number(raw.bills_sponsored || raw.billsSponsored || 0),
         recentTrades,
+        tradeCoverage,
         url: String(raw.url || raw.website_url || ""),
         twitter_account: String(raw.twitter_account || ""),
         facebook_account: String(raw.facebook_account || ""),
@@ -181,20 +202,38 @@ export async function getLegislator(id: string, signal?: AbortSignal): Promise<L
 
         const raw = await response.json();
         const memberData = raw.member || raw;
-        const tradeId = memberData.trade_summary?.politician_id || memberData.bioguide_id || memberData.id;
+        const memberId = memberData.bioguide_id || memberData.id;
         let recentTrades: StockTrade[] = [];
-        if (tradeId) {
+        let tradeCoverage: Legislator["tradeCoverage"] | undefined;
+        if (memberId) {
             try {
-                recentTrades = await getTradesByPoliticianId(String(tradeId), signal);
+                const response = await getTradesByMemberId(String(memberId), 100, 0, signal);
+                recentTrades = response.trades;
+                tradeCoverage = {
+                    status: response.coverage.status,
+                    message: response.coverage.message,
+                    total: response.total,
+                    hasMore: response.coverage.has_more,
+                    excludedDateAnomalies: response.coverage.excluded_date_anomalies,
+                    offset: response.offset,
+                };
             } catch (error) {
                 if (error instanceof Error && error.name === "AbortError") throw error;
                 log.warn("Trade history unavailable; continuing with the member profile", {
                     memberId: id,
                     error: String(error),
                 });
+                tradeCoverage = {
+                    status: "unavailable",
+                    message: "The disclosure service is temporarily unavailable; this is not evidence of no trading.",
+                    total: 0,
+                    hasMore: false,
+                    excludedDateAnomalies: 0,
+                    offset: 0,
+                };
             }
         }
-        return mapLegislator(memberData, recentTrades);
+        return mapLegislator(memberData, recentTrades, tradeCoverage);
     } catch (error) {
         if (!(error instanceof Error && error.name === "AbortError")) {
             log.error("Error fetching legislator", { error: String(error) });
