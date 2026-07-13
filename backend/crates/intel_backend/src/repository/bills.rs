@@ -5,6 +5,7 @@ use crate::models::{
 };
 use crate::repository::Repository;
 use chrono::NaiveDate;
+use std::collections::{HashMap, HashSet};
 
 pub struct BillUpsert<'a> {
     pub congress: i32,
@@ -297,10 +298,16 @@ impl Repository {
 
         // Sponsors
         let sponsor_rows: Vec<SponsorRow> = sqlx::query_as::<_, SponsorRow>(
-            "SELECT bioguide_id, sponsor_type, sponsorship_date, is_original_cosponsor
-             FROM bill_sponsors
-             WHERE bill_id = $1
-             ORDER BY sponsor_type ASC, sponsorship_date ASC",
+            "SELECT bs.bioguide_id,
+                    COALESCE(NULLIF(CONCAT_WS(' ', m.first_name, m.last_name), ''), bs.bioguide_id, 'Unknown') AS name,
+                    NULLIF(m.current_party, 'Unknown') AS party,
+                    NULLIF(m.current_state, '') AS state,
+                    bs.sponsor_type, bs.sponsorship_date,
+                    bs.is_original_cosponsor
+             FROM bill_sponsors bs
+             LEFT JOIN members m ON m.bioguide_id = bs.bioguide_id
+             WHERE bs.bill_id = $1
+             ORDER BY bs.sponsor_type ASC, bs.sponsorship_date ASC, bs.bioguide_id ASC",
         )
         .bind(bill_id)
         .fetch_all(self.pool())
@@ -309,25 +316,13 @@ impl Repository {
         let mut sponsors = Vec::new();
         let mut cosponsors = Vec::new();
         for s in sponsor_rows {
-            let name = if let Some(ref bid) = s.bioguide_id {
-                // Try to get the member name
-                let name_row: Option<(String, String)> = sqlx::query_as(
-                    "SELECT first_name, last_name FROM members WHERE bioguide_id = $1",
-                )
-                .bind(bid)
-                .fetch_optional(self.pool())
-                .await?;
-                name_row
-                    .map(|(f, l)| format!("{} {}", f, l))
-                    .unwrap_or_else(|| bid.clone())
-            } else {
-                "Unknown".to_string()
-            };
-
             let info = BillSponsorInfo {
                 bioguide_id: s.bioguide_id.clone(),
-                name,
+                name: s.name,
+                party: s.party,
+                state: s.state,
                 sponsor_type: s.sponsor_type.clone(),
+                sponsorship_date: s.sponsorship_date,
                 is_original_cosponsor: s.is_original_cosponsor,
             };
             if s.sponsor_type == "sponsor" {
@@ -391,7 +386,9 @@ impl Repository {
         let amendments = self.get_bill_amendments(bill_id).await?;
 
         // Funding overlay from sponsors/cosponsors
-        let funding_overlay = self.build_funding_overlay(&sponsors, &cosponsors).await?;
+        let funding_overlay = self
+            .build_funding_overlay(row.congress, &sponsors, &cosponsors)
+            .await?;
 
         // Lobbying overlay (heuristic keyword match)
         let lobbying_overlay = self
@@ -513,77 +510,100 @@ impl Repository {
     /// Build funding overlay for all sponsors/cosponsors of a bill.
     async fn build_funding_overlay(
         &self,
+        congress: i32,
         sponsors: &[BillSponsorInfo],
         cosponsors: &[BillSponsorInfo],
     ) -> Result<Vec<SponsorFundingOverlay>, sqlx::Error> {
-        let mut overlay = Vec::new();
-
-        for s in sponsors.iter().chain(cosponsors.iter()) {
-            let bioguide_id = match &s.bioguide_id {
-                Some(id) => id.as_str(),
-                None => continue,
-            };
-
-            // Read total receipts from the materialized view
-            let funding: Option<(f64,)> = sqlx::query_as(
-                "SELECT COALESCE(SUM(direct_receipts), 0)::float8 FROM member_funding_cycle_mv WHERE bioguide_id = $1",
-            )
-            .bind(bioguide_id)
-            .fetch_optional(self.pool())
-            .await?;
-            let total_receipts = funding.map(|(v,)| v).unwrap_or(0.0);
-
-            // Top networks
-            let net_rows: Vec<(String, f64, String)> = sqlx::query_as(
-                "SELECT network_slug,
-                        COALESCE(SUM(direct_amount + support_ie_amount + oppose_ie_amount), 0)::float8,
-                        'source_backed'::text
-                 FROM influence_network_member_mv
-                 WHERE bioguide_id = $1
-                 GROUP BY network_slug
-                 ORDER BY 2 DESC
-                 LIMIT 5",
-            )
-            .bind(bioguide_id)
-            .fetch_all(self.pool())
-            .await?;
-
-            let top_networks: Vec<NetworkAmount> = net_rows
-                .into_iter()
-                .map(|(slug, amount, conf)| NetworkAmount {
-                    network_slug: slug,
-                    amount,
-                    confidence: conf,
-                })
-                .collect();
-
-            // Get member name for reference
-            let name = s.name.clone();
-
-            // Get nominate_dim1
-            let nom: Option<(Option<f64>,)> =
-                sqlx::query_as("SELECT nominate_dim1 FROM members WHERE bioguide_id = $1")
-                    .bind(bioguide_id)
-                    .fetch_optional(self.pool())
-                    .await?;
-
-            let data_quality = if top_networks.is_empty() && total_receipts == 0.0 {
-                "missing_crosswalk".to_string()
-            } else {
-                "complete".to_string()
-            };
-
-            overlay.push(SponsorFundingOverlay {
-                bioguide_id: bioguide_id.to_string(),
-                name,
-                total_receipts,
-                top_networks,
-                nominate_dim1: nom.and_then(|(v,)| v),
-                data_quality,
-            });
+        let cycle = election_cycle_for_congress(congress);
+        let mut sponsor_names = HashMap::new();
+        let mut seen_ids = HashSet::new();
+        let bioguide_ids: Vec<String> = sponsors
+            .iter()
+            .chain(cosponsors.iter())
+            .filter_map(|sponsor| {
+                let id = sponsor.bioguide_id.as_ref()?;
+                sponsor_names.insert(id.clone(), sponsor.name.clone());
+                seen_ids.insert(id.clone()).then(|| id.clone())
+            })
+            .collect();
+        if bioguide_ids.is_empty() {
+            return Ok(Vec::new());
         }
 
-        Ok(overlay)
+        let funding_rows: Vec<SponsorFundingRow> = sqlx::query_as(
+            r#"SELECT member.bioguide_id,
+                      member.nominate_dim1::float8 AS nominate_dim1,
+                      COALESCE(funding.direct_receipts, 0)::float8 AS direct_receipts,
+                      EXISTS (
+                          SELECT 1 FROM member_identifiers identifier
+                          WHERE identifier.bioguide_id = member.bioguide_id
+                            AND identifier.scheme = 'fec'
+                      ) OR EXISTS (
+                          SELECT 1 FROM fec_candidates candidate
+                          WHERE candidate.bioguide_id = member.bioguide_id
+                      ) AS has_fec_crosswalk
+               FROM members member
+               LEFT JOIN member_funding_cycle_mv funding
+                 ON funding.bioguide_id = member.bioguide_id
+                AND funding.cycle = $2
+               WHERE member.bioguide_id = ANY($1)"#,
+        )
+        .bind(&bioguide_ids)
+        .bind(cycle)
+        .fetch_all(self.pool())
+        .await?;
+
+        let network_rows: Vec<SponsorNetworkRow> = sqlx::query_as(
+            r#"SELECT bioguide_id, network_slug,
+                      COALESCE(direct_amount, 0)::float8 AS direct_contributions,
+                      COALESCE(support_ie_amount, 0)::float8 AS independent_supporting,
+                      COALESCE(oppose_ie_amount, 0)::float8 AS independent_opposing
+               FROM influence_network_member_mv
+               WHERE bioguide_id = ANY($1) AND cycle = $2
+               ORDER BY bioguide_id,
+                        (COALESCE(direct_amount, 0) + COALESCE(support_ie_amount, 0)
+                         + COALESCE(oppose_ie_amount, 0)) DESC,
+                        network_slug"#,
+        )
+        .bind(&bioguide_ids)
+        .bind(cycle)
+        .fetch_all(self.pool())
+        .await?;
+
+        let mut networks_by_member: HashMap<String, Vec<NetworkAmount>> = HashMap::new();
+        for row in network_rows {
+            let networks = networks_by_member.entry(row.bioguide_id).or_default();
+            if networks.len() < 5 {
+                networks.push(NetworkAmount {
+                    network_slug: row.network_slug,
+                    direct_contributions: row.direct_contributions,
+                    independent_supporting: row.independent_supporting,
+                    independent_opposing: row.independent_opposing,
+                    confidence: "source_backed".to_string(),
+                });
+            }
+        }
+
+        let mut funding_by_member: HashMap<String, SponsorFundingRow> = funding_rows
+            .into_iter()
+            .map(|row| (row.bioguide_id.clone(), row))
+            .collect();
+
+        Ok(bioguide_ids
+            .into_iter()
+            .filter_map(|bioguide_id| {
+                let funding = funding_by_member.remove(&bioguide_id)?;
+                Some(SponsorFundingOverlay {
+                    name: sponsor_names.get(&bioguide_id)?.clone(),
+                    bioguide_id: bioguide_id.clone(),
+                    cycle,
+                    direct_receipts: funding.direct_receipts,
+                    top_networks: networks_by_member.remove(&bioguide_id).unwrap_or_default(),
+                    nominate_dim1: funding.nominate_dim1,
+                    data_quality: funding_quality(funding.has_fec_crosswalk).to_string(),
+                })
+            })
+            .collect())
     }
 
     /// Heuristic lobbying match: match bill policy_area and subjects against lobbying
@@ -692,8 +712,77 @@ struct ActionRow {
 #[derive(sqlx::FromRow)]
 struct SponsorRow {
     bioguide_id: Option<String>,
+    name: String,
+    party: Option<String>,
+    state: Option<String>,
     sponsor_type: String,
+    sponsorship_date: Option<NaiveDate>,
     is_original_cosponsor: bool,
+}
+
+#[derive(sqlx::FromRow)]
+struct SponsorFundingRow {
+    bioguide_id: String,
+    nominate_dim1: Option<f64>,
+    direct_receipts: f64,
+    has_fec_crosswalk: bool,
+}
+
+#[derive(sqlx::FromRow)]
+struct SponsorNetworkRow {
+    bioguide_id: String,
+    network_slug: String,
+    direct_contributions: f64,
+    independent_supporting: f64,
+    independent_opposing: f64,
+}
+
+fn election_cycle_for_congress(congress: i32) -> i32 {
+    1789 + (congress - 1) * 2 + 1
+}
+
+fn funding_quality(has_fec_crosswalk: bool) -> &'static str {
+    if has_fec_crosswalk {
+        "crosswalk_loaded"
+    } else {
+        "missing_crosswalk"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{election_cycle_for_congress, funding_quality};
+    use crate::models::NetworkAmount;
+
+    #[test]
+    fn bill_congress_maps_to_its_even_fec_cycle() {
+        assert_eq!(election_cycle_for_congress(119), 2026);
+        assert_eq!(election_cycle_for_congress(118), 2024);
+        assert_eq!(election_cycle_for_congress(112), 2012);
+    }
+
+    #[test]
+    fn missing_fec_crosswalk_is_not_reported_as_complete_zero_funding() {
+        assert_eq!(funding_quality(false), "missing_crosswalk");
+        assert_eq!(funding_quality(true), "crosswalk_loaded");
+    }
+
+    #[test]
+    fn bill_network_contract_keeps_direct_support_and_opposition_separate() {
+        let value = serde_json::to_value(NetworkAmount {
+            network_slug: "example".to_string(),
+            direct_contributions: 125.0,
+            independent_supporting: 50.0,
+            independent_opposing: 25.0,
+            confidence: "source_backed".to_string(),
+        })
+        .expect("network amount serializes");
+
+        assert_eq!(value["direct_contributions"], 125.0);
+        assert_eq!(value["independent_supporting"], 50.0);
+        assert_eq!(value["independent_opposing"], 25.0);
+        assert!(value.get("amount").is_none());
+    }
 }
 
 #[derive(sqlx::FromRow)]

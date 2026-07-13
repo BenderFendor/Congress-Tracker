@@ -128,15 +128,32 @@ export default function BillDetailPage() {
     lobbying_overlay,
     lobbying_bill_links,
   } = data
-  const totalSponsorReceipts = funding_overlay?.reduce((sum, sponsor) => sum + sponsor.total_receipts, 0) ?? 0
+  const totalSponsorReceipts = funding_overlay?.reduce((sum, sponsor) => sum + sponsor.direct_receipts, 0) ?? 0
+  const fundingCycle = funding_overlay?.[0]?.cycle
   const topInfluenceNetworks = Array.from(
-    new Map(
-      (funding_overlay ?? []).flatMap((sponsor) => sponsor.top_networks).map((network) => [network.network_slug, network])
-    ).values()
-  ).sort((left, right) => right.amount - left.amount)
+    (funding_overlay ?? []).reduce((networks, sponsor) => {
+      for (const network of sponsor.top_networks) {
+        const current = networks.get(network.network_slug) ?? {
+          network_slug: network.network_slug,
+          direct_contributions: 0,
+          independent_supporting: 0,
+          independent_opposing: 0,
+        }
+        current.direct_contributions += network.direct_contributions
+        current.independent_supporting += network.independent_supporting
+        current.independent_opposing += network.independent_opposing
+        networks.set(network.network_slug, current)
+      }
+      return networks
+    }, new Map<string, { network_slug: string; direct_contributions: number; independent_supporting: number; independent_opposing: number }>()).values()
+  ).sort((left, right) => (
+    right.direct_contributions + right.independent_supporting + right.independent_opposing
+  ) - (
+    left.direct_contributions + left.independent_supporting + left.independent_opposing
+  ))
   const fundingQuality = funding_overlay?.some((sponsor) => sponsor.data_quality === "missing_crosswalk")
     ? "missing_crosswalk"
-    : "complete"
+    : "crosswalk_loaded"
 
   const metrics = [
     { label: "Congress", value: `${bill.congress}th` },
@@ -170,7 +187,7 @@ export default function BillDetailPage() {
             <div className="p-6">
               <div className="flex flex-wrap items-center justify-between gap-4 mb-6 pb-4 border-b border-border">
                 <div>
-                  <div className="text-sm text-muted-foreground">Total Sponsor Receipts</div>
+                  <div className="text-sm text-muted-foreground">Direct sponsor campaign receipts{fundingCycle ? ` · ${fundingCycle} cycle` : ""}</div>
                   <div className="text-2xl font-bold text-foreground">
                     {formatCurrency(totalSponsorReceipts)}
                   </div>
@@ -185,13 +202,16 @@ export default function BillDetailPage() {
 
               {topInfluenceNetworks.length > 0 && (
                 <div>
-                  <h4 className="text-sm font-semibold text-foreground mb-3">Top Influence Networks</h4>
+                  <h4 className="text-sm font-semibold text-foreground mb-3">Source-linked influence networks</h4>
+                  <p className="mb-3 text-xs leading-5 text-muted-foreground">Direct contributions are money received by sponsor campaigns. Independent support and opposition are outside spending and are reported separately.</p>
                   <div className="border border-border rounded-sm overflow-hidden">
                     <table className="w-full text-left text-sm">
                       <thead className="bg-muted/50 border-b border-border font-mono text-xs uppercase text-muted-foreground">
                         <tr>
                           <th className="p-3">Network</th>
-                          <th className="p-3 text-right">Total Amount</th>
+                          <th className="p-3 text-right">Direct contributions</th>
+                          <th className="p-3 text-right">Independent support</th>
+                          <th className="p-3 text-right">Independent opposition</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border">
@@ -203,7 +223,13 @@ export default function BillDetailPage() {
                               </Link>
                             </td>
                             <td className="p-3 text-right font-mono text-foreground">
-                              {formatCurrency(net.amount)}
+                              {formatCurrency(net.direct_contributions)}
+                            </td>
+                            <td className="p-3 text-right font-mono text-foreground">
+                              {formatCurrency(net.independent_supporting)}
+                            </td>
+                            <td className="p-3 text-right font-mono text-foreground">
+                              {formatCurrency(net.independent_opposing)}
                             </td>
                           </tr>
                         ))}
@@ -231,11 +257,9 @@ export default function BillDetailPage() {
               </thead>
               <tbody className="divide-y divide-border">
                 {sponsors && sponsors.map((sp) => (
-                  <tr key={`sp-${sp.bioguide_id}`} className="hover:bg-muted/30">
+                  <tr key={`sp-${sp.bioguide_id ?? sp.name}`} className="hover:bg-muted/30">
                     <td className="p-3 font-medium text-foreground">
-                      <Link href={`/legislators/${sp.bioguide_id}`} className="hover:underline text-primary">
-                        {sp.first_name} {sp.last_name}
-                      </Link>
+                      {sp.bioguide_id ? <Link href={`/legislators/${sp.bioguide_id}`} className="hover:underline text-primary">{sp.name}</Link> : sp.name}
                     </td>
                     <td className="p-3 text-xs font-mono uppercase text-accent font-semibold">
                       {sp.sponsor_type || "Sponsor"}
@@ -246,11 +270,9 @@ export default function BillDetailPage() {
                   </tr>
                 ))}
                 {cosponsors && cosponsors.map((co) => (
-                  <tr key={`co-${co.bioguide_id}`} className="hover:bg-muted/30">
+                  <tr key={`co-${co.bioguide_id ?? co.name}`} className="hover:bg-muted/30">
                     <td className="p-3 font-medium text-foreground">
-                      <Link href={`/legislators/${co.bioguide_id}`} className="hover:underline text-primary">
-                        {co.first_name} {co.last_name}
-                      </Link>
+                      {co.bioguide_id ? <Link href={`/legislators/${co.bioguide_id}`} className="hover:underline text-primary">{co.name}</Link> : co.name}
                     </td>
                     <td className="p-3 text-xs font-mono uppercase text-muted-foreground">Cosponsor</td>
                     <td className="p-3">{co.party || "-"}</td>

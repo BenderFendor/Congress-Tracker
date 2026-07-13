@@ -21,6 +21,14 @@ type MemberVotePosition = {
   roll_number: number;
   vote_date: string | null;
   question: string;
+  description: string;
+  result: string;
+  bill_id: string | null;
+  measure: {
+    kind: "amendment" | "nomination" | "procedure" | "bill" | "other";
+    identifier: string | null;
+    label: string;
+  };
   position: string;
 };
 
@@ -47,16 +55,16 @@ type MemberVotesResponse = Omit<MemberVotesResult, "votes"> & { votes: MemberVot
 function mapMemberVote(position: MemberVotePosition): Vote {
   return {
     bill: {
-      bill_id: position.vote_id,
-      number: `${position.chamber} ${position.roll_number}`,
-      title: position.question,
+      bill_id: position.bill_id ?? position.vote_id,
+      number: position.measure.identifier ?? `${position.chamber} ${position.roll_number}`,
+      title: position.measure.label,
       latest_action: position.vote_date ?? "",
     },
     question: position.question,
-    description: position.question,
+    description: position.description || position.question,
     date: position.vote_date ?? "",
     time: "",
-    result: "Recorded",
+    result: position.result || "Recorded",
     position: position.position,
   };
 }

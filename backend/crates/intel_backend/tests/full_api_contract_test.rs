@@ -290,6 +290,17 @@ async fn test_all_api_endpoints() {
         } else {
             assert_eq!(status, StatusCode::OK, "member votes");
             assert!(body["votes"].is_array(), "votes should be an array");
+            if let Some(vote) = body["votes"].as_array().and_then(|votes| votes.first()) {
+                assert!(vote["description"].is_string());
+                assert!(vote["result"].is_string());
+                assert!(vote["measure"]["kind"].as_str().is_some_and(|kind| {
+                    matches!(
+                        kind,
+                        "amendment" | "nomination" | "procedure" | "bill" | "other"
+                    )
+                }));
+                assert!(vote["measure"]["label"].is_string());
+            }
             if let Some(summary) = body["summary"].as_object() {
                 assert!(summary["party_line_eligible_votes"].is_number());
                 assert!(summary["first_vote_date"].is_string());

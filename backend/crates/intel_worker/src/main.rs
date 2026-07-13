@@ -26,6 +26,43 @@ struct ParsedDocument {
 
 type WorkerError = Box<dyn std::error::Error + Send + Sync>;
 
+struct LeaseRenewer {
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl LeaseRenewer {
+    fn start(pool: PgPool, job_id: i64, owner: String) -> Self {
+        let task = tokio::spawn(async move {
+            let seconds = std::env::var("JOB_LEASE_RENEW_SECONDS")
+                .ok()
+                .and_then(|value| value.parse::<u64>().ok())
+                .unwrap_or(30)
+                .clamp(5, 300);
+            let mut interval = tokio::time::interval(Duration::from_secs(seconds));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            interval.tick().await;
+            loop {
+                interval.tick().await;
+                match renew_job_lease(&pool, job_id, &owner).await {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        warn!(job_id, owner, "Job lease ownership was lost");
+                        break;
+                    }
+                    Err(error) => warn!(job_id, owner, error = %error, "Lease renewal failed"),
+                }
+            }
+        });
+        Self { task }
+    }
+}
+
+impl Drop for LeaseRenewer {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
 #[derive(Parser)]
 #[command(name = "intel_worker")]
 struct Cli {
@@ -714,10 +751,15 @@ fn http_client() -> reqwest::Client {
 }
 
 async fn run_downloads(pool: &PgPool, instance_id: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let profile_default = match std::env::var("WORKER_RESOURCE_PROFILE").as_deref() {
+        Ok("pi") => 2,
+        Ok("burst") => 12,
+        _ => 3,
+    };
     let concurrency = std::env::var("DOWNLOAD_CONCURRENCY")
         .ok()
         .and_then(|value| value.parse::<usize>().ok())
-        .unwrap_or(6)
+        .unwrap_or(profile_default)
         .clamp(1, 16);
     let jobs: Vec<(i64, i32, String)> = sqlx::query_as(&format!(
         "WITH picked AS (
@@ -749,12 +791,15 @@ async fn run_downloads(pool: &PgPool, instance_id: &str) -> Result<(), Box<dyn s
     for (job_id, year, doc_id) in jobs {
         let task_client = client.clone();
         let task_pool = pool.clone();
+        let owner = instance_id.to_string();
         tasks.spawn(async move {
-            if let Err(error) = download_one(&task_client, &task_pool, job_id, year, &doc_id).await
+            let _lease = LeaseRenewer::start(task_pool.clone(), job_id, owner.clone());
+            if let Err(error) =
+                download_one(&task_client, &task_pool, job_id, year, &doc_id, &owner).await
             {
                 warn!(job_id, error = %error, "Download failed");
                 if let Err(retry_error) =
-                    retry_job(&task_pool, job_id, &error.to_string(), None).await
+                    retry_job(&task_pool, job_id, &owner, &error.to_string(), None).await
                 {
                     warn!(job_id, error = %retry_error, "Failed to schedule download retry");
                 }
@@ -805,6 +850,7 @@ async fn download_one(
     job_id: i64,
     year: i32,
     doc_id: &str,
+    owner: &str,
 ) -> Result<(), WorkerError> {
     let filing_type: String = sqlx::query_scalar(
         "SELECT filing_type_code FROM source_index_entries
@@ -832,12 +878,15 @@ async fn download_one(
 
     match download_disposition(status.as_u16()) {
         DownloadDisposition::NotModified => {
-            sqlx::query(
-                "UPDATE ingest_jobs SET status = 'skipped', finished_at = now() WHERE id = $1",
+            let result = sqlx::query(
+                "UPDATE ingest_jobs SET status = 'skipped', finished_at = now(), locked_by=NULL, locked_at=NULL
+                 WHERE id = $1 AND status='running' AND locked_by=$2",
             )
             .bind(job_id)
+            .bind(owner)
             .execute(pool)
             .await?;
+            require_owned_transition(result.rows_affected())?;
             return Ok(());
         }
         DownloadDisposition::RateLimited => {
@@ -926,14 +975,16 @@ async fn download_one(
         .await?;
     }
 
-    sqlx::query(
+    let completion = sqlx::query(
         "UPDATE ingest_jobs
          SET status = 'completed', finished_at = now(), locked_by = NULL, locked_at = NULL
-         WHERE id = $1",
+         WHERE id = $1 AND status = 'running' AND locked_by = $2",
     )
     .bind(job_id)
+    .bind(owner)
     .execute(pool)
     .await?;
+    require_owned_transition(completion.rows_affected())?;
 
     info!(job_id, doc_id, sha256 = %&sha256[..12], "Downloaded");
     Ok(())
@@ -942,10 +993,15 @@ async fn download_one(
 // ── Parsing ──────────────────────────────────────────────────────────────────
 
 async fn run_parses(pool: &PgPool, instance_id: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let profile_default = match std::env::var("WORKER_RESOURCE_PROFILE").as_deref() {
+        Ok("pi") => 1,
+        Ok("burst") => 6,
+        _ => 1,
+    };
     let concurrency = std::env::var("PARSE_CONCURRENCY")
         .ok()
         .and_then(|value| value.parse::<usize>().ok())
-        .unwrap_or(2)
+        .unwrap_or(profile_default)
         .clamp(1, 8);
     let jobs: Vec<(i64, i32, String, i64)> = sqlx::query_as(&format!(
         "WITH picked AS (
@@ -975,11 +1031,15 @@ async fn run_parses(pool: &PgPool, instance_id: &str) -> Result<(), Box<dyn std:
     let mut tasks = JoinSet::new();
     for (job_id, year, doc_id, version_id) in jobs {
         let task_pool = pool.clone();
+        let owner = instance_id.to_string();
         tasks.spawn(async move {
-            if let Err(error) = parse_one(&task_pool, job_id, year, &doc_id, version_id).await {
+            let _lease = LeaseRenewer::start(task_pool.clone(), job_id, owner.clone());
+            if let Err(error) =
+                parse_one(&task_pool, job_id, year, &doc_id, version_id, &owner).await
+            {
                 warn!(job_id, doc_id, error = %error, "Parse failed");
                 if let Err(retry_error) =
-                    retry_job(&task_pool, job_id, &error.to_string(), Some(3600)).await
+                    retry_job(&task_pool, job_id, &owner, &error.to_string(), Some(3600)).await
                 {
                     warn!(job_id, error = %retry_error, "Failed to schedule parse retry");
                 }
@@ -1009,6 +1069,7 @@ async fn parse_one(
     source_year: i32,
     doc_id: &str,
     version_id: i64,
+    owner: &str,
 ) -> Result<(), WorkerError> {
     // Get document info
     let doc: (i64, String, String) = sqlx::query_as(
@@ -1054,16 +1115,18 @@ async fn parse_one(
         .bind(document_id)
         .execute(pool)
         .await?;
-        sqlx::query(
+        let completion = sqlx::query(
             "UPDATE ingest_jobs
              SET status='completed', finished_at=now(), locked_by=NULL, locked_at=NULL,
                  error_message=$1
-             WHERE id=$2",
+             WHERE id=$2 AND status='running' AND locked_by=$3",
         )
         .bind(&reason)
         .bind(job_id)
+        .bind(owner)
         .execute(pool)
         .await?;
+        require_owned_transition(completion.rows_affected())?;
         info!(job_id, doc_id, report_type, "Classified unsupported filing");
         return Ok(());
     }
@@ -1254,14 +1317,16 @@ async fn parse_one(
     .execute(&mut *transaction)
     .await?;
 
-    sqlx::query(
+    let completion = sqlx::query(
         "UPDATE ingest_jobs
          SET status = 'completed', finished_at = now(), locked_by = NULL, locked_at = NULL
-         WHERE id = $1",
+         WHERE id = $1 AND status = 'running' AND locked_by = $2",
     )
     .bind(job_id)
+    .bind(owner)
     .execute(&mut *transaction)
     .await?;
+    require_owned_transition(completion.rows_affected())?;
     transaction.commit().await?;
 
     info!(job_id, doc_id, rows = rows_extracted, "Parsed");
@@ -1895,6 +1960,7 @@ async fn build_financial_snapshots(
 async fn retry_job(
     pool: &PgPool,
     job_id: i64,
+    owner: &str,
     error_message: &str,
     fixed_delay_seconds: Option<i64>,
 ) -> Result<(), sqlx::Error> {
@@ -1910,7 +1976,7 @@ async fn retry_job(
     );
 
     let terminal = retry_disposition(attempts, max_attempts) == RetryDisposition::Failed;
-    sqlx::query(
+    let result = sqlx::query(
         "UPDATE ingest_jobs
          SET attempts = attempts + 1,
              status = CASE WHEN $1 THEN 'failed'::ingest_job_status
@@ -1920,15 +1986,39 @@ async fn retry_job(
              locked_at = NULL,
              error_message = $3,
              finished_at = CASE WHEN $1 THEN now() ELSE NULL END
-         WHERE id = $4",
+         WHERE id = $4 AND status = 'running' AND locked_by = $5",
     )
     .bind(terminal)
     .bind(delay_seconds)
     .bind(error_message)
     .bind(job_id)
+    .bind(owner)
     .execute(pool)
     .await?;
+    if result.rows_affected() != 1 {
+        return Err(sqlx::Error::RowNotFound);
+    }
     Ok(())
+}
+
+fn require_owned_transition(rows_affected: u64) -> Result<(), WorkerError> {
+    if rows_affected == 1 {
+        Ok(())
+    } else {
+        Err("job lease ownership was lost before terminal transition".into())
+    }
+}
+
+async fn renew_job_lease(pool: &PgPool, job_id: i64, owner: &str) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE ingest_jobs SET locked_at=now()
+         WHERE id=$1 AND status='running' AND locked_by=$2",
+    )
+    .bind(job_id)
+    .bind(owner)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected() == 1)
 }
 
 async fn heartbeat(pool: &PgPool, instance_id: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -2034,9 +2124,9 @@ fn truncate_utf8(input: &str, max_bytes: usize) -> &str {
 #[cfg(test)]
 mod tests {
     use super::{
-        recovery_priorities, required_annual_sections_are_present, required_rows_present,
-        supported_house_filing_type, truncate_utf8, IndexEntry, RECOVER_DOWNLOAD_SQL,
-        RECOVER_PARSE_SQL,
+        recovery_priorities, require_owned_transition, required_annual_sections_are_present,
+        required_rows_present, supported_house_filing_type, truncate_utf8, IndexEntry,
+        RECOVER_DOWNLOAD_SQL, RECOVER_PARSE_SQL,
     };
     use crate::parsers::DocumentLayout;
 
@@ -2162,5 +2252,12 @@ mod tests {
 
         assert!(current_download < historical_download);
         assert!(current_parse < historical_parse);
+    }
+
+    #[test]
+    fn terminal_job_transition_requires_exactly_one_owned_row() {
+        assert!(require_owned_transition(1).is_ok());
+        assert!(require_owned_transition(0).is_err());
+        assert!(require_owned_transition(2).is_err());
     }
 }

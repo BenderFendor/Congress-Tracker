@@ -16,7 +16,24 @@ do not replace live source, runtime, or browser evidence.
 
 ## Legislator Member-Vote Contract
 
-- `backend/crates/intel_backend/tests/full_api_contract_test.rs` verifies that a loaded member vote summary exposes the party-alignment denominator and first/last coverage dates. It does not assert a fixed percentage because live roll-call coverage changes.
+- `backend/crates/intel_backend/src/repository/votes.rs` fixture tests verify
+  strict-majority tie exclusion, historical party-switch comparisons, and
+  amendment, nomination, procedure, and bill measure classification.
+- `backend/crates/intel_backend/tests/full_api_contract_test.rs` verifies that
+  populated vote rows expose measure kind/label plus source description and
+  result, and that summaries expose the party-alignment denominator and
+  first/last coverage dates. It does not assert a fixed percentage because
+  live roll-call coverage changes.
+
+## Bill Detail Finance Contract
+
+- `backend/crates/intel_backend/src/repository/bills.rs` fixture tests verify
+  Congress-to-FEC-cycle mapping, explicit missing-crosswalk quality, and the
+  absence of a combined finance amount in the network serialization contract.
+- Live alternate-port probes cover a populated 23-sponsor bill, a bill with
+  source-backed independent spending, and H.R. 6489's direct LDA citation.
+  They do not fabricate a missing-crosswalk database row; that branch remains a
+  deterministic unit fixture.
 
 ## `frontend/scripts/influence-financials.test.mjs`
 
@@ -110,7 +127,9 @@ OCR accuracy or terminal completion of the live House backlog.
 `intel_worker/src/parsers.rs` additionally verifies that malformed annual text
 produces no fabricated normalized rows and that a missing scanned source returns
 an OCR error. It covers scanned-layout fingerprinting and OCR failure propagation,
-not successful Tesseract accuracy on a representative image-only filing.
+not successful Tesseract accuracy on a representative image-only filing. Its
+resource tests execute native child processes and prove process-group timeout
+kills, output-cap rejection, and interactive CPU/memory deferral thresholds.
 
 `intel_worker/src/main.rs` verifies that PTR and annual layouts cannot publish
 `parsed` without complete rows from their primary record family. Annual success
@@ -118,7 +137,9 @@ also requires the normalized A, C, D, E, and G sections plus filing and reportin
 period metadata, so a lone row from one section remains partial. It also verifies the supported-form recovery SQL is limited
 to `A`, `O`, `N`, `T`, and `P`, uses `NOT EXISTS` plus conflict-safe inserts,
 keys parse recovery by immutable document version, and gives current-year jobs
-lower numeric priority than historical backlog. Live lifecycle proof is still
+lower numeric priority than historical backlog. It also rejects zero-row and
+multi-row terminal transitions so only the current lease owner can complete or
+retry a job. Live lifecycle proof is still
 required because these structural unit tests do not execute PostgreSQL inserts.
 
 ## Frontend Test Files

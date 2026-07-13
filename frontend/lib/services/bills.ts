@@ -36,21 +36,22 @@ export type BillIntel = {
         chamber?: string;
     }>;
     sponsors: Array<{
-        bioguide_id: string;
-        first_name: string;
-        last_name: string;
+        bioguide_id?: string;
+        name: string;
         party?: string;
         state?: string;
         sponsor_type: string;
         sponsorship_date?: string;
+        is_original_cosponsor: boolean;
     }>;
     cosponsors: Array<{
-        bioguide_id: string;
-        first_name: string;
-        last_name: string;
+        bioguide_id?: string;
+        name: string;
         party?: string;
         state?: string;
+        sponsor_type: string;
         sponsorship_date?: string;
+        is_original_cosponsor: boolean;
     }>;
     subjects?: string[];
     committees?: Array<{
@@ -72,13 +73,16 @@ export type BillIntel = {
     funding_overlay?: Array<{
         bioguide_id: string;
         name: string;
-        total_receipts: number;
+        cycle: number;
+        direct_receipts: number;
         top_networks: Array<{
             network_slug: string;
-            amount: number;
+            direct_contributions: number;
+            independent_supporting: number;
+            independent_opposing: number;
             confidence: string;
         }>;
-        data_quality: "complete" | "missing_crosswalk";
+        data_quality: "crosswalk_loaded" | "missing_crosswalk";
     }>;
     lobbying_overlay?: Array<{
         issue_code: string;

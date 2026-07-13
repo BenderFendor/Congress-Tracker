@@ -183,7 +183,10 @@ pub struct BillAction {
 pub struct BillSponsorInfo {
     pub bioguide_id: Option<String>,
     pub name: String,
+    pub party: Option<String>,
+    pub state: Option<String>,
     pub sponsor_type: String,
+    pub sponsorship_date: Option<NaiveDate>,
     pub is_original_cosponsor: bool,
 }
 
@@ -210,7 +213,8 @@ pub struct VoteInfo {
 pub struct SponsorFundingOverlay {
     pub bioguide_id: String,
     pub name: String,
-    pub total_receipts: f64,
+    pub cycle: i32,
+    pub direct_receipts: f64,
     pub top_networks: Vec<NetworkAmount>,
     pub nominate_dim1: Option<f64>,
     pub data_quality: String,
@@ -219,7 +223,9 @@ pub struct SponsorFundingOverlay {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NetworkAmount {
     pub network_slug: String,
-    pub amount: f64,
+    pub direct_contributions: f64,
+    pub independent_supporting: f64,
+    pub independent_opposing: f64,
     pub confidence: String,
 }
 
@@ -400,7 +406,31 @@ pub struct VotePosition {
     pub roll_number: i32,
     pub vote_date: Option<NaiveDate>,
     pub question: String,
+    pub description: String,
+    pub result: String,
+    pub bill_id: Option<String>,
+    pub measure: VoteMeasureContext,
     pub position: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VoteMeasureContext {
+    /// Stable category derived from the source's bill identifier and roll-call text.
+    pub kind: VoteMeasureKind,
+    /// Official identifier when one is present in the loaded source fields.
+    pub identifier: Option<String>,
+    /// Human-readable context that does not imply every roll call is a bill vote.
+    pub label: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum VoteMeasureKind {
+    Amendment,
+    Nomination,
+    Procedure,
+    Bill,
+    Other,
 }
 
 // ── Search ─────────────────────────────────────────────────────────────────

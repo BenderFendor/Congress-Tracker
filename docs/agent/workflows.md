@@ -62,6 +62,19 @@ The server listens on port `4020` by default (configurable via `PORT` in `.env`)
 | `SENATE_LDA_API_KEY` | — | No | Senate LDA API key; raises rate limits |
 | `PORT` | `4020` | No | Server listen port |
 | `RUST_LOG` | — | No | Tracing/log level (e.g. `info`, `debug`) |
+| `WORKER_RESOURCE_PROFILE` | `interactive` | No | Worker bounds: `pi`, `interactive`, or explicit opt-in `burst` |
+| `JOB_LEASE_RENEW_SECONDS` | `30` | No | Refresh interval for owned running-job leases (clamped 5–300s) |
+| `PARSER_DOCUMENT_TIMEOUT_SECONDS` | `600` | No | Hard document extraction/OCR wall budget (clamped 30–3600s) |
+| `PARSER_MAX_PAGES` | `100` | No | Maximum pages rendered for OCR (clamped 1–500) |
+| `PARSER_MAX_PDF_BYTES` | `104857600` | No | Maximum parser input size |
+| `PARSER_MAX_SCRATCH_BYTES` | `536870912` | No | Maximum checked OCR scratch footprint |
+
+The default `interactive` worker profile runs one parser and three downloads,
+renices native PDF/OCR children, reserves two logical CPUs and 2 GiB of
+available memory before starting OCR, and never uses the GPU. `pi` lowers the
+memory ceiling and keeps one parser/two downloads. `burst` raises bounded
+parallelism and memory only when an operator opts in. All profiles produce the
+same normalized records and retain the same evidence gates.
 
 ## Start Frontend
 

@@ -240,12 +240,14 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
     ? legislator.vote_summary.recent_votes.map(v => ({
         vote_id: v.vote_id,
         date: v.vote_date || "Unknown date",
+        context: v.measure?.label || "Roll-call vote",
         question: v.question,
         position: v.position
       }))
     : votes.map(v => ({
         vote_id: v.bill?.number || "Roll Call",
         date: v.date || "Unknown date",
+        context: v.bill?.title || "Roll-call vote",
         question: v.question || v.description,
         position: v.position
       }))
@@ -678,7 +680,7 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
               <div className="border-l-2 border-accent bg-card px-5 py-4">
                 <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-accent">119th Congress · recorded roll calls</div>
                 <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-                  Attendance uses every loaded roll call from {voteSummary?.first_vote_date || "the start of available coverage"} through {voteSummary?.last_vote_date || "the latest loaded vote"}. Party alignment compares Yes/No votes with the majority position of this member&apos;s party on the same roll call.
+                  Attendance uses every loaded roll call from {voteSummary?.first_vote_date || "the start of available coverage"} through {voteSummary?.last_vote_date || "the latest loaded vote"}. Party alignment compares Yes/No votes with the strict majority position of the member&apos;s recorded party at the time of each vote; tied party votes are excluded.
                 </p>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -703,7 +705,7 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
                     <div className="h-2 overflow-hidden rounded-full bg-muted" aria-label={`${Number(partyLinePct).toFixed(1)} percent aligned with the party majority`}>
                       <div className="h-full bg-foreground transition-[width] duration-700 motion-reduce:transition-none" style={{ width: `${Math.min(100, partyLinePct)}%` }} />
                     </div>
-                    <p className="text-xs leading-5 text-muted-foreground">Abstentions and votes without a party-majority comparison are excluded.</p>
+                    <p className="text-xs leading-5 text-muted-foreground">Abstentions, tied caucus votes, missing historical party codes, and votes without a party-majority comparison are excluded.</p>
                   </div> : <p className="text-sm leading-6 text-muted-foreground">Party alignment is unavailable because the loaded records do not include enough party-coded Yes/No positions.</p>}
                 </ArchivePanel>
               </div>
@@ -716,6 +718,7 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
                         <tr className="border-b border-border text-left font-mono text-xs uppercase text-muted-foreground">
                           <th className="p-4">Vote ID</th>
                           <th className="p-4">Date</th>
+                          <th className="p-4">Measure</th>
                           <th className="p-4">Question</th>
                           <th className="p-4 text-right">Position</th>
                         </tr>
@@ -725,6 +728,7 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
                           <tr key={idx} className="border-b border-border hover:bg-muted/40 transition-colors">
                             <td className="p-4 font-mono text-xs font-bold text-accent">{v.vote_id}</td>
                             <td className="p-4 font-mono text-xs text-muted-foreground whitespace-nowrap">{v.date}</td>
+                            <td className="p-4 text-xs text-muted-foreground">{v.context}</td>
                             <td className="p-4 font-serif">{v.question}</td>
                             <td className="p-4 text-right">
                               <span className={`px-2.5 py-1 font-mono text-xs font-bold border rounded-sm inline-block ${

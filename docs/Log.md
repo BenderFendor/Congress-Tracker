@@ -381,3 +381,35 @@ the detailed worksheets under `docs/agent/traces/`.
 - Rendered explicit LDA bill citations separately from keyword-derived lobbying suggestions.
 - Restricted direct bill citations to direct, source=`lda`, non-heuristic evidence in SQL and Rust.
 - Added populated-dataset proof for H.R. 6489 and campaign-finance visualization parity with canonical cycle summaries.
+
+## 2026-07-12 - Historical Vote Semantics
+
+- Changed party-line alignment to compare each Yes/No position with the strict
+  majority of the member's recorded party on that roll call. Tied caucus votes,
+  missing historical party codes, and non-Yes/No positions are excluded.
+- Added vote-time party and state resolution from the active member term for
+  Voteview rows that do not carry those fields, plus a migration backfill for
+  existing null rows.
+- Added explicit amendment, nomination, procedure, bill, and other measure
+  context to member vote responses and rendered that context in the member
+  roll-call table.
+
+## 2026-07-12 - Worker Lease And Resource Bounds
+
+- Renewed active download and parse leases and made completion, skip, and retry
+  transitions conditional on the claiming worker identity.
+- Added hard native-process wall, CPU, address-space, output, page, input,
+  scratch, and document budgets for PDF text extraction, rendering, and OCR.
+- Made the interactive-safe worker profile the default, with lower Pi-class
+  bounds and explicit opt-in burst concurrency.
+
+## 2026-07-12 - Bill Detail Finance Correctness
+
+- Fixed populated bill-detail failures caused by decoding numeric ideology data
+  without an explicit floating-point cast.
+- Replaced per-sponsor member and finance lookups with a joined sponsor query
+  and two bounded bulk finance queries.
+- Scoped sponsor finance to the bill Congress's election cycle and separated
+  direct campaign receipts from independent support and opposition spending.
+- Aligned the frontend sponsor contract with the backend and kept explicit LDA
+  bill citations visually and semantically separate from heuristic suggestions.

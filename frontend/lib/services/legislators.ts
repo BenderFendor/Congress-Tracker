@@ -86,6 +86,14 @@ export type Legislator = {
             roll_number?: number;
             vote_date?: string | null;
             question: string;
+            description?: string;
+            result?: string;
+            bill_id?: string | null;
+            measure?: {
+                kind: "amendment" | "nomination" | "procedure" | "bill" | "other";
+                identifier?: string | null;
+                label: string;
+            };
             position: string;
         }>;
     } | null;
