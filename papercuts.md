@@ -331,3 +331,14 @@
 **What happened:** Ran rg with a redundant backend/ prefix while already in the backend working directory during FA-10 verification.
 
 ---
+## 2026-07-12 23:04
+
+**What happened:** Reusing one Cargo target directory across a temporary worktree embedded the removed /tmp source path in insta test binaries; use a per-worktree target directory for path-sensitive tests.
+
+---
+
+## 2026-07-12 23:05
+
+**What happened:** Ran a Cargo package test from the repository root even though Cargo.toml is under backend; use the backend workdir.
+
+---

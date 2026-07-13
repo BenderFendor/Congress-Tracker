@@ -254,6 +254,22 @@ where applicable, worksheet, focused commit, and milestone tag all exist.
   success requires A/C/D/E/G section and row completeness. Evidence:
   `docs/agent/traces/fa09-disclosure-atomicity.md`, tag
   `fa09-disclosure-atomicity`.
+- **FA-10 implementation complete, live reclaim proof pending:** running jobs
+  renew leases; terminal transitions require the owner; native parsing enforces
+  process-group, time, CPU, memory, input, output, page, and scratch bounds with
+  Pi/interactive/burst profiles. A live two-worker kill/reclaim exercise remains
+  required before closure. Evidence: `docs/agent/traces/fa10-worker-bounds.md`.
+- **FA-16 closed:** populated bill detail no longer fails NUMERIC decoding,
+  sponsors load in one joined query, finance uses two bounded bulk queries for
+  the bill cycle, and direct/support/opposition stay separate. H.R. 8205 loaded
+  23 sponsors and H.R. 8770 rendered all three channels without overflow.
+  Evidence: `docs/agent/traces/fa16-bill-correctness.md`, tag
+  `fa16-bill-correctness`.
+- **FA-17 closed:** ties are excluded from party alignment, comparisons use
+  vote-time party, and amendments, nominations, procedures, and bills expose
+  measure-aware context. Adam Schiff rendered 100 contextual votes without
+  overflow. Evidence: `docs/agent/traces/fa17-vote-semantics.md`, tag
+  `fa17-vote-semantics`.
 
 ## Audited Baseline
 

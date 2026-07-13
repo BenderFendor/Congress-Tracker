@@ -64,5 +64,6 @@ restores the former one-shot lease and unbounded native-process behavior.
 
 ## Status
 
-Done for code and deterministic verification. Live multi-worker fault injection
-is a remaining release-level proof item.
+Implemented in commit `c5612c4`. The integrated `scripts/self-test` passed.
+Live multi-worker fault injection remains a release-level proof item, so FA-10
+and its final tag remain open.

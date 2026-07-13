@@ -36,6 +36,12 @@ procedures, and legislation in the member vote contract and UI.
 - `scripts/verify-migrations`: blocked because the documented local database
   role cannot create disposable databases. The migration itself was then
   validated transactionally against the populated schema.
+- Parent `scripts/self-test`: passed after integration.
+- Parent isolated current-backend live API suite: passed, 18 flows.
+- Chrome loaded Adam Schiff's Votes tab with 100 contextual rows including
+  procedural, nomination, amendment, and other roll calls; strict historical
+  party/tie-exclusion copy was present and document overflow was absent. The
+  console retained the separately tracked stock-trades 500 from FA-14.
 
 ## Tests added
 
@@ -67,8 +73,10 @@ Migration `0042` only fills previously null party/state fields; if data rollback
 is required, restore the database from its pre-migration backup rather than
 guessing which values were source-provided.
 
+## Browser evidence
+
+- `docs/agent/traces/fa17-member-votes-desktop.png`
+
 ## Status
 
-Done. Focused backend and frontend gates pass. Full workspace verification is
-owned by the parent integration task and was not duplicated while concurrent
-worker and bill agents were editing the shared worktree.
+Done in commit `c5612c4`, tag `fa17-vote-semantics`.

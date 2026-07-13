@@ -45,8 +45,10 @@ sequential sponsor lookup path.
     `independent_supporting`, with direct contribution and opposition fields
     present separately.
   - H.R. 6489: 200 in 22 ms; explicit LDA links retained `confidence=direct`.
-- Chrome DevTools `new_page` for the alternate-port detail route hung for more
-  than 60 seconds. No screenshot or console/layout report was produced.
+- Parent Chrome verification loaded H.R. 8205 with 23 linked sponsors, zero
+  horizontal overflow, and no console warning/error. H.R. 8770 rendered direct,
+  independent support, and independent opposition columns at desktop and 390px
+  mobile with no document overflow.
 
 ## Tests added
 
@@ -76,7 +78,12 @@ blocked by the unresponsive Chrome MCP call.
 Revert the four bill model/repository/service/page changes and the accompanying
 documentation. No migration or persisted data mutation belongs to this slice.
 
+## Browser evidence
+
+- `docs/agent/traces/fa16-bill-detail-desktop.png`
+- `docs/agent/traces/fa16-bill-detail-mobile.png`
+
 ## Status
 
-Done with browser-evidence limitation documented. The live API path and focused
-compiler, unit, type, and lint checks pass.
+Done in commit `c5612c4`, tag `fa16-bill-correctness`. The integrated
+`scripts/self-test` and isolated 18-flow live API suite passed.
