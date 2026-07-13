@@ -1,6 +1,9 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { createRequire } from "node:module"
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises"
+import os from "node:os"
+import path from "node:path"
 import { feature } from "topojson-client"
 
 import {
@@ -11,6 +14,10 @@ import {
   normalizeCountyQuery,
   SUPPORTED_JURISDICTIONS,
 } from "../lib/county-geography.mjs"
+import {
+  loadPreparedCountyFile,
+  normalizePreparedCountyFile,
+} from "../lib/county-geography-store.mjs"
 import { createCountyPath } from "../lib/county-map-projection.mjs"
 
 const require = createRequire(import.meta.url)
@@ -132,4 +139,47 @@ test("every supported jurisdiction has renderable county geometry or projection 
       `${jurisdiction.abbr} county geometry must render a non-empty SVG path`,
     )
   }
+})
+
+test("checked-in county artifacts cover every supported jurisdiction with provenance", async () => {
+  for (const jurisdiction of SUPPORTED_JURISDICTIONS) {
+    const { data, preparedAt } = await loadPreparedCountyFile(jurisdiction.fips)
+    assert.ok(data.length > 0, `${jurisdiction.abbr} must have prepared county rows`)
+    assert.match(preparedAt, /^2026-07-12T/)
+    assert.ok(data.every(({ fips }) => fips.startsWith(jurisdiction.fips)))
+  }
+})
+
+test("prepared county loader rejects oversized and cross-state artifacts", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "county-geography-"))
+  const directory = path.join(root, "public", "data", "county-geography")
+  await mkdir(directory, { recursive: true })
+  const canonical = JSON.parse(
+    await readFile(path.join(process.cwd(), "public", "data", "county-geography", "06.json"), "utf8"),
+  )
+  await writeFile(path.join(directory, "06.json"), JSON.stringify(canonical), "utf8")
+  await assert.rejects(
+    loadPreparedCountyFile("06", { root, maxBytes: 10 }),
+    /exceeds the size limit/,
+  )
+  assert.throws(
+    () => normalizePreparedCountyFile({ ...canonical, state: "12" }, "06"),
+    /state does not match/,
+  )
+  assert.throws(
+    () => normalizePreparedCountyFile({ ...canonical, source: null }, "06"),
+    /source provenance/,
+  )
+  await rm(root, { recursive: true, force: true })
+})
+
+test("public county API reads prepared data without provider calls or writes", async () => {
+  const routeSource = await readFile(
+    path.join(process.cwd(), "app", "api", "elections", "counties", "route.ts"),
+    "utf8",
+  )
+  assert.match(routeSource, /loadPreparedCountyFile/)
+  assert.doesNotMatch(routeSource, /\bfetch\s*\(/)
+  assert.doesNotMatch(routeSource, /writeFile|rename|mkdir/)
+  assert.doesNotMatch(routeSource, /new Date\(/)
 })

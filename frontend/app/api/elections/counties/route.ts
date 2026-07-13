@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server"
 import {
-  buildCountyQueryUrl,
   COUNTY_GEOGRAPHY_SOURCE,
   isSupportedJurisdictionFips,
-  normalizeCountyQuery,
 } from "@/lib/county-geography.mjs"
+import { loadPreparedCountyFile } from "@/lib/county-geography-store.mjs"
 
 export const dynamic = "force-dynamic"
 
@@ -17,21 +16,8 @@ export async function GET(request: Request) {
     )
   }
 
-  const sourceRequest = buildCountyQueryUrl(state)
   try {
-    const response = await fetch(sourceRequest, {
-      headers: { Accept: "application/json" },
-      next: { revalidate: 60 * 60 * 24 * 30 },
-    })
-    if (!response.ok) {
-      return NextResponse.json(
-        { error: `Census TIGERweb returned ${response.status}` },
-        { status: 502 },
-      )
-    }
-
-    const payload: unknown = await response.json()
-    const counties = normalizeCountyQuery(payload, state)
+    const { data: counties, preparedAt } = await loadPreparedCountyFile(state)
     return NextResponse.json({
       data: counties,
       meta: {
@@ -39,16 +25,16 @@ export async function GET(request: Request) {
         coverage: counties.length > 0 ? "geometry_and_names" : "unavailable",
         results_coverage: "not_loaded",
         source: COUNTY_GEOGRAPHY_SOURCE,
-        retrieved_at: new Date().toISOString(),
-        cache_seconds: 60 * 60 * 24 * 30,
+        prepared_at: preparedAt,
       },
-    })
+    }, { headers: { "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800" } })
   } catch (error) {
+    console.error("Prepared county geography unavailable", { state, error })
     return NextResponse.json(
       {
-        error: error instanceof Error ? error.message : "County geography request failed",
+        error: "Prepared county geography is unavailable for this jurisdiction",
       },
-      { status: 502 },
+      { status: 503 },
     )
   }
 }

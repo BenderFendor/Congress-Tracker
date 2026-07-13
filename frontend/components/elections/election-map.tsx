@@ -62,7 +62,7 @@ type CountyGeographyResponse = {
   meta: {
     coverage: "geometry_and_names" | "unavailable"
     results_coverage: "not_loaded"
-    retrieved_at: string
+    prepared_at: string
     source: { label: string; url: string }
   }
 }
@@ -108,7 +108,7 @@ export function ElectionMap({
   const [countyGeometryFeatures, setCountyGeometryFeatures] = useState<CountyFeature[]>([])
   const [countyLoading, setCountyLoading] = useState(false)
   const [countyError, setCountyError] = useState<string | null>(null)
-  const [countyRetrievedAt, setCountyRetrievedAt] = useState<string | null>(null)
+  const [countyPreparedAt, setCountyPreparedAt] = useState<string | null>(null)
   const svgRef = useRef<SVGSVGElement | null>(null)
   const searchTimer = useRef<number | null>(null)
   const selectedFips: StateFips | null = selectedState ?? null
@@ -134,13 +134,14 @@ export function ElectionMap({
       setCountyGeometryFeatures([])
       setCountyNames(new Map())
       setCountyError(null)
-      setCountyRetrievedAt(null)
+      setCountyPreparedAt(null)
       return
     }
 
     const controller = new AbortController()
     setCountyLoading(true)
     setCountyError(null)
+    setCountyPreparedAt(null)
     fetch(`/api/elections/counties?state=${selectedFips}`, { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error(`County geography request returned ${response.status}`)
@@ -156,7 +157,7 @@ export function ElectionMap({
           geometry: row.geometry,
         })))
         setCountyNames(new Map(rows.map((row) => [row.fips, row.name])))
-        setCountyRetrievedAt(response.meta.retrieved_at)
+        setCountyPreparedAt(response.meta.prepared_at)
       })
       .catch((requestError: unknown) => {
         if (requestError instanceof DOMException && requestError.name === "AbortError") return
@@ -536,7 +537,7 @@ export function ElectionMap({
           search={searchActive}
           loading={countyLoading}
           error={countyError}
-          retrievedAt={countyRetrievedAt}
+          preparedAt={countyPreparedAt}
           onSelect={(fips) => onCountyChange?.(fips)}
         />
       ) : null}
@@ -818,7 +819,7 @@ function CountyDirectory({
   search,
   loading,
   error,
-  retrievedAt,
+  preparedAt,
   onSelect,
 }: {
   rows: Array<{ fips: CountyFips; name: string }>
@@ -827,7 +828,7 @@ function CountyDirectory({
   search: string
   loading: boolean
   error: string | null
-  retrievedAt: string | null
+  preparedAt: string | null
   onSelect: (fips: CountyFips) => void
 }) {
   const normalizedSearch = search.trim().toLowerCase()
@@ -878,7 +879,7 @@ function CountyDirectory({
       <footer className="election-county-directory-footer">
         <span>Names: U.S. Census Bureau TIGERweb</span>
         <span>Election results: not loaded</span>
-        {retrievedAt ? <span>Refreshed {new Date(retrievedAt).toLocaleDateString()}</span> : null}
+        {preparedAt ? <span>Prepared {new Date(preparedAt).toLocaleDateString()}</span> : null}
       </footer>
     </section>
   )
