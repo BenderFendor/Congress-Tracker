@@ -52,3 +52,10 @@ test("the dossier clears every member section and propagates one request signal"
   assert.match(source, /getMemberDisclosures\(bioguideId, request\.signal\)/)
   assert.match(source, /return \(\) => request\.cancel\(\)/)
 })
+
+test("optional trade failure cannot turn a loaded member profile into not found", async () => {
+  const source = await readFile(new URL("../lib/services/legislators.ts", import.meta.url), "utf8")
+  assert.match(source, /Trade history unavailable; continuing with the member profile/)
+  assert.match(source, /name === "AbortError"\) throw error/)
+  assert.match(source, /return mapLegislator\(memberData, recentTrades\)/)
+})

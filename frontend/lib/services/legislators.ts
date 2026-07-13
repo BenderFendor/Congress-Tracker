@@ -174,7 +174,18 @@ export async function getLegislator(id: string, signal?: AbortSignal): Promise<L
         const raw = await response.json();
         const memberData = raw.member || raw;
         const tradeId = memberData.trade_summary?.politician_id || memberData.bioguide_id || memberData.id;
-        const recentTrades = tradeId ? await getTradesByPoliticianId(String(tradeId), signal) : [];
+        let recentTrades: StockTrade[] = [];
+        if (tradeId) {
+            try {
+                recentTrades = await getTradesByPoliticianId(String(tradeId), signal);
+            } catch (error) {
+                if (error instanceof Error && error.name === "AbortError") throw error;
+                log.warn("Trade history unavailable; continuing with the member profile", {
+                    memberId: id,
+                    error: String(error),
+                });
+            }
+        }
         return mapLegislator(memberData, recentTrades);
     } catch (error) {
         if (!(error instanceof Error && error.name === "AbortError")) {
