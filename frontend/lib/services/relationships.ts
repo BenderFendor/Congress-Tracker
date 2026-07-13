@@ -26,14 +26,14 @@ export async function getRelationships(filters: {
   objectKey?: string;
   relationType?: string;
   limit?: number;
-} = {}): Promise<RelationshipsResponse> {
+} = {}, signal?: AbortSignal): Promise<RelationshipsResponse> {
   const params = new URLSearchParams();
   if (filters.subjectKey) params.set("subject_key", filters.subjectKey);
   if (filters.objectKey) params.set("object_key", filters.objectKey);
   if (filters.relationType) params.set("relation_type", filters.relationType);
   if (filters.limit) params.set("limit", String(filters.limit));
   const query = params.toString();
-  const response = await fetch(`${BACKEND_URL}/api/relationships${query ? `?${query}` : ""}`);
+  const response = await fetch(`${BACKEND_URL}/api/relationships${query ? `?${query}` : ""}`, { signal });
   if (!response.ok) throw new Error(`Relationships request failed (${response.status})`);
   return response.json();
 }
@@ -98,8 +98,8 @@ export type MemberDisclosures = {
   provenance?: ProvenanceSummary;
 };
 
-export async function getMemberDisclosures(bioguideId: string): Promise<MemberDisclosures> {
-  const response = await fetch(`${BACKEND_URL}/api/members/${encodeURIComponent(bioguideId)}/disclosures`);
+export async function getMemberDisclosures(bioguideId: string, signal?: AbortSignal): Promise<MemberDisclosures> {
+  const response = await fetch(`${BACKEND_URL}/api/members/${encodeURIComponent(bioguideId)}/disclosures`, { signal });
   if (!response.ok) throw new Error(`Disclosures request failed (${response.status})`);
   return response.json();
 }

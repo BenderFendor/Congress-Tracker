@@ -20,6 +20,7 @@ import { formatAmountRange } from "@/lib/services/stocks"
 import { ArchivePage, ArchivePanel, EvidenceSpine } from "@/components/ui/archive-ui"
 import { getMemberDisclosures, getRelationships, MemberDisclosures, RelationshipEvidence } from "@/lib/services/relationships"
 import { MemberPortrait } from "@/components/ui/member-identity"
+import { createMemberDossierRequest, isAbortError } from "@/lib/member-dossier-request.mjs"
 
 function ProvenanceBadge({ provenance }: { provenance?: ProvenanceSummary }) {
   if (!provenance) return null;
@@ -93,51 +94,80 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    const request = createMemberDossierRequest(params.id)
+
+    setActiveTab("overview")
+    setLegislator(null)
+    setFunding(null)
+    setFundingError(null)
+    setVotes([])
+    setVoteEvidence(null)
+    setSponsoredBills([])
+    setCosponsoredBills([])
+    setRelationships([])
+    setDisclosures(null)
+    setLoading(true)
+
     async function loadData() {
-      setLoading(true)
       try {
-        const leg = await getLegislator(params.id)
-        setLegislator(leg)
+        const leg = await getLegislator(request.memberId, request.signal)
+        request.commit(request.memberId, () => setLegislator(leg))
 
         if (leg) {
           const bioguideId = leg.bioguide_id || leg.id
-          
-          getMemberFunding(bioguideId)
+
+          getMemberFunding(bioguideId, undefined, request.signal)
             .then((data) => {
-              setFunding(data)
-              setFundingError(null)
+              request.commit(request.memberId, () => {
+                setFunding(data)
+                setFundingError(null)
+              })
             })
             .catch((e) => {
-              setFundingError(e instanceof Error ? e.message : "Funding request failed")
+              if (isAbortError(e)) return
+              request.commit(request.memberId, () => setFundingError(e instanceof Error ? e.message : "Funding request failed"))
               log.error("Funding fetch failed", { error: String(e) })
             })
 
-          // Background fetch votes
-          getMemberVotes(bioguideId).then((data) => {
-            setVotes(data.votes)
-            setVoteEvidence(data)
-          }).catch(e => log.error("Background fetch failed", { error: String(e) }))
+          getMemberVotes(bioguideId, 119, request.signal).then((data) => {
+            request.commit(request.memberId, () => {
+              setVotes(data.votes)
+              setVoteEvidence(data)
+            })
+          }).catch(e => {
+            if (!isAbortError(e)) log.error("Background fetch failed", { error: String(e) })
+          })
 
-          getMemberLegislation(bioguideId).then(data => {
-            setSponsoredBills(data.sponsor.map(mapLegislationToBill))
-            setCosponsoredBills(data.cosponsor.map(mapLegislationToBill))
-          }).catch(e => log.error("Background fetch failed", { error: String(e) }))
+          getMemberLegislation(bioguideId, 119, request.signal).then(data => {
+            request.commit(request.memberId, () => {
+              setSponsoredBills(data.sponsor.map(mapLegislationToBill))
+              setCosponsoredBills(data.cosponsor.map(mapLegislationToBill))
+            })
+          }).catch(e => {
+            if (!isAbortError(e)) log.error("Background fetch failed", { error: String(e) })
+          })
 
-          getRelationships({ subjectKey: `member:${bioguideId}`, limit: 25 })
-            .then(data => setRelationships(data.relationships))
-            .catch(e => log.error("Background fetch failed", { error: String(e) }))
+          getRelationships({ subjectKey: `member:${bioguideId}`, limit: 25 }, request.signal)
+            .then(data => request.commit(request.memberId, () => setRelationships(data.relationships)))
+            .catch(e => {
+              if (!isAbortError(e)) log.error("Background fetch failed", { error: String(e) })
+            })
 
-          getMemberDisclosures(bioguideId)
-            .then(setDisclosures)
-            .catch(e => log.error("Background fetch failed", { error: String(e) }))
+          getMemberDisclosures(bioguideId, request.signal)
+            .then(data => request.commit(request.memberId, () => setDisclosures(data)))
+            .catch(e => {
+              if (!isAbortError(e)) log.error("Background fetch failed", { error: String(e) })
+            })
         }
       } catch (error) {
-        log.error("Failed to load legislator data", { error: String(error) })
+        if (!isAbortError(error)) log.error("Failed to load legislator data", { error: String(error) })
       } finally {
-        setLoading(false)
+        request.commit(request.memberId, () => setLoading(false))
       }
     }
     loadData()
+
+    return () => request.cancel()
   }, [params.id])
 
   function mapLegislationToBill(bill: {

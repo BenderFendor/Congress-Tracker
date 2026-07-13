@@ -53,9 +53,9 @@ export type MemberFunding = {
   provenance?: ProvenanceSummary;
 };
 
-export async function getMemberFunding(bioguideId: string, cycle?: number): Promise<MemberFunding | null> {
+export async function getMemberFunding(bioguideId: string, cycle?: number, signal?: AbortSignal): Promise<MemberFunding | null> {
   const url = `${BACKEND_URL}/api/members/${encodeURIComponent(bioguideId)}/funding${cycle ? `?cycle=${cycle}` : ""}`;
-  const res = await fetch(url);
+  const res = await fetch(url, { signal });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`Funding request failed (${res.status})`);
   return res.json();

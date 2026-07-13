@@ -75,6 +75,7 @@ export interface TradesResponse {
 export async function getIntelTrades(
   limit = 100,
   offset = 0,
+  signal?: AbortSignal,
 ): Promise<TradesResponse> {
   const params = new URLSearchParams();
   params.set("limit", String(limit));
@@ -82,7 +83,7 @@ export async function getIntelTrades(
 
   const response = await fetch(
     `${BACKEND_URL}/api/stocks/transactions?${params}`,
-    { next: { revalidate: 3600 } },
+    { next: { revalidate: 3600 }, signal },
   );
 
   if (!response.ok) {
@@ -112,8 +113,8 @@ export async function getTradesByTicker(ticker: string): Promise<StockTrade[]> {
   return response.json();
 }
 
-export async function getTradesByPoliticianId(politicianId: string): Promise<StockTrade[]> {
-  const data = await getIntelTrades(200, 0);
+export async function getTradesByPoliticianId(politicianId: string, signal?: AbortSignal): Promise<StockTrade[]> {
+  const data = await getIntelTrades(200, 0, signal);
   return data.trades.filter(t => t.politician_id === politicianId);
 }
 

@@ -163,9 +163,9 @@ function mapLegislator(raw: Record<string, unknown>, recentTrades: StockTrade[] 
     };
 }
 
-export async function getLegislator(id: string): Promise<Legislator | null> {
+export async function getLegislator(id: string, signal?: AbortSignal): Promise<Legislator | null> {
     try {
-        const response = await fetch(`${BACKEND_URL}/api/members/${id}/profile`);
+        const response = await fetch(`${BACKEND_URL}/api/members/${encodeURIComponent(id)}/profile`, { signal });
         if (!response.ok) {
             if (response.status === 404) return null;
             throw new Error(`Failed to fetch legislator: ${response.status} ${response.statusText}`);
@@ -174,10 +174,12 @@ export async function getLegislator(id: string): Promise<Legislator | null> {
         const raw = await response.json();
         const memberData = raw.member || raw;
         const tradeId = memberData.trade_summary?.politician_id || memberData.bioguide_id || memberData.id;
-        const recentTrades = tradeId ? await getTradesByPoliticianId(String(tradeId)) : [];
+        const recentTrades = tradeId ? await getTradesByPoliticianId(String(tradeId), signal) : [];
         return mapLegislator(memberData, recentTrades);
     } catch (error) {
-        log.error("Error fetching legislator", { error: String(error) });
+        if (!(error instanceof Error && error.name === "AbortError")) {
+            log.error("Error fetching legislator", { error: String(error) });
+        }
         throw error;
     }
 }
@@ -227,10 +229,12 @@ export type MemberLegislationResponse = {
 export async function getMemberLegislation(
     bioguideId: string,
     congress = 119,
+    signal?: AbortSignal,
 ): Promise<MemberLegislationResponse> {
     const params = new URLSearchParams({ congress: String(congress), limit: "200" });
     const response = await fetch(
         `${BACKEND_URL}/api/members/${encodeURIComponent(bioguideId)}/legislation?${params}`,
+        { signal },
     );
     if (!response.ok) {
         throw new Error(`Failed to fetch member legislation: ${response.status}`);

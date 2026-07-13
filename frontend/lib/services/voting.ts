@@ -61,10 +61,11 @@ function mapMemberVote(position: MemberVotePosition): Vote {
   };
 }
 
-export async function getMemberVotes(bioguideId: string, congress = 119): Promise<MemberVotesResult> {
+export async function getMemberVotes(bioguideId: string, congress = 119, signal?: AbortSignal): Promise<MemberVotesResult> {
   const params = new URLSearchParams({ congress: String(congress), limit: "100" });
   const response = await fetch(
     `${BACKEND_URL}/api/members/${encodeURIComponent(bioguideId)}/votes?${params}`,
+    { signal },
   );
   if (!response.ok) {
     throw new Error(`Failed to fetch member votes: ${response.status}`);
