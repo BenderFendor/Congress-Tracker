@@ -24,10 +24,11 @@ development process on port 4020 from satisfying current-source assertions.
 
 | Command | Result |
 |---|---|
-| `pnpm test:unit` | Passed 56/56 with no backend dependency |
+| `pnpm test:unit` | Passed 57/57 with no backend dependency |
 | direct `node --test scripts/e2e-api-flows.live.mjs` without `BACKEND_URL` | Failed closed as required |
 | direct live suite with `BACKEND_URL=http://127.0.0.1:4020` | Refused the normal development port as required |
-| `DATABASE_URL=... LIVE_API_TEST_PORT=43124 pnpm test:live-api` | Built current backend, recorded binary hash, started isolated PID, passed 18/18 populated flows, and cleaned up |
+| `DATABASE_URL=... pnpm test:live-api` | Built current backend, recorded commit/worktree state and binary hash, started isolated PID, passed 18/18 populated flows, and cleaned up |
+| occupied-port invocation | Refused port 4899 before starting or reusing its current process |
 | `cargo test --workspace --exclude civiq_client --lib --bins` | Passed deterministic Rust library and binary tests without provider calls |
 | `cargo test -p civiq_client test_query_builder` | Passed the deterministic Civiq helper while excluding its five live-provider tests |
 | `cargo test --workspace --tests --no-run` | Compiled every Rust integration target |
@@ -63,4 +64,6 @@ CI, and self-test commands, remove `scripts/verify-live-api-flows` and the
 topology test, and revert the listed documentation. This would restore the known
 stale-backend and no-backend CI failure modes.
 
-**Status:** done
+**Status:** FA-06 done in commit `e75ca39`, tag
+`fa05-fa06-verification-topology`. FA-05 code and local gates are done; hosted
+clean-checkout CI proof remains a release closure requirement.

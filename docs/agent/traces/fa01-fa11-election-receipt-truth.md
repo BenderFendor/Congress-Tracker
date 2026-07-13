@@ -71,5 +71,8 @@ provenance contract are implemented first.
 
 ## Status
 
-Done for FA-11. FA-01 remains open for certified result ingestion and
-state-to-county reconciliation, while its public misinformation defect is fixed.
+Implemented in commit `e75ca39`, tag
+`fa01-fa11-election-receipt-truth`. FA-11 still needs a final browser filter
+round trip and measured receipt latency for strict ledger closure. FA-01 remains
+open for certified result ingestion and state-to-county reconciliation, while
+its public misinformation defect is fixed.

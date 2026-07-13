@@ -209,6 +209,32 @@ where applicable, worksheet, focused commit, and milestone tag all exist.
 | FA-27 | High | M0 | The plan, backend requirements, agent docs, test catalog, and reports contradict current behavior and source state. | Reconcile or mark every stale document superseded; add a deterministic documentation consistency check. |
 | FA-28 | Medium | M5, M6 | Most routes lack complete loading and error coverage; election SVG controls are unnamed; the global skip link misses three pages. | Cover every critical route and truth state; pass keyboard, accessible-name, skip-link, desktop, and 390px browser checks. |
 
+### Finding Closure Checkpoint: `e75ca39` (2026-07-12)
+
+- **FA-02 closed:** committee-specific canonical queries now reconcile direct,
+  support, and opposition totals for AIPAC and NRA; opposition is labeled as
+  activity rather than money received. Evidence:
+  `docs/agent/traces/fa02-influence-attribution.md`, tag
+  `fa02-influence-attribution`.
+- **FA-06 closed:** populated API verification builds the current binary,
+  records Git revision, worktree state, and binary hash, rejects occupied or
+  development ports, starts an isolated process, and passed 18 flows. Evidence:
+  `docs/agent/traces/fa05-fa06-verification-topology.md`, tag
+  `fa05-fa06-verification-topology`.
+- **FA-05 implementation complete, clean-checkout CI proof pending:** default
+  suites are deterministic and provider-backed flows are separated, but the
+  hosted workflow must still pass from the committed checkpoint before closure.
+- **FA-11 implementation complete, final browser filter-round-trip and measured
+  receipt latency pending:** absent bounds and canonical candidate links are
+  fixed and tested. Evidence:
+  `docs/agent/traces/fa01-fa11-election-receipt-truth.md`.
+- **FA-01 partially repaired:** filing-count-derived ratings and party lean are
+  removed, DEM/REP classification is corrected, and Chrome proof is recorded.
+  Certified state/county result ingestion and exact reconciliation remain open.
+- **FA-04 partially repaired:** public funding GET ingestion and writes are
+  removed, the public admin queue is unmounted, and its private repository read
+  is bounded. Prepared county data and shared public request budgets remain open.
+
 ## Audited Baseline
 
 The following is a dated snapshot, not a permanent invariant. Refresh it with
@@ -390,7 +416,7 @@ verified baseline before adding another product surface.
 7. [x] Update `README.md`, `docs/BACKEND_REQUIREMENTS.md`, worker/disclosure docs, `docs/Log.md`, and `docs/agent/test-catalog.md` to match current behavior.
 8. [x] Record baseline SQL, API responses, and verification output under `reports/verification/`.
 9. [ ] Close FA-04 by separating the private operator plane from every public GET path.
-10. [ ] Close FA-06 by making integration checks start and identify an isolated current stack.
+10. [x] Close FA-06 by making integration checks start and identify an isolated current stack.
 11. [ ] Close FA-25 by reconciling milestone states, tags, worksheets, and focused commits.
 12. [ ] Close FA-27 by reconciling or marking stale authoritative documents and reports superseded.
 
@@ -419,8 +445,9 @@ for the configured election cycles with honest coverage semantics.
 6. Add canonical operating-disbursement ingestion, `GET /api/fec/disbursements`, and a matching browse page. Do not mix disbursements into receipt totals.
 7. Populate member donor, committee, and influence-network rankings only from canonical cycle-complete records.
 8. Keep `Totals only` and `Rankings unavailable` when a member has official totals but lacks complete canonical rankings.
-9. Fix FA-02's committee and network attribution before any influence amount is public.
-10. Fix FA-11's default receipt query and candidate receipt links.
+9. [x] Fix FA-02's committee and network attribution before any influence amount is public.
+10. [x] Fix FA-11's default receipt query and candidate receipt links. Final
+    release closure still requires the ledger's browser and latency proof.
 11. Repair resumable-download identity and archive replacement semantics; prove
     ETag or content-range validation and removal of records absent from a
     replacement archive.

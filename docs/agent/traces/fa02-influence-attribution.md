@@ -45,9 +45,12 @@ opposition separate, and guarantee committee totals reconcile to the network.
 
 The populated 2024 AIPAC response returned $35,000 direct contributions,
 $13,980,903.77 independent support, and $5,019,397.90 independent opposition.
-The committee sums reconciled exactly to all three network values. Final root
-browser evidence must use the isolated current backend rather than the stale
-process previously occupying port 4020.
+The populated 2024 NRA response returned $64,950 direct, $1,266,404.93 support,
+and $52,570.53 opposition. Committee sums reconciled exactly to all three
+network values in both cases. Chrome loaded the current AIPAC dossier against
+the fresh backend with separated channels, explicit activity labels, no
+horizontal overflow, and no console warning or error. Screenshot:
+`docs/agent/traces/fa02-aipac-desktop.png`.
 
 ## Assumptions
 
@@ -67,5 +70,4 @@ materialized-view join for committee attribution.
 
 ## Status
 
-Implementation and deterministic/populated contracts are done. Final status
-depends on isolated-current-backend browser proof and the focused commit/tag.
+Done in commit `e75ca39`, tag `fa02-influence-attribution`.
