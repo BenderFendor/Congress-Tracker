@@ -44,3 +44,17 @@ non-4020 port, and runs populated read-only frontend API flows. It requires an
 explicit `DATABASE_URL` naming a representative populated database, refuses to
 reuse the normal development port, records the executable hash, and cleans up
 only its own process.
+
+## `frontend/scripts/prepare-county-geography.mjs`
+
+Operator-only acquisition command for the prepared county geography read
+plane. It downloads normalized Census TIGERweb geometry and atomically replaces
+one or all of the checked-in per-jurisdiction artifacts.
+
+```bash
+cd frontend
+node scripts/prepare-county-geography.mjs --help
+node scripts/prepare-county-geography.mjs --state 06 --prepared-at 2026-07-12T00:00:00.000Z
+```
+
+Normal public requests never invoke this command or contact TIGERweb.

@@ -27,13 +27,15 @@ preserving the existing 56-jurisdiction county drill-down contract.
 | `node scripts/prepare-county-geography.mjs --prepared-at 2026-07-12T00:00:00.000Z` | Passed; prepared 3,235 county-equivalent rows in 56 state-scoped files |
 | `node scripts/prepare-county-geography.mjs --help` | Passed |
 | `node --test scripts/county-geography.test.mjs` | Passed, 11/11 |
-| `pnpm test:unit` | Passed, 64/64 |
+| `pnpm test:unit` | Passed, 65/65 after parent integration |
 | `pnpm typecheck` | Passed |
 | `pnpm lint` | Passed, no warnings or errors |
 | `pnpm lint:ox` | Passed, no warnings or errors |
+| `pnpm build` | Passed after concurrent Next processes stopped |
 | `git diff --check` | Passed |
 | `curl http://127.0.0.1:3000/api/elections/counties?state=06` | Passed after development hot reload; 58 rows, canonical provenance and prepared timestamp, public cache header |
 | invalid-state county API request | Passed; HTTP 400 with bounded validation error |
+| Chrome production county drill-down | California returned 58 prepared rows, Alameda County was visible, result coverage remained not loaded, and document overflow was absent |
 
 ## Tests added
 
@@ -76,6 +78,11 @@ Revert the county route, prepared loader/script/artifacts, response metadata UI,
 tests, and corresponding documentation as one focused change. This restores the
 prior request-time TIGERweb proxy behavior.
 
+## Browser evidence
+
+- `docs/agent/traces/fa04-county-prepared-ca.png`
+
 ## Status
 
-Done pending parent integration build and commit/tag.
+Done in commit `0df20a5` plus the UTC presentation follow-up, tag
+`fa04-public-read-plane`.

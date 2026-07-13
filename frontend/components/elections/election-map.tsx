@@ -879,7 +879,11 @@ function CountyDirectory({
       <footer className="election-county-directory-footer">
         <span>Names: U.S. Census Bureau TIGERweb</span>
         <span>Election results: not loaded</span>
-        {preparedAt ? <span>Prepared {new Date(preparedAt).toLocaleDateString()}</span> : null}
+        {preparedAt ? (
+          <span>
+            Prepared {new Date(preparedAt).toLocaleDateString(undefined, { timeZone: "UTC" })}
+          </span>
+        ) : null}
       </footer>
     </section>
   )

@@ -4,6 +4,26 @@ This log records changes to public behavior, developer workflows, data
 contracts, and verification requirements. It does not replace Git history or
 the detailed worksheets under `docs/agent/traces/`.
 
+## 2026-07-12 - Disclosure Document Atomicity
+
+- Added null-safe semantic transaction uniqueness and deterministic cleanup of
+  legacy duplicates with nullable ticker or transaction date.
+- Made House PTR and annual record replacement, parse issues, parse/document
+  status, and job completion one document-scoped transaction.
+- Kept incomplete PTR rows and annual reports missing A/C/D/E/G section or
+  metadata completeness in partial state rather than publishing them parsed.
+
+## 2026-07-12 - Prepared County Geography Read Plane
+
+- Removed live TIGERweb acquisition from the public county API. Public reads now
+  load state-scoped, checked-in geometry prepared for all 56 jurisdictions.
+- Added an operator-only preparation command with atomic per-state writes,
+  canonical source provenance, fixed preparation timestamps, and normalized
+  Census geometry.
+- Added size, schema, provenance, cross-state, and public no-network/no-write
+  regression gates. The county API reports preparation time and uses explicit
+  public cache headers without implying that election result rows are loaded.
+
 ## 2026-07-12 - Election Filing Semantics And Receipt Query Truth
 
 - Removed race ratings, party lean, and competitiveness claims derived from
@@ -15,6 +35,15 @@ the detailed worksheets under `docs/agent/traces/`.
   and changed candidate receipt links to the canonical search parameter.
 - Added deterministic regression tests plus loaded desktop and mobile Chrome
   evidence. Certified state and county result ingestion remains open.
+
+## 2026-07-12 - Member Dossier Request Isolation
+
+- Scoped every Member dossier request to the current route identity and shared
+  abort signal, including the nested stock-trade request.
+- Cleared all prior Member section state immediately on navigation and blocked
+  superseded or mismatched responses from committing to the next dossier.
+- Added deterministic rapid-navigation, stale-response, cancellation, state
+  reset, and signal-propagation regression coverage.
 
 ## 2026-07-12 - Hermetic And Isolated Verification Topology
 

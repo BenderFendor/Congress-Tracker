@@ -75,7 +75,8 @@ provenance contract are implemented first.
 
 ## Status
 
-FA-11 is done in commit `e75ca39`, tag
+FA-11 implementation landed in `e75ca39`; browser closure evidence landed in
+`28e68fd`, tag
 `fa01-fa11-election-receipt-truth`, with final browser proof recorded above.
 FA-01 remains open for certified result ingestion and state-to-county
 reconciliation, while its public misinformation defect is fixed.

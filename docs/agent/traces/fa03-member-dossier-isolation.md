@@ -25,11 +25,12 @@ evidence under another Member's dossier.
 - `cd frontend && pnpm typecheck`: passed.
 - `cd frontend && pnpm exec next lint --max-warnings=0 --file ...`: passed.
 - `cd frontend && pnpm exec oxlint ... --deny-warnings ...`: passed.
-- `cd frontend && pnpm test:unit`: passed, 64 tests.
-- `cd frontend && pnpm build`: compiled successfully, then failed during page
-  collection because the already-running `next dev` process shares `.next` and
-  `./936.js` was unavailable. This is the documented concurrent-output failure
-  in `docs/agent/known-errors.md`; the user-owned dev server was not stopped.
+- `cd frontend && pnpm test:unit`: passed, 65 tests after parent integration.
+- `cd frontend && pnpm build`: passed after concurrent Next processes stopped.
+- Chrome production navigation loaded Aaron Bean, returned to the directory,
+  then loaded Adam Schiff with no Aaron Bean evidence or not-found state.
+- Chrome also proved a 500 from optional trade history no longer blanked the
+  loaded Aaron Bean profile.
 - `git diff --check`: passed after normalizing the papercut log EOF.
 
 ## Tests added
@@ -57,6 +58,12 @@ Revert the request guard, service signal parameters, and the Member page effect
 as one unit. Removing only signal propagation would restore an incomplete race
 fix.
 
+## Browser evidence
+
+- `docs/agent/traces/fa03-rapid-member-navigation.png`
+- `docs/agent/traces/fa03-member-navigation-target.png`
+
 ## Status
 
-Done.
+Done in commits `4e3f357` and `d75fac0`, tag
+`fa03-member-dossier-isolation`.

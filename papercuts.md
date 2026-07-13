@@ -276,3 +276,35 @@
 **What happened:** Passed an extra -- through the pnpm dev script so Next interpreted --port as a project directory; use pnpm exec next dev -p PORT.
 
 ---
+## 2026-07-12 22:21
+
+**What happened:** Focused Next lint invocation used pnpm lint -- --file, causing Next 14 to treat --file as a project directory; use pnpm exec next lint --max-warnings=0 --file ... instead.
+
+---
+## 2026-07-12 22:22
+
+**What happened:** Ran frontend-prefixed search paths while already in the frontend working directory during county API verification; use paths relative to the selected workdir.
+
+---
+## 2026-07-12 22:23
+
+**What happened:** Next production build compiled but failed during page collection because .next/server/936.js disappeared; shared-worktree concurrent Next output can race and must use isolated build directories.
+
+---
+## 2026-07-12 22:25
+
+**What happened:** Used an unquoted Next dynamic-route path containing [id] in zsh, which expanded as a glob; quote bracketed paths.
+
+---
+
+## 2026-07-12 22:26
+
+**What happened:** Safety hook blocked a read-only migration verification command because it sourced .env; provide a credential-safe repo wrapper for database-backed checks.
+
+---
+
+## 2026-07-12 22:34
+
+**What happened:** Repeated the known Cargo single-filter mistake by passing two test names; use one common substring or separate commands.
+
+---

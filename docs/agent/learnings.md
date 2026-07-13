@@ -136,3 +136,21 @@ Future agents should:
 - Prefer adding new route handlers that follow existing Query/Response patterns rather than inventing new conventions
 - Verify cross-module compilation after adding struct fields that are consumed in other modules
 - Check the ingestion state (source_runs, ingest_jobs) when a data-dependent endpoint returns empty — the code may be correct but the data may not be loaded
+## 2026-07-12 - Prepared public geography artifacts
+
+Context:
+- County drill-downs need stable Census geometry, but a read-only public route
+  must not acquire provider data or depend on provider uptime.
+
+What worked:
+- Store one compact, normalized artifact per validated jurisdiction under the
+  static application data tree, preserve source and preparation provenance,
+  and keep provider acquisition in an operator-only atomic preparation script.
+
+What failed:
+- Framework revalidation on a public proxy still performs provider work in the
+  request plane and reports request time rather than dataset preparation time.
+
+Future agents should:
+- Treat public cache configuration as delivery policy, not an ingestion
+  mechanism. Test public routes structurally for provider calls and writes.

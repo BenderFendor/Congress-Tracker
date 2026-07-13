@@ -66,6 +66,8 @@ recover deleted rows.
 
 ## Status
 
-Done. Fresh and upgrade migrations were executed in isolated disposable schemas
-because the local role cannot create disposable databases; both schemas were
-removed after the passing tests.
+Done in commit `cdf9b75`, tag `fa09-disclosure-atomicity`. Fresh and upgrade
+migrations were executed in isolated disposable schemas because the local role
+cannot create disposable databases; both schemas were removed after the passing
+tests. The integrated `scripts/self-test` and isolated 18-flow live API suite
+also passed.

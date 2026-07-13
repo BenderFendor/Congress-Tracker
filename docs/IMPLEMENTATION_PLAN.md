@@ -216,6 +216,19 @@ where applicable, worksheet, focused commit, and milestone tag all exist.
   activity rather than money received. Evidence:
   `docs/agent/traces/fa02-influence-attribution.md`, tag
   `fa02-influence-attribution`.
+- **FA-03 closed:** every Member dossier request shares a route-scoped abort
+  signal and guarded commit, prior section state clears immediately, and
+  optional trade failure no longer blanks a valid profile. Deterministic rapid
+  navigation tests and loaded Aaron Bean to Adam Schiff Chrome navigation show
+  no stale Member evidence. Evidence:
+  `docs/agent/traces/fa03-member-dossier-isolation.md`, tag
+  `fa03-member-dossier-isolation`.
+- **FA-04 closed:** funding GETs cannot ingest or persist, the public review
+  route is removed, private review reads clamp to 500, and county GETs serve 56
+  bounded prepared artifacts without provider calls or writes. Evidence:
+  `docs/agent/traces/fa04-public-read-plane-partial.md` and
+  `docs/agent/traces/fa04-prepared-county-geography.md`, tag
+  `fa04-public-read-plane`.
 - **FA-06 closed:** populated API verification builds the current binary,
   records Git revision, worktree state, and binary hash, rejects occupied or
   development ports, starts an isolated process, and passed 18 flows. Evidence:
@@ -233,9 +246,12 @@ where applicable, worksheet, focused commit, and milestone tag all exist.
 - **FA-01 partially repaired:** filing-count-derived ratings and party lean are
   removed, DEM/REP classification is corrected, and Chrome proof is recorded.
   Certified state/county result ingestion and exact reconciliation remain open.
-- **FA-04 partially repaired:** public funding GET ingestion and writes are
-  removed, the public admin queue is unmounted, and its private repository read
-  is bounded. Prepared county data and shared public request budgets remain open.
+- **FA-09 closed:** migration 0041 collapses nullable semantic duplicates and
+  enforces null-safe uniqueness; House PTR/annual row replacement, parse issues,
+  parse/document status, and job completion publish in one transaction. Annual
+  success requires A/C/D/E/G section and row completeness. Evidence:
+  `docs/agent/traces/fa09-disclosure-atomicity.md`, tag
+  `fa09-disclosure-atomicity`.
 
 ## Audited Baseline
 
@@ -417,7 +433,7 @@ verified baseline before adding another product surface.
 6. [x] Reconcile interrupted `source_runs`, retryable FEC batches, and stuck disclosure jobs. Partial work stays partial until it reaches a truthful terminal state.
 7. [x] Update `README.md`, `docs/BACKEND_REQUIREMENTS.md`, worker/disclosure docs, `docs/Log.md`, and `docs/agent/test-catalog.md` to match current behavior.
 8. [x] Record baseline SQL, API responses, and verification output under `reports/verification/`.
-9. [ ] Close FA-04 by separating the private operator plane from every public GET path.
+9. [x] Close FA-04 by separating the private operator plane from every public GET path.
 10. [x] Close FA-06 by making integration checks start and identify an isolated current stack.
 11. [ ] Close FA-25 by reconciling milestone states, tags, worksheets, and focused commits.
 12. [ ] Close FA-27 by reconciling or marking stale authoritative documents and reports superseded.

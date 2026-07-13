@@ -82,8 +82,11 @@ missing, and missing-key source-run classification. These are deterministic
 policy tests; they do not simulate a killed process or a live provider.
 
 The fresh-database migration test also inserts the same active worker delivery
-twice with `ON CONFLICT DO NOTHING` and requires exactly one queued job. This
-proves the database uniqueness contract, not broker-level delivery behavior.
+twice with `ON CONFLICT DO NOTHING` and requires exactly one queued job. Fresh
+and upgrade paths populate disclosure transactions with null ticker and date
+keys, then require cleanup and retry to leave one semantic row. This proves the
+database uniqueness contracts, not broker-level delivery behavior or a killed
+worker rollback.
 
 `repository/relationships.rs` rejects heuristic, low-confidence, non-direct,
 or non-LDA relationship rows from the explicit bill-citation channel in both
@@ -109,7 +112,10 @@ produces no fabricated normalized rows and that a missing scanned source returns
 an OCR error. It covers scanned-layout fingerprinting and OCR failure propagation,
 not successful Tesseract accuracy on a representative image-only filing.
 
-`intel_worker/src/main.rs` verifies the supported-form recovery SQL is limited
+`intel_worker/src/main.rs` verifies that PTR and annual layouts cannot publish
+`parsed` without complete rows from their primary record family. Annual success
+also requires the normalized A, C, D, E, and G sections plus filing and reporting
+period metadata, so a lone row from one section remains partial. It also verifies the supported-form recovery SQL is limited
 to `A`, `O`, `N`, `T`, and `P`, uses `NOT EXISTS` plus conflict-safe inserts,
 keys parse recovery by immutable document version, and gives current-year jobs
 lower numeric priority than historical backlog. Live lifecycle proof is still
@@ -126,11 +132,12 @@ required because these structural unit tests do not execute PostgreSQL inserts.
 | `frontend/scripts/fec-lda-separation.test.mjs` | FEC/LDA structural separation contract: campaign finance and lobbying amounts never combined | Live data integration |
 | `frontend/scripts/networth-range.test.mjs` | Conservative net worth range validation: null maxima, missing residence, cross-bounds | Live snapshot computation |
 | `frontend/scripts/navigation-registry.test.mjs` | M1 through M5 destination coverage, shared registry use, and command-palette modal/combobox structure | Rendered menu layout and browser focus behavior |
+| `frontend/scripts/member-dossier-isolation.test.mjs` | Superseded and mismatched Member responses cannot commit, route changes clear every dossier section, and one abort signal reaches every dossier request | Browser navigation timing and backend response latency |
 | `frontend/scripts/truth-states.test.mjs` | Genuine zero versus failed-count presentation, independent loading/error/unavailable/empty/partial/loaded request classification with precedence rules, empty influence-network affiliation coverage, and source-supplied cycle metadata | Rendered failure states and live request behavior |
 | `frontend/scripts/detail-request-state.test.mjs` | Detail response classification keeps confirmed 404 absence separate from server and transport failures | Rendered retry interaction and live backend responses |
 | `frontend/scripts/verification-topology.test.mjs` | The default `*.test.mjs` suite excludes populated live flows and the live command can only enter through the isolated-backend wrapper | Whether the populated database satisfies live API assertions |
 | `frontend/scripts/e2e-api-flows.live.mjs` | Explicit populated API flows for health, funding, receipts and disbursements, search, member disclosures, bills and bill evidence, LDA entity histories, financial records, organizations, influence identities/channels, and current Senate coverage states | Default deterministic tests, provider completeness, ingestion mutation, and browser interaction |
-| `frontend/scripts/county-geography.test.mjs` | Supported state FIPS validation, FIPS-to-postal candidate filtering, deterministic Census TIGERweb GeoJSON query construction, geometry/name normalization, cross-state rejection, 50-state-plus-DC selector completeness, five-territory coverage, representative CA, PA, TX, NY, AK, and HI contracts, and non-empty county SVG projection paths for all 56 supported jurisdictions | Live Census availability and county election results |
+| `frontend/scripts/county-geography.test.mjs` | Supported FIPS validation, FIPS-to-postal candidate filtering, private Census query construction, geometry/name normalization, checked-in prepared-file coverage and provenance for all 56 jurisdictions, file-size and cross-state rejection, public API no-network/no-write structure, and non-empty county SVG projection paths | Live Census acquisition and county election results |
 
 ## Required Manual Proof
 

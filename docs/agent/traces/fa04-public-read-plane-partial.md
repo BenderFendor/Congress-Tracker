@@ -52,5 +52,7 @@ Revert commit `e75ca39`. Do not restore a public mutation-capable GET route.
 
 ## Status
 
-Partial. Funding and admin boundaries are done. Prepared county serving and
-shared rate, concurrency, timeout, and response-size budgets remain open.
+Funding/admin portion completed in `e75ca39`. Prepared county serving completed
+in `0df20a5`; see `fa04-prepared-county-geography.md`. Together these close
+FA-04 under tag `fa04-public-read-plane`. Shared public rate, concurrency,
+timeout, and response-size budgets remain separately tracked by FA-21.
