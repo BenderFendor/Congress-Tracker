@@ -234,9 +234,11 @@ where applicable, worksheet, focused commit, and milestone tag all exist.
   development ports, starts an isolated process, and passed 18 flows. Evidence:
   `docs/agent/traces/fa05-fa06-verification-topology.md`, tag
   `fa05-fa06-verification-topology`.
-- **FA-05 implementation complete, clean-checkout CI proof pending:** default
-  suites are deterministic and provider-backed flows are separated, but the
-  hosted workflow must still pass from the committed checkpoint before closure.
+- **FA-05 closed:** default suites are deterministic, provider-backed flows are
+  separated, and `scripts/self-test` passed from an isolated clean worktree at
+  `9a6d814` while reusing only dependency/build caches. Evidence:
+  `docs/agent/traces/fa05-fa06-verification-topology.md`, tag
+  `fa05-fa06-verification-topology`.
 - **FA-11 closed:** absent bounds and canonical candidate links are fixed;
   Chrome proved populated default results, an AIPAC/cycle/$1,000-$5,000 filter
   round trip, five matching canonical rows, reset-to-empty controls, and a 671

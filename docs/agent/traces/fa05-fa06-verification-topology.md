@@ -37,6 +37,7 @@ development process on port 4020 from satisfying current-source assertions.
 | `pnpm typecheck && pnpm lint && pnpm lint:ox` | Passed |
 | `bash -n scripts/self-test scripts/verify-live-api-flows` and Node syntax checks | Passed |
 | `scripts/self-test` | Passed Rust format/clippy/check, deterministic tests, integration compilation, 56 frontend tests, typecheck, both lint gates, and production build |
+| clean-worktree `scripts/self-test` at `9a6d814` | Passed all backend gates, 65 deterministic frontend tests, typecheck, both lint gates, and production build from `/tmp/congress-tracker-fa05`; only dependency and Cargo build caches were reused, and the temporary worktree was removed |
 
 **Tests added:**
 
@@ -64,6 +65,6 @@ CI, and self-test commands, remove `scripts/verify-live-api-flows` and the
 topology test, and revert the listed documentation. This would restore the known
 stale-backend and no-backend CI failure modes.
 
-**Status:** FA-06 done in commit `e75ca39`, tag
-`fa05-fa06-verification-topology`. FA-05 code and local gates are done; hosted
-clean-checkout CI proof remains a release closure requirement.
+**Status:** FA-05 and FA-06 done. Implementation landed in `e75ca39`; isolated
+clean-worktree proof passed at `9a6d814`, tag
+`fa05-fa06-verification-topology`.
