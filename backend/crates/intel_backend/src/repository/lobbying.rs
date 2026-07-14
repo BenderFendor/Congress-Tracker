@@ -267,8 +267,44 @@ impl Repository {
         Ok(())
     }
 
-    /// Search lobbying clients by name.
+    /// Search lobbying clients by name, trying trigram similarity first, then ILIKE.
     pub async fn search_lobbying_clients(
+        &self,
+        query: &str,
+        limit: i64,
+    ) -> Result<Vec<LobbyingEntityInfo>, sqlx::Error> {
+        let results = self
+            .search_lobbying_clients_similarity(query, limit)
+            .await?;
+        if !results.is_empty() {
+            return Ok(results);
+        }
+        self.search_lobbying_clients_ilike(query, limit).await
+    }
+
+    /// Similarity-ranked search using the trigram index.
+    async fn search_lobbying_clients_similarity(
+        &self,
+        query: &str,
+        limit: i64,
+    ) -> Result<Vec<LobbyingEntityInfo>, sqlx::Error> {
+        let rows: Vec<LobbyEntityRow> = sqlx::query_as::<_, LobbyEntityRow>(
+            r#"SELECT id, name, state, country
+               FROM lobbying_clients
+               WHERE similarity(name, $1) > 0.3
+               ORDER BY similarity(name, $1) DESC
+               LIMIT $2"#,
+        )
+        .bind(query)
+        .bind(limit)
+        .fetch_all(self.pool())
+        .await?;
+
+        Ok(rows.into_iter().map(LobbyEntityRow::into_info).collect())
+    }
+
+    /// ILIKE fallback for substring matching (uses trgm index automatically).
+    async fn search_lobbying_clients_ilike(
         &self,
         query: &str,
         limit: i64,
@@ -286,19 +322,47 @@ impl Repository {
         .fetch_all(self.pool())
         .await?;
 
-        Ok(rows
-            .into_iter()
-            .map(|r| LobbyingEntityInfo {
-                id: r.id,
-                name: r.name,
-                state: r.state,
-                country: r.country,
-            })
-            .collect())
+        Ok(rows.into_iter().map(LobbyEntityRow::into_info).collect())
     }
 
-    /// Search lobbying registrants by name.
+    /// Search lobbying registrants by name, trying trigram similarity first, then ILIKE.
     pub async fn search_lobbying_registrants(
+        &self,
+        query: &str,
+        limit: i64,
+    ) -> Result<Vec<LobbyingEntityInfo>, sqlx::Error> {
+        let results = self
+            .search_lobbying_registrants_similarity(query, limit)
+            .await?;
+        if !results.is_empty() {
+            return Ok(results);
+        }
+        self.search_lobbying_registrants_ilike(query, limit).await
+    }
+
+    /// Similarity-ranked search using the trigram index.
+    async fn search_lobbying_registrants_similarity(
+        &self,
+        query: &str,
+        limit: i64,
+    ) -> Result<Vec<LobbyingEntityInfo>, sqlx::Error> {
+        let rows: Vec<LobbyEntityRow> = sqlx::query_as::<_, LobbyEntityRow>(
+            r#"SELECT id, name, state, country
+               FROM lobbying_registrants
+               WHERE similarity(name, $1) > 0.3
+               ORDER BY similarity(name, $1) DESC
+               LIMIT $2"#,
+        )
+        .bind(query)
+        .bind(limit)
+        .fetch_all(self.pool())
+        .await?;
+
+        Ok(rows.into_iter().map(LobbyEntityRow::into_info).collect())
+    }
+
+    /// ILIKE fallback for substring matching (uses trgm index automatically).
+    async fn search_lobbying_registrants_ilike(
         &self,
         query: &str,
         limit: i64,
@@ -316,15 +380,7 @@ impl Repository {
         .fetch_all(self.pool())
         .await?;
 
-        Ok(rows
-            .into_iter()
-            .map(|r| LobbyingEntityInfo {
-                id: r.id,
-                name: r.name,
-                state: r.state,
-                country: r.country,
-            })
-            .collect())
+        Ok(rows.into_iter().map(LobbyEntityRow::into_info).collect())
     }
 
     /// Find lobbying matches by keyword in issue descriptions and names.
@@ -439,6 +495,17 @@ struct LobbyEntityRow {
     name: String,
     state: Option<String>,
     country: Option<String>,
+}
+
+impl LobbyEntityRow {
+    fn into_info(self) -> LobbyingEntityInfo {
+        LobbyingEntityInfo {
+            id: self.id,
+            name: self.name,
+            state: self.state,
+            country: self.country,
+        }
+    }
 }
 
 #[derive(sqlx::FromRow)]

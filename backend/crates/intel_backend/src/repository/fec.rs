@@ -415,8 +415,42 @@ impl Repository {
         Ok(row.0)
     }
 
-    /// Search FEC committees (PACs) by name query.
+    /// Search FEC committees (PACs) by name, trying trigram similarity first, then ILIKE.
     pub async fn search_pacs(&self, query: &str, limit: i64) -> Result<Vec<PacInfo>, sqlx::Error> {
+        let results = self.search_pacs_similarity(query, limit).await?;
+        if !results.is_empty() {
+            return Ok(results);
+        }
+        self.search_pacs_ilike(query, limit).await
+    }
+
+    /// Similarity-ranked PAC search using the trgm index (from migration 0030).
+    async fn search_pacs_similarity(
+        &self,
+        query: &str,
+        limit: i64,
+    ) -> Result<Vec<PacInfo>, sqlx::Error> {
+        let rows: Vec<PacRow> = sqlx::query_as::<_, PacRow>(
+            r#"SELECT committee_id, name, committee_type, party, state
+               FROM fec_committees
+               WHERE similarity(name, $1) > 0.3
+               ORDER BY similarity(name, $1) DESC
+               LIMIT $2"#,
+        )
+        .bind(query)
+        .bind(limit)
+        .fetch_all(self.pool())
+        .await?;
+
+        Ok(rows.into_iter().map(PacRow::into_info).collect())
+    }
+
+    /// ILIKE fallback for PACs (uses trgm index automatically).
+    async fn search_pacs_ilike(
+        &self,
+        query: &str,
+        limit: i64,
+    ) -> Result<Vec<PacInfo>, sqlx::Error> {
         let pattern = format!("%{}%", query);
         let rows: Vec<PacRow> = sqlx::query_as::<_, PacRow>(
             r#"SELECT committee_id, name, committee_type, party, state
@@ -430,16 +464,7 @@ impl Repository {
         .fetch_all(self.pool())
         .await?;
 
-        Ok(rows
-            .into_iter()
-            .map(|r| PacInfo {
-                committee_id: r.committee_id,
-                name: r.name,
-                committee_type: r.committee_type,
-                party: r.party,
-                state: r.state,
-            })
-            .collect())
+        Ok(rows.into_iter().map(PacRow::into_info).collect())
     }
 
     /// Fetch member funding from OpenFEC API live when database has no data.
@@ -1264,6 +1289,18 @@ struct PacRow {
     committee_type: Option<String>,
     party: Option<String>,
     state: Option<String>,
+}
+
+impl PacRow {
+    fn into_info(self) -> PacInfo {
+        PacInfo {
+            committee_id: self.committee_id,
+            name: self.name,
+            committee_type: self.committee_type,
+            party: self.party,
+            state: self.state,
+        }
+    }
 }
 
 #[cfg(test)]

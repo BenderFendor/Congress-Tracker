@@ -38,8 +38,45 @@ impl Repository {
         })
     }
 
-    /// Search committees by name or jurisdiction.
+    /// Search committees by name (trigram similarity) or name/jurisdiction (ILIKE fallback).
     async fn search_committees(
+        &self,
+        query: &str,
+        limit: i64,
+    ) -> Result<Vec<CommitteeInfo>, sqlx::Error> {
+        // Try similarity-ranked search on name first
+        let results = self.search_committees_similarity(query, limit).await?;
+        if !results.is_empty() {
+            return Ok(results);
+        }
+        // Fall back to ILIKE on name and jurisdiction
+        self.search_committees_ilike(query, limit).await
+    }
+
+    /// Similarity-ranked committee search using the trigram index on name.
+    async fn search_committees_similarity(
+        &self,
+        query: &str,
+        limit: i64,
+    ) -> Result<Vec<CommitteeInfo>, sqlx::Error> {
+        let rows: Vec<CommInfoRow> = sqlx::query_as::<_, CommInfoRow>(
+            r#"SELECT committee_id, chamber, name, jurisdiction, NULL::text AS committee_type
+               FROM committees
+               WHERE similarity(name, $1) > 0.3
+               ORDER BY similarity(name, $1) DESC
+               LIMIT $2"#,
+        )
+        .bind(query)
+        .bind(limit)
+        .fetch_all(self.pool())
+        .await?;
+
+        Ok(rows.into_iter().map(CommInfoRow::into_info).collect())
+    }
+
+    /// ILIKE fallback for committees (name and jurisdiction).
+    /// The trgm index on committees.name accelerates the name ILIKE clause.
+    async fn search_committees_ilike(
         &self,
         query: &str,
         limit: i64,
@@ -58,16 +95,7 @@ impl Repository {
         .fetch_all(self.pool())
         .await?;
 
-        Ok(rows
-            .into_iter()
-            .map(|r| CommitteeInfo {
-                committee_id: r.committee_id,
-                chamber: r.chamber,
-                name: r.name,
-                jurisdiction: r.jurisdiction,
-                committee_type: r.committee_type,
-            })
-            .collect())
+        Ok(rows.into_iter().map(CommInfoRow::into_info).collect())
     }
 }
 
@@ -80,4 +108,16 @@ struct CommInfoRow {
     name: String,
     jurisdiction: Option<String>,
     committee_type: Option<String>,
+}
+
+impl CommInfoRow {
+    fn into_info(self) -> CommitteeInfo {
+        CommitteeInfo {
+            committee_id: self.committee_id,
+            chamber: self.chamber,
+            name: self.name,
+            jurisdiction: self.jurisdiction,
+            committee_type: self.committee_type,
+        }
+    }
 }
