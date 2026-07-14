@@ -4,21 +4,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-/**
- * Conservative net-worth range: lower bound = min(assets) - max(liabilities),
- * upper bound = max(assets) - min(liabilities). Returns null bounds
- * when a required component is absent.
- */
-function calculateNetWorthRange(assetMin, assetMax, liabilityMin, liabilityMax) {
-  if (assetMin === null || liabilityMax === null) {
-    return { min: null, max: null, reason: "insufficient bounds" }
-  }
-  const netMin = assetMin - liabilityMax
-  const netMax = assetMax !== null && liabilityMin !== null
-    ? assetMax - liabilityMin
-    : null // unbounded asset max or liability min missing
-  return { min: netMin, max: netMax }
-}
+import { calculateNetWorthRange } from "../lib/financial-ui.mjs"
 
 test("conservative net worth uses asset min minus liability max for lower bound", () => {
   const result = calculateNetWorthRange(500000, 1000000, 100000, 500000)

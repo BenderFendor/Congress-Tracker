@@ -39,6 +39,22 @@ export function formatDisclosureRange(snapshot) {
   return `${formatDisclosureBound(snapshot.net_worth_min, snapshot.lower_bound_unavailable, "lower")} to ${formatDisclosureBound(snapshot.net_worth_max, snapshot.upper_bound_unavailable, "upper")}`
 }
 
+/**
+ * Conservative net-worth range: lower bound = min(assets) - max(liabilities),
+ * upper bound = max(assets) - min(liabilities). Returns null bounds
+ * when a required component is absent.
+ */
+export function calculateNetWorthRange(assetMin, assetMax, liabilityMin, liabilityMax) {
+  if (assetMin === null || liabilityMax === null) {
+    return { min: null, max: null, reason: "insufficient bounds" }
+  }
+  const netMin = assetMin - liabilityMax
+  const netMax = assetMax !== null && liabilityMin !== null
+    ? assetMax - liabilityMin
+    : null // unbounded asset max or liability min missing
+  return { min: netMin, max: netMax }
+}
+
 export function snapshotMatches(snapshot, filters) {
   const query = normalizeDirectoryQuery(filters.query ?? "")
   const searchable = [snapshot.member_name, snapshot.state, snapshot.chamber, snapshot.bioguide_id]

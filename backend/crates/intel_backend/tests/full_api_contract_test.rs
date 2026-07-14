@@ -414,22 +414,18 @@ async fn test_all_api_endpoints() {
         "bills list should be array or have bills/results field"
     );
 
-    // Known bill ID or 404
-    let (status, _body) = check_endpoint(
+    // Unknown bill must return a well-formed error
+    let (status, body) = check_endpoint(
         &client,
         &base_url,
         &format!("/api/bills/{UNKNOWN_BILL}"),
         "bills-get",
     )
     .await;
-    if status == StatusCode::NOT_FOUND {
-        // acceptable — bill may not exist
-        println!("  ⚠ bill not found (expected for test data)");
-    } else {
-        assert_eq!(status, StatusCode::OK, "bill detail");
-    }
+    assert_eq!(status, StatusCode::NOT_FOUND, "unknown bill must 404");
+    assert_json_error(status, &body);
 
-    // Compound bill intel route
+    // Unknown bill intel must return a well-formed error
     let (status, body) = check_endpoint(
         &client,
         &base_url,
@@ -437,12 +433,8 @@ async fn test_all_api_endpoints() {
         "bill-intel",
     )
     .await;
-    // This likely 404s since test data doesn't have this exact bill
-    if status == StatusCode::NOT_FOUND {
-        assert_json_error(status, &body);
-    } else {
-        assert_eq!(status, StatusCode::OK, "bill intel");
-    }
+    assert_eq!(status, StatusCode::NOT_FOUND, "unknown bill intel must 404");
+    assert_json_error(status, &body);
 
     // Populated-dataset M5 proof: normalized amendments live in the compound
     // response and explicit LDA citations are distinct from heuristic matches.
@@ -624,7 +616,7 @@ async fn test_all_api_endpoints() {
     assert_eq!(status, StatusCode::OK, "senate dashboard");
     assert!(body.is_object(), "senate dashboard should be an object");
 
-    // Bad chamber returns 400 or 404
+    // Bad chamber must return 404 with a well-formed error
     let (status, body) = check_endpoint(
         &client,
         &base_url,
@@ -632,10 +624,8 @@ async fn test_all_api_endpoints() {
         "chamber-void",
     )
     .await;
-    if status != StatusCode::OK {
-        assert_json_error(status, &body);
-        println!("  ⚠ void chamber correctly rejected");
-    }
+    assert_eq!(status, StatusCode::NOT_FOUND, "unknown chamber must 404");
+    assert_json_error(status, &body);
 
     // ── Trades & Portfolio ──
     print_section("Trades & Portfolio");

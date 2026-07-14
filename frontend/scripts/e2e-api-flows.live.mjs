@@ -126,12 +126,14 @@ test("lobbying registrants and lobbyists expose stable identity lists", async ()
 test("lobbying entity detail includes source-backed filing history", async () => {
   const list = await fetchJson("/api/lobbying/clients?limit=1")
   assert.equal(list.status, 200)
-  if (list.data.clients.length === 0) return
-  const { status, data } = await fetchJson(`/api/lobbying/clients/${list.data.clients[0].id}`)
-  assert.equal(status, 200)
-  assert.ok(Array.isArray(data.filings))
-  if (data.filings.length > 0) {
-    assert.match(data.filings[0].source_url, /^https:\/\//)
+  assert.ok(Array.isArray(list.data.clients), 'clients is an array')
+  if (list.data.clients.length > 0) {
+    const { status, data } = await fetchJson(`/api/lobbying/clients/${list.data.clients[0].id}`)
+    assert.equal(status, 200)
+    assert.ok(Array.isArray(data.filings))
+    if (data.filings.length > 0) {
+      assert.match(data.filings[0].source_url, /^https:\/\//)
+    }
   }
 })
 
@@ -161,14 +163,15 @@ test("member disclosures remain a distinct source-backed flow", async () => {
 test("bill stream and source-linked detail use canonical routes", async () => {
   const list = await fetchJson("/api/bills?limit=1")
   assert.equal(list.status, 200)
-  assert.ok(Array.isArray(list.data.bills))
-  if (list.data.bills.length === 0) return
-  const bill = list.data.bills[0]
-  const detail = await fetchJson(`/api/bills/${bill.congress}/${bill.bill_type}/${bill.bill_number}/intel`)
-  assert.equal(detail.status, 200)
-  assert.ok(detail.data.bill)
-  assert.ok(Array.isArray(detail.data.amendments))
-  assert.ok(Array.isArray(detail.data.lobbying_bill_links))
+  assert.ok(Array.isArray(list.data.bills), 'bills is an array')
+  if (list.data.bills.length > 0) {
+    const bill = list.data.bills[0]
+    const detail = await fetchJson(`/api/bills/${bill.congress}/${bill.bill_type}/${bill.bill_number}/intel`)
+    assert.equal(detail.status, 200)
+    assert.ok(detail.data.bill)
+    assert.ok(Array.isArray(detail.data.amendments))
+    assert.ok(Array.isArray(detail.data.lobbying_bill_links))
+  }
 })
 
 // ── Organization by FEC ID ──
