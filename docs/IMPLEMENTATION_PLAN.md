@@ -21,6 +21,53 @@ runtime checks, browser checks, documentation, worksheet, focused commit, and
 matching git tag are complete. Compiler success alone is not proof that a data
 pipeline or user flow works.
 
+**Measurability convention:** No plan item may be open-ended. Every unchecked
+implementation item ends with a `Proof:` clause naming at least one numeric
+threshold, exact command, or artifact path. `scripts/plan-lint` (run by
+`scripts/self-test`) fails on any unchecked milestone item without one, on
+ledger-versus-checkpoint disagreements, on hardcoded migration-head claims, on
+dead evidence paths or tags, and on milestone tags recorded without a fresh-eyes
+audit trace dated within the prior seven days.
+
+## Agent Execution Guardrails
+
+This plan is executed by coding agents of varying capability. Follow these rails
+exactly; they encode this repository's most repeated recorded failures. Read
+them before starting any implementation item.
+
+1. Work one numbered implementation item at a time. Read the item's Proof clause
+   before writing code; the item is done only when that exact proof exists. If
+   the proof fails twice, stop, record the item as blocked with the failing
+   output in a worksheet, and do not broaden scope to other items or files.
+2. Never guess a database column or table name. Inspect the schema first with
+   `scripts/db-schema <table>` (or an `information_schema` query). Past sessions
+   failed repeatedly on invented columns such as `updated_at`, `cycle`, and
+   `members.full_name`.
+3. Never source or reference `.env` in ad hoc shell commands; the sensitive-path
+   hook blocks it. Use `scripts/db-query "<SQL>"` for read-only database checks.
+4. Quote every URL and bracketed path in zsh. Unquoted `?` query strings and
+   `[id]` route directories expand as globs and fail. Never name a shell loop
+   variable `path` or `status`; both shadow zsh builtins.
+5. `cargo test` accepts one positional filter. `cargo test name_a name_b`
+   silently misfilters; run one invocation per filter.
+6. Before any live proof, rebuild and restart the process under test. The binary
+   or `.next` output must be newer than the newest source commit; verifying a
+   stale process is this repository's most common false green (FA-06).
+7. All new API routes and contracts go in `backend/crates/intel_backend`.
+   `backend_server` is deprecated compatibility code; never add features there.
+8. `bioguide_id` is the canonical member key. Never join member records on
+   names.
+9. When a provider response looks wrong, `curl` the exact endpoint and read the
+   real JSON before changing application code. Congress.gov, LDA, and FEC shape
+   drift has repeatedly caused silent empty states.
+10. Worker launches default to the interactive-safe profile. Never opt into the
+    `burst` profile without explicit operator instruction.
+11. Missing, failed, stale, or partial data is never rendered or recorded as
+    zero. When a load fails, produce the truthful coverage state instead.
+12. Plan the full change to a file before editing, apply it in few batched
+    edits, and verify once per subsystem with `scripts/self-test`. After any
+    edit to this plan, run `scripts/plan-lint`.
+
 ## Product Rules
 
 - `backend/crates/intel_backend` is the canonical Postgres-backed API.
@@ -177,28 +224,31 @@ The 2026-07-12 fresh-eyes audit supersedes earlier completion language where the
 two disagree. The current disposition is **release blocked**. A finding closes
 only when its implementation, regression test, live data proof, browser proof
 where applicable, worksheet, focused commit, and milestone tag all exist.
+FA-29 was added by the 2026-07-14 operations review. The Severity column is the
+single authority on each finding's state; `scripts/plan-lint` fails when this
+table disagrees with the closure checkpoint below.
 
 | ID | Severity | Owner | Finding | Required closure proof |
 |---|---|---|---|---|
-| FA-01 | Critical | M5 | Election Safe, Likely, Tilt, and Toss-up ratings come from candidate filing counts rather than certified results. FEC `DEM` and `REP` values are also misclassified. | Remove filing-count race ratings; ingest certified results; reconcile state and county totals; pass semantic and Chrome tests. |
-| FA-02 | Critical | M1, M4 | Influence committee totals use network-wide rows, can exceed the network total, and treat opposition spending as money received. | Rebuild committee-specific channel queries; prove direct, support, and opposition reconciliation for AIPAC and another network. |
-| FA-03 | Critical | M5 | Client navigation can display one Member's evidence under another Member's dossier. | Cancel or key every request by Member; clear old section state; add rapid-navigation and stale-response tests. |
-| FA-04 | Critical | M0, M6 | Public funding GETs can start OpenFEC ingestion and writes; public county GETs fetch TIGERweb; the admin review queue is public and unbounded. | Move ingestion and review to private operator paths; serve prepared county data; clamp every list; prove public routes are read-only and bounded. |
-| FA-05 | Critical | M6 | Frontend CI runs live API tests without a backend; backend CI runs external-source smoke ingestion without required keys. | Split deterministic and live suites; start isolated dependencies explicitly; pass CI from a clean checkout without uncontrolled provider calls. |
-| FA-06 | Critical | M0, M6 | Prior green integration evidence used a stale backend process. | Start uniquely versioned current binaries on isolated ports; record commit and binary identity; reject occupied stale ports. |
+| FA-01 | Critical | M5 | Closed half: filing-count race ratings and party lean are removed and FEC `DEM`/`REP` classification is corrected with Chrome proof. Open half: certified state and county results are not ingested or reconciled. | Ingest certified results; reconcile state and county totals exactly; pass semantic and Chrome tests. |
+| FA-02 | Closed | M1, M4 | Influence committee totals use network-wide rows, can exceed the network total, and treat opposition spending as money received. | Rebuild committee-specific channel queries; prove direct, support, and opposition reconciliation for AIPAC and another network. |
+| FA-03 | Closed | M5 | Client navigation can display one Member's evidence under another Member's dossier. | Cancel or key every request by Member; clear old section state; add rapid-navigation and stale-response tests. |
+| FA-04 | Closed | M0, M6 | Public funding GETs can start OpenFEC ingestion and writes; public county GETs fetch TIGERweb; the admin review queue is public and unbounded. | Move ingestion and review to private operator paths; serve prepared county data; clamp every list; prove public routes are read-only and bounded. |
+| FA-05 | Closed | M6 | Frontend CI runs live API tests without a backend; backend CI runs external-source smoke ingestion without required keys. | Split deterministic and live suites; start isolated dependencies explicitly; pass CI from a clean checkout without uncontrolled provider calls. |
+| FA-06 | Closed | M0, M6 | Prior green integration evidence used a stale backend process. | Start uniquely versioned current binaries on isolated ports; record commit and binary identity; reject occupied stale ports. |
 | FA-07 | Critical | M5 | M5 was labeled complete although M3 and major M5 requirements remain open. | Keep M5 open until every M5 exit criterion and dependency passes. |
 | FA-08 | Critical | M5 | The money-votes design names cycle and recipient-committee-type summaries as donor-industry data; the documented `network_type` column does not exist. | Approve a licensed donor-industry source and schema; define numeric sample gates; reconcile every pattern to receipts and votes. |
-| FA-09 | Critical | M2 | Nullable transaction conflict keys permit duplicate semantic rows; annual and PTR persistence is not document-atomic; one row can mark a partial filing parsed. | Add null-safe uniqueness and cleanup; use document-scoped transactions; require section, page, row, and confidence completeness before success. |
+| FA-09 | Closed | M2 | Nullable transaction conflict keys permit duplicate semantic rows; annual and PTR persistence is not document-atomic; one row can mark a partial filing parsed. | Add null-safe uniqueness and cleanup; use document-scoped transactions; require section, page, row, and confidence completeness before success. |
 | FA-10 | Closed | M2, M6 | Worker leases were not renewed and OCR subprocesses lacked hard time, page, output, memory, disk, and ownership bounds. | Closed by lease renewal, owner-checked completion, bounded native subprocesses, deterministic resource-profile tests, and a live orphan-reclaim/stale-owner rejection exercise. |
-| FA-11 | High | M1 | The default receipts page converts absent amount bounds to zero and candidate links use the wrong search parameter. | Test an unfiltered default request, filter round trips, candidate links, result totals, and latency. |
+| FA-11 | Closed | M1 | The default receipts page converts absent amount bounds to zero and candidate links use the wrong search parameter. | Test an unfiltered default request, filter round trips, candidate links, result totals, and latency. |
 | FA-12 | High | M5 | County results are absent and projected county rings can render as full-extent complement rectangles. | Normalize geometry, compare representative shapes and bounds, load certified results, and add screenshot plus exact-total tests. |
 | FA-13 | High | M5 | Candidate and Member directories silently truncate; candidate committee fields are discarded; candidate dossiers do not exist. | Add paginated totals and server filters, preserve committee identity, cover every current Member, and implement candidate dossiers. |
-| FA-14 | High | M5 | Member trade history filters the first 200 global trades in the browser. | Add a Member-keyed paginated backend query and prove known early and late warehouse records. |
+| FA-14 | Closed | M5 | Member trade history filtered the first 200 global trades in the browser and the stock route depended on a missing derived view. | Closed with canonical Member/ticker pagination, truthful anomaly/404 states, page-before-enrichment plans, fixed-size Previous/Next UI windows, conflict evidence, and exact desktop/mobile proof. |
 | FA-15 | High | M5 | Member dossiers omit the financial-position card and detailed holdings, liabilities, income, transactions, and history. | Implement the full range-first dossier contract with independent URL-addressable states and source reconciliation. |
-| FA-16 | High | M5 | Bill detail has a populated-data 500, combines cycles and finance channels, and has a sequential sponsor N+1 path. | Fix numeric decoding; cycle-match and separate channels; bound queries; pass a large-sponsor bill and known missing-crosswalk case. |
-| FA-17 | High | M5 | Party-line alignment chooses a majority on ties, uses current party for historical votes, and vote rows omit measure context. | Exclude ties; use party at vote time; add measure-aware vote contracts and tie, switch, amendment, nomination, and procedure fixtures. |
-| FA-18 | High | M3 | Senate discovery defaults to 2021-2026, stops at 1,000 rows, and can mark truncated discovery successful. | Use an open-ended 2012-present window, exhaust pagination, prove year-level terminal counts, and reject truncated success. |
-| FA-19 | High | M4 | Lobbying activity insertion is append-only and the worker has no scheduled LDA refresh. | Add semantic idempotency, clean duplicates, schedule bounded refresh and recovery, and prove rerun stability. |
+| FA-16 | Closed | M5 | Bill detail has a populated-data 500, combines cycles and finance channels, and has a sequential sponsor N+1 path. | Fix numeric decoding; cycle-match and separate channels; bound queries; pass a large-sponsor bill and known missing-crosswalk case. |
+| FA-17 | Closed | M5 | Party-line alignment chooses a majority on ties, uses current party for historical votes, and vote rows omit measure context. | Exclude ties; use party at vote time; add measure-aware vote contracts and tie, switch, amendment, nomination, and procedure fixtures. |
+| FA-18 | Closed | M3 | Senate discovery defaulted to 2021-2026, stopped at 1,000 rows, and could mark truncated discovery successful. | Closed with a 2012-current exhaustive window, stable totals, per-row and run-wide identity checks, year/form terminal coverage, global unresolved truth, and bounded child cleanup. |
+| FA-19 | Closed | M4 | Lobbying activity insertion was append-only and the worker had no scheduled LDA refresh. | Closed with forward-safe semantic identity, activity-scoped evidence, exact source-run correlation, immutable continuation geometry, atomic continuation, bounded scheduling/recovery, and fresh/upgrade proof. |
 | FA-20 | Closed | M5 | All-Member legislation ingestion did not paginate, dropped request and row errors, and could declare partial work successful. | Closed with exhaustive mixed-row pagination, restartable Member-role coverage, scheduled native ingestion, exact reconciliation, dossier truth states, and live 537-Member proof. |
 | FA-21 | High | M6 | The public API has no rate, concurrency, timeout, response-size, or load-shedding protection; several limits accept negative or huge values. | Enforce shared request budgets and bounded pagination, then pass the single-machine load and abuse cases. |
 | FA-22 | High | M6 | Source status can hide failed bulk cycles behind a small successful request; disclosure coverage counts attempts and duplicates as completion. | Report source, endpoint, cycle, and document-version coverage separately; reconcile UI totals to canonical ledgers. |
@@ -208,6 +258,7 @@ where applicable, worksheet, focused commit, and milestone tag all exist.
 | FA-26 | High | M2, M6 | Pi, workstation, and public-load gates omit reproducible hardware, corpus, success-rate, traffic-mix, and foreground-impact definitions. | Pin hardware and corpus manifests, repetitions, response-success floor, traffic mix, and foreground degradation limits. |
 | FA-27 | High | M0 | The plan, backend requirements, agent docs, test catalog, and reports contradict current behavior and source state. | Reconcile or mark every stale document superseded; add a deterministic documentation consistency check. |
 | FA-28 | Medium | M5, M6 | Most routes lack complete loading and error coverage; election SVG controls are unnamed; the global skip link misses three pages. | Cover every critical route and truth state; pass keyboard, accessible-name, skip-link, desktop, and 390px browser checks. |
+| FA-29 | High | M7 | Public GET routes emit no Cache-Control headers although ADR 0003 requires cacheable public contracts; the only cache is a five-minute in-process layer invisible to browsers and the reverse proxy. | Emit an explicit Cache-Control header on 100% of public GET routes; prove a proxy cache hit ratio of at least 60% on the repeated-dashboard load segment. |
 
 ### Finding Closure Checkpoint: `e75ca39` (2026-07-12)
 
@@ -272,6 +323,27 @@ where applicable, worksheet, focused commit, and milestone tag all exist.
   measure-aware context. Adam Schiff rendered 100 contextual votes without
   overflow. Evidence: `docs/agent/traces/fa17-vote-semantics.md`, tag
   `fa17-vote-semantics`.
+- **FA-14 closed:** canonical disclosure reads replace the missing stock view;
+  Member and ticker routes expose bounded totals, offsets, anomaly counts, and
+  terminal `has_more`. The Member dossier renders one 100-row Previous/Next
+  window, actual committee-overlap evidence, accessible tabs, and no stale
+  cross-Member commits. Exact runtime was 144 ms global and 43 ms Member during
+  the final independent probe; Chrome replaced rows 1–100 with 101–200 while
+  keeping exactly 100 DOM rows. Evidence:
+  `docs/agent/traces/fa14-member-trades.md`, tag `fa14-member-trades`.
+- **FA-18 closed:** Senate eFD discovery defaults to January 1, 2012 through
+  the runtime current date, exhausts stable advertised totals beyond 1,000,
+  rejects malformed, truncated, duplicate-row, and cross-page duplicate
+  identities, and exposes year/form coverage whose terminal state requires a
+  successful exhaustive window. Timed-out scheduled children are killed and
+  reaped before advisory unlock. Evidence:
+  `docs/agent/traces/fa18-senate-window.md`, tag `fa18-senate-window`.
+- **FA-19 closed:** migrations 43–47 clean and preserve full LDA activity
+  identity with stable-ID normalization; scheduled jobs pin page size, renew
+  ownership, correlate to one exact source run, retain partial failure counts,
+  and atomically publish completion plus continuation. Fresh and prior-0016
+  migration executions and installed checksum parity passed. Evidence:
+  `docs/agent/traces/fa19-lda-refresh.md`, tag `fa19-lda-refresh`.
 - **FA-20 closed:** `congress_api` exhausts stable sponsored and cosponsored
   pagination, tolerates nullable amendment rows, retries transient request and
   response-body failures, adapts page size from 250 to 50 only for size-sensitive
@@ -292,7 +364,9 @@ the commands in the verification section before starting a milestone.
 
 ### Verified Foundations
 
-- The local database has migrations through `0040` applied successfully.
+- The local database has every committed migration applied successfully. Confirm
+  the current head with `ls backend/crates/intel_backend/migrations/ | tail -1`
+  instead of relying on a number written here.
 - `intel_backend` exposes the canonical member, bill, committee, funding, influence, trade, portfolio, lobbying, FEC, search, relationship, financial snapshot, and system routes.
 - `intel_worker` runs House discovery, download, parse, resolution, heartbeat, profile evidence, scheduled FEC bulk refresh, optional Senate eFD discovery, and SEC asset crosswalk loops.
 - House Clerk documents use a durable Postgres queue, immutable document versions, parse attempts, parse issues, and official source URLs.
@@ -389,8 +463,8 @@ the commands in the verification section before starting a milestone.
 - CI now verifies fresh migrations and upgrade from the last committed schema,
   including idempotency and SQLx checksum/ledger checks. Local isolated-schema
   proof passed. On 2026-07-12, the disposable-database wrapper also passed both
-  the empty-database and upgrade-from-`0016` paths through migration `0040`,
-  including a second idempotent migration run.
+  the empty-database and upgrade-from-`0016` paths through the then-current
+  migration head, including a second idempotent migration run.
 - The frontend now has a shared route registry, grouped Explore navigation,
   native command-palette semantics, explicit failure/empty/not-found states,
   a shared member-portrait contract, near-black dark mode, and a cohesive
@@ -442,6 +516,7 @@ M0 -> M1 and M2 in parallel -> M3
 M1 -> M4
 M1 + M3 + M4 -> M5
 M6 gates every milestone and the final release
+M6 -> M7, and M7 gates the public launch
 ```
 
 M3 depends on the shared M2 evidence schema and contracts, not completion of the
@@ -468,7 +543,13 @@ verified baseline before adding another product surface.
 9. [x] Close FA-04 by separating the private operator plane from every public GET path.
 10. [x] Close FA-06 by making integration checks start and identify an isolated current stack.
 11. [ ] Close FA-25 by reconciling milestone states, tags, worksheets, and focused commits.
+    Proof: every `m0`-through-`m6` tag in `git tag` resolves to a commit containing
+    its worksheet under `docs/agent/traces/`, and the reconciliation table is
+    committed as `reports/verification/milestone-tag-audit.md`.
 12. [ ] Close FA-27 by reconciling or marking stale authoritative documents and reports superseded.
+    Proof: `scripts/plan-lint` passes, `scripts/self-test` invokes it, and every
+    superseded document carries a dated `Superseded:` header line enumerated in
+    the same audit report.
 
 ### Exit Criteria
 
@@ -488,20 +569,46 @@ for the configured election cycles with honest coverage semantics.
 ### Implementation
 
 1. Complete the default current-plus-two-prior-cycle refresh, including the missing 2024 cycle. Keep `FEC_CYCLES` as the explicit broader-backfill override.
+   Proof: `source_runs` shows a terminal run for every required 2022, 2024, and
+   2026 bulk file with zero `running` rows older than one hour; per-cycle canonical
+   counts are recorded under `reports/verification/`.
 2. Prove content-addressed downloads, resumable partial files, bounded streaming, restartable staging, canonicalization, amendment precedence, rankings, and staging cleanup.
+   Proof: a killed-and-resumed bulk run completes without re-downloading finished
+   archives (logged byte counts), a deterministic rerun adds zero canonical rows,
+   and staging directories are empty afterward.
 3. Resolve candidate and committee identities from official master files. Keep ambiguous or missing links in `fec_linkage_issues` and report partial coverage.
+   Proof: zero canonical rows reference an unresolved identity, `fec_linkage_issues`
+   counts are reported per cycle, and 20 sampled links are spot-checked against the
+   official master files in the worksheet.
 4. Finalize leadership-PAC and independent-expenditure supplemental ingestion under the same source-run and retry rules.
+   Proof: both supplemental files have terminal source runs per configured cycle
+   and a deterministic rerun adds zero rows.
 5. Finalize `GET /api/fec/receipts` and `/fec/receipts` with stable pagination, filters, record classification, coverage metadata, source timestamps, warnings, and filing links.
+   Proof: the live API check covers the unfiltered default, every filter, and
+   pagination past page 10 within the two-second budget on the documented dataset.
 6. Add canonical operating-disbursement ingestion, `GET /api/fec/disbursements`, and a matching browse page. Do not mix disbursements into receipt totals.
+   Proof: `/api/fec/disbursements` and `/fec/disbursements` pass the same live
+   checks, and a contract test proves disbursement amounts never enter any receipt
+   total.
 7. Populate member donor, committee, and influence-network rankings only from canonical cycle-complete records.
+   Proof: a contract test fails when a ranking row derives from a partial cycle;
+   one member's ranking rows reconcile exactly to canonical receipts in the report.
 8. Keep `Totals only` and `Rankings unavailable` when a member has official totals but lacks complete canonical rankings.
+   Proof: a member with official totals and incomplete rankings renders both
+   states in browser proof at 1440px and 390px.
 9. [x] Fix FA-02's committee and network attribution before any influence amount is public.
 10. [x] Fix FA-11's default receipt query and candidate receipt links.
 11. Repair resumable-download identity and archive replacement semantics; prove
     ETag or content-range validation and removal of records absent from a
     replacement archive.
+    Proof: a deterministic test forces an ETag/content-range mismatch and asserts
+    a full re-download; a record absent from a replacement archive is removed and
+    logged with audit provenance intact.
 12. Resolve or explicitly account for the current 2022 no-space failure and all
     partial 2022, 2024, and 2026 required imports.
+    Proof: every required import for those cycles is terminal `success`, terminal
+    `partial` with exact unresolved-row counts, or terminal `failed` with a
+    source-backed reason visible in `/api/sources/status`.
 
 ### Data Integrity Rules
 
@@ -540,16 +647,37 @@ coverage, range-safe calculations, and reviewable parser failures.
    validate 2018-present first, expand through 2012-2017, then backfill 2008-2011.
    Preserve per-year and per-form outcome reporting throughout; later years may
    not mask historical parser or acquisition failures.
+   Proof: the queue reports zero pending supported jobs older than seven days, and
+   per-year, per-form throughput, retry, and terminal-failure counts are committed
+   in the M2 coverage report.
 2. Maintain the implemented annual extraction and persistence for assets,
    liabilities, income, gifts, and positions; extend fixtures when a supported
    House layout produces a truthful partial or failed parse.
+   Proof: the fixture suite contains at least one truthful partial and one failed
+   parse per supported form family and passes in `scripts/self-test`.
 3. Retain the raw source row, parser name, parser version, confidence, document version, official URL, and range text for every normalized record.
+   Proof: a schema contract test asserts these fields are populated on 100% of
+   normalized rows in the populated database.
 4. Keep `pdftotext`, page rendering, OCR, and parser CPU work off the async runtime.
+   Proof: a deterministic test asserts extraction entry points run through
+   blocking or native-subprocess wrappers, and the worker heartbeat continues
+   during a ten-minute OCR job.
 5. Store OCR and layout failures as partial or failed parse attempts with UTF-8-safe diagnostics and manual-review records.
+   Proof: a malformed fixture produces a partial or failed parse attempt with
+   UTF-8-safe diagnostics and a review record, never a success state.
 6. Resolve documents and filings to members before deriving member snapshots. Ambiguous identity stays unresolved.
+   Proof: an ambiguous-identity fixture yields an unresolved filing and zero
+   snapshots; resolution counts by year appear in the coverage report.
 7. Resolve public assets through official SEC/company identifiers. Do not infer identifiers from weak name similarity.
+   Proof: a weak-similarity fixture stays unresolved; every resolved asset carries
+   an official identifier and source URL, counted in the review-queue report.
 8. Build financial snapshots from reported asset and liability bounds with versioned calculation rules and component provenance.
+   Proof: tests cover unbounded maxima, missing components producing no snapshot,
+   and the personal-residence limitation; every snapshot row records its
+   calculation version.
 9. Correct financial API provenance so it names only the sources that contributed to each row.
+   Proof: an API contract test asserts per-row provenance lists only contributing
+   sources, verified live against one known multi-source member.
 10. Research maintained public parsers and disclosure-ingestion repositories
     before adding another layout rule. Prefer DeepWiki when available; otherwise
     use primary repository documentation and scoped clones under `/tmp`. Record
@@ -561,6 +689,9 @@ coverage, range-safe calculations, and reviewable parser failures.
     generic PDF projects are secondary references for isolated algorithms only.
     Follow `docs/features/disclosure-parser-research.md` for the candidate list,
     scoped clone protocol, comparison worksheet, and promotion gate.
+    Proof: one committed comparison worksheet per candidate repository under
+    `docs/features/` recording revision, license, layout coverage, and an
+    adopt-or-reject decision.
 11. Enforce ADR 0002's deterministic, Pi-class parser architecture. Use one
     extraction contract with resource profiles: a low-memory single-worker
     profile for Raspberry Pi-class hosts and an auto-tuned workstation profile
@@ -570,6 +701,8 @@ coverage, range-safe calculations, and reviewable parser failures.
     Production parser semantics and orchestration are Rust-only. Version-pinned
     native PDF rendering, text extraction, and OCR executables are permitted as
     bounded adapters; Python parser environments and services are not.
+    Proof: both profiles produce byte-equivalent normalized output on the pinned
+    benchmark corpus, and profile selection changes configuration only.
 12. Add reproducible parser benchmarks covering electronic text, wrapped tables,
     scanned OCR, malformed input, and unusually large filings. The Pi-class
     profile is limited to 512 MiB RSS per worker, one worker by default, p95 at
@@ -578,6 +711,8 @@ coverage, range-safe calculations, and reviewable parser failures.
     250 ms per text page and 2 seconds per OCR page, avoid swap growth, and
     deliver at least four times Pi-profile throughput with byte-equivalent
     normalized records.
+    Proof: a pinned-corpus benchmark run meets every stated bound and its results
+    are committed under `reports/verification/`.
 13. Add an interactive-safe workstation background profile that can coexist
     with arbitrary latency-sensitive or resource-heavy desktop work. It must
     reserve CPU, memory, and I/O headroom,
@@ -586,6 +721,9 @@ coverage, range-safe calculations, and reviewable parser failures.
     This is the default for `./run_all.sh`, scheduled ingestion, and ordinary
     worker launches. The maximum-throughput `burst` profile requires explicit
     operator opt-in, including during historical backfills.
+    Proof: the coexistence benchmark passes its reserved-headroom, no-GPU, and
+    deferral-under-pressure gates, and a configuration test asserts the
+    interactive-safe profile is the default launch path.
 14. Implement a content-addressed deterministic parser cascade. Run the cheapest
     known-layout parser first; invoke bounding-box, ruled-line, or OCR candidates
     only after validation fails or when the source is partial, unknown-layout,
@@ -593,6 +731,9 @@ coverage, range-safe calculations, and reviewable parser failures.
     agreement or one uniquely schema-valid candidate, and retain disagreements
     with both outputs and page/region provenance for review. Reuse render, text,
     bounding-box, and OCR artifacts by document hash.
+    Proof: fixtures prove cheapest-parser-first ordering and disagreement
+    retention with page/region provenance, and a second run over the same
+    document hash performs zero new renders.
 15. Build an agent-verified gold corpus of at least 300 public filings. Represent
     every supported form family and known layout era, include at least 20 filings
     per common layout and every rare layout, manually verify every successful
@@ -606,6 +747,9 @@ coverage, range-safe calculations, and reviewable parser failures.
     Store document hash, page number, bounding region, verifier identity,
     verification timestamp, and adjudication history for every expected field;
     periodically re-verify a random completed sample for drift.
+    Proof: the corpus manifest counts at least 300 filings meeting the stated
+    family and layout minimums, and every expected field stores hash, page,
+    region, verifier, timestamp, and adjudication history.
 16. Fingerprint unknown layouts before writing parser rules. Signatures include
     form/year, page count and dimensions, stable anchors, text-layer presence,
     token-coordinate bands, horizontal/vertical rules, inferred column count,
@@ -613,6 +757,9 @@ coverage, range-safe calculations, and reviewable parser failures.
     families, verify representative documents, implement one Rust strategy per
     family, and rerun it across every cluster member and the gold corpus.
     Document-specific exceptions require proof that no existing family applies.
+    Proof: every unknown-layout document has a stored signature and cluster
+    assignment, and each promoted family strategy passes 100% of its cluster
+    members plus the gold corpus.
 17. Recover terminal official 404s through alternate official URL patterns and
     official archives first, then preservation services such as the Internet
     Archive by exact official URL. Preserve original and archive URLs, response
@@ -622,6 +769,9 @@ coverage, range-safe calculations, and reviewable parser failures.
     `archived_recovery`. Community-transcribed structured records never replace
     a missing source document. Unrecoverable 404s remain failed supported-filing
     outcomes and count against success.
+    Proof: an `archived_recovery` fixture validates index metadata before any
+    canonical row exists, and unrecoverable 404 counts appear per year in the
+    coverage report as acquisition failures.
 18. Prohibit filing-ID-specific parser branches. If a document is genuinely
     unique after layout-family analysis, store an auditable correction keyed by
     document hash with affected fields, original candidate, corrected value,
@@ -629,11 +779,20 @@ coverage, range-safe calculations, and reviewable parser failures.
     Validate corrections against schema and gold contracts, preserve the
     original output, and retire the correction when a generalized Rust strategy
     handles the filing.
+    Proof: a repository search for filing-ID literals in parser sources returns
+    zero hits, and every stored correction passes the schema and gold contract
+    tests with all required audit fields populated.
 19. Make each document parse atomic and idempotent. Add null-safe transaction
     uniqueness, clean existing duplicate semantic rows, renew job leases, and
     require owner-checked status changes.
+    Proof: migration `0041` constraints absorb a duplicate-delivery test, and a
+    mid-parse kill leaves the prior canonical document version intact while a
+    rerun converges with zero duplicate semantic rows (FA-09/FA-10 regression
+    suites retained).
 20. Enforce hard subprocess time, page, output, memory, scratch-disk, and
     document limits for text extraction, rendering, and OCR.
+    Proof: resource-profile tests force each limit and assert termination within
+    budget, retained from the FA-10 closure in the deterministic suite.
 
 ### Range Rules
 
@@ -700,20 +859,43 @@ used for House disclosures.
 ### Implementation
 
 1. Keep operator consent explicit through `SENATE_EFD_ACCEPT_TERMS=1`. When consent is absent, expose a disabled coverage state instead of recording an ingestion failure.
+   Proof: with consent unset, coverage reports `missing_consent` and zero
+   ingestion attempts are recorded; the existing fixture states rerun live.
 2. Paginate the configured date range, preserve raw search responses and hashes, extract submitted dates, and deduplicate official report IDs.
    The required historical window is January 1, 2012 through the current date.
    Prove 2025-present first, expand through the existing 2021-present window,
    then continue backward through 2012 without collapsing year-level coverage.
+   Proof: live discovery persists advertised totals per year, and yearly
+   discovered counts equal persisted rows plus explicit duplicates for
+   2012-present.
 3. Add Senate download jobs, immutable document versions, hashes, retry policy, and source-run attribution.
+   Proof: an interrupted download resumes without duplicate document versions,
+   with retry counts and source-run attribution visible in `/api/sources/status`.
 4. Add adapters for Senate PTRs, electronic annual reports, and scanned annual reports.
+   Proof: at least one live PTR, one electronic annual, and one scanned annual
+   report each reach `loaded` or a truthful partial or failed state with
+   diagnostics.
 5. Normalize Senate records into the shared filing, transaction, asset, liability, income, gift, and position tables.
+   Proof: a schema test proves Senate rows occupy the shared tables with chamber
+   discrimination and no Senate-only parallel evidence tables exist.
 6. Resolve Senators through official identifiers before applying conservative name/state matching. Queue ambiguous matches for review.
+   Proof: resolution counts are reported by year, an ambiguous fixture stays
+   queued, and zero snapshots attach through an ambiguous identity.
 7. Feed Senate rows into the existing member disclosure, trade, portfolio, financial snapshot, relationship, worker-health, and coverage contracts.
+   Proof: `/api/members/:id/disclosures`, trades, portfolio, and snapshots return
+   Senate rows for one verified Senator in the live API check.
 8. Keep `/api/senate-disclosures` as an audit and coverage listing rather than a separate product data model.
+   Proof: a contract test asserts the endpoint exposes audit and coverage fields
+   only, with no member-facing evidence fields absent from shared contracts.
 9. Replace fixed defaults with a January 1, 2012 through current-date window,
    exhaust provider pagination, persist total records available, and reject a
    success state whenever a row cap truncates discovery.
+   Proof: the truncation-simulation test rejects success, and the live run
+   persists `total_records_available` equal to seen rows per year (FA-18
+   regression suite retained).
 10. Ensure timed-out Senate subprocesses are killed before advisory locks are released.
+    Proof: the timed-out-child test asserts kill and reap before advisory unlock,
+    retained from the FA-18 closure.
 
 ### Exit Criteria
 
@@ -760,17 +942,39 @@ combining campaign-finance and lobbying claims.
 ### Implementation
 
 1. Keep AIPAC and other network committee membership tied to verified FEC identifiers, citations, and review dates.
+   Proof: a contract test asserts every network committee row carries an FEC ID,
+   citation, and review date, spot-checked live for AIPAC and NRA.
 2. Add canonical lobbying client, registrant, and lobbyist list/detail endpoints.
+   Proof: list and detail endpoints pass the populated API contract with bounded
+   pagination; the verified sample counts stay recorded in the plan.
 3. Add frontend routes for lobbying clients, registrants, and lobbyists with source-backed filing histories.
+   Proof: Chrome proof at 1440px and 390px for one client, one registrant, and
+   one lobbyist page with filing histories and zero console errors.
 4. Support AIPAC aliases during search while retaining exact source identities in stored and displayed records.
+   Proof: the `United Democracy Project` alias search resolves AIPAC while stored
+   and displayed identity remains the official FEC record (existing test
+   retained).
 5. Present AIPAC LDA filings on an organization or influence surface separate from member campaign-finance totals.
+   Proof: a contract test asserts no member funding response contains an LDA
+   amount, and the dossier renders LDA records on the organization surface only.
 6. Replace unlabeled keyword correlations with typed evidence and visible confidence.
+   Proof: every displayed relationship row carries an evidence tier and
+   confidence in the contract test, and a repository search finds zero remaining
+   call sites of the legacy unlabeled-correlation path.
 7. Apply the same general contracts to AIPAC and every other influence network. Do not create an AIPAC-only API.
+   Proof: identical API and page tests pass for AIPAC and one non-AIPAC network,
+   and a repository search finds zero network-name conditionals in route code.
 8. Replace the network-wide committee join and reconcile each committee to its
    own canonical direct, support, and opposition rows.
+   Proof: closed under FA-02; the committee-level reconciliation regression tests
+   for AIPAC and NRA remain in the deterministic suite.
 9. Remove opposition spending from every amount described as received.
+   Proof: a contract test asserts opposition amounts never appear in any
+   received-money field (FA-02 regression suite retained).
 10. Add semantic lobbying-activity uniqueness, clean existing duplicates, and
     schedule bounded LDA refresh and recovery in `intel_worker`.
+    Proof: closed under FA-19; migrations `0043`-`0047` checks and the scheduled
+    refresh, ownership, and continuation tests remain in the deterministic suite.
 
 ### Exit Criteria
 
@@ -801,16 +1005,33 @@ through explicit contracts and provenance.
 ### Implementation
 
 1. Preserve existing bill actions, sponsors, cosponsors, subjects, text versions, votes, funding overlays, and provenance.
+   Proof: the populated bill contract test keeps every listed collection
+   non-empty for H.R. 8205 across releases.
 2. Add amendment ingestion and normalized amendment records to the existing bill-intelligence response.
+   Proof: normalized amendment rows render for a bill with amendments, covered by
+   the populated contract test already recorded in the partial evidence.
 3. Add durable explicit LDA-to-bill and LDA-to-issue relationships. Keep heuristic matches in a separate contextual collection.
+   Proof: the H.R. 6489 direct-citation test passes, and a heuristic fixture row
+   is asserted into the contextual collection only.
 4. Build the organization detail frontend on the existing organization and relationship backend.
+   Proof: Chrome proof for one organization dossier showing typed direct,
+   derived, and contextual sections at 1440px and 390px with zero console errors.
 5. Support organization filtering across FEC, LDA, disclosures, committees, bills, and verified identifiers.
+   Proof: live filter round trips across all five record families return counts
+   that reconcile exactly to the canonical row queries for one organization.
 6. Add aggregation endpoints for charts only after their canonical row contracts are stable.
+   Proof: each aggregation endpoint ships with a contract test proving exact
+   parity with its canonical row query on the populated dataset.
 7. Enable `/visualizations` one chart at a time. Each chart requires coverage metadata, provenance, empty/error states, and a contract test.
+   Proof: a configuration test asserts a chart cannot be enabled without its
+   coverage metadata, truth states, and parity contract test.
 8. Replace county candidate-activity coloring with the certified county-result
    contract for federal general elections from 2012 onward. Retain the current
    all-jurisdiction geometry service, ingest state-attributable result records,
    and keep upcoming candidate information in a separate state.
+   Proof: certified results load for at least two states, county totals sum
+   exactly to certified state totals, and representative-shape screenshot tests
+   pass (closes the FA-12 geometry half and the FA-01 open half).
 9. Add a source-backed Member profile-enrichment pipeline for missing education,
    professional background, public service, military service, official contact,
    and biographical facts. Store each fact independently with source, official
@@ -826,6 +1047,10 @@ through explicit contracts and provenance.
    records; Congressional Directory; `unitedstates/congress-legislators`; then
    attributed Wikidata/Wikimedia/Wikipedia context. Conflicts remain visible or
    reviewable and lower-tier facts never silently overwrite primary evidence.
+   Proof: five representative Members show every guaranteed fact family as
+   present or truthfully missing with source, tier, and retrieval time; a
+   conflict fixture keeps both values visible; a contract test rejects any
+   lower-tier overwrite of a primary fact.
 10. Add bounded money-votes contextual evidence. Compare only verified
     industry-classified direct receipts with recorded votes tied to explicit
     policy areas and aligned cycles/dates. Reveal the underlying receipts and
@@ -834,21 +1059,39 @@ through explicit contracts and provenance.
     every result `Pattern`, produce no overall Member score, never combine LDA,
     independent expenditures, and direct receipts, and hide the pattern whenever
     either finance or vote coverage is partial.
+    Proof: fixtures prove cycle alignment, minimum-sample gating, non-alignment
+    and falsification cases, channel separation, and partial-coverage hiding; a
+    copy audit of every rendered string finds no causal phrasing.
 11. Fix FA-03 with Member-keyed request cancellation, independent section
     loading/error state, and stable URL state for every dossier section.
+    Proof: closed under FA-03; the rapid-navigation and stale-response regression
+    tests remain in the deterministic suite.
 12. Fix FA-13 and FA-14 with complete server-paginated candidate, Member, and
     Member-trade contracts. Add candidate dossiers and preserve principal
     committee identity.
+    Proof: FA-14 is closed with its regression suite retained; candidate and
+    Member directories return exact totals with server filters, and one filed
+    non-Member candidate dossier renders at 1440px and 390px with preserved
+    principal-committee identity.
 13. Implement FA-15's full financial-position card and range-first disclosure
     sections inside the Member dossier.
+    Proof: one Member dossier shows the card with range, filing year, movement,
+    warnings, and methodology, and each disclosure section's URL state survives
+    refresh and browser back/forward in Chrome proof.
 14. Fix FA-16's populated bill error, cycle and channel semantics, missing-data
     zero handling, and sponsor N+1 query path.
+    Proof: closed under FA-16; the H.R. 8205 and H.R. 8770 regression tests
+    remain in the populated contract suite.
 15. Fix FA-17 by excluding tied party comparisons, using party at vote time,
     and returning measure-aware vote evidence.
+    Proof: closed under FA-17; the tie, party-switch, amendment, nomination, and
+    procedure fixtures remain in the deterministic suite.
 16. Before implementing money-votes, replace the invalid committee-type design
     with a licensed donor-industry source, schema, provenance, and numeric
     contribution/vote sample thresholds. OpenSecrets cannot become canonical
     until its license and redistribution terms are recorded and accepted.
+    Proof: a committed ADR records the licensed source, its terms, the schema,
+    and the numeric sample gates before any money-votes implementation lands.
 
 ### Exit Criteria
 
@@ -888,27 +1131,57 @@ milestone.
 ### Implementation
 
 1. Add CI for backend format, clippy, check, tests, frontend tests, typecheck, ESLint, Oxlint, build, fresh migrations, and upgrade migrations.
+   Proof: `.github/workflows/ci.yml` runs every listed gate and one clean-checkout
+   CI run passes end to end, linked in the verification report.
 2. Expand frontend tests for loading, error, empty, partial, and loaded states on every critical page.
+   Proof: a registry-driven test enumerates the shared route registry and fails
+   when any critical route lacks one of the five state tests.
 3. Add end-to-end flows for search, member funding, FEC browsing, disclosures, net worth, lobbying, influence, bills, and organizations.
+   Proof: `scripts/verify-live-api-flows` covers all nine journeys and passes
+   against an isolated current-binary stack.
 4. Test worker interruption, restart, duplicate delivery, rate limiting, parser failure, missing consent, missing keys, and stale source runs.
+   Proof: deterministic tests cover each listed fault, and one live process-kill
+   recovery exercise per release cycle is recorded in a worksheet.
 5. Capture real desktop and 390px mobile navigation with screenshots, console checks, request failures, and overflow measurements.
+   Proof: 1440px and 390px runs with console, request-failure, and overflow
+   assertions are saved under `reports/verification/` for every critical route.
 6. Maintain `docs/agent/test-catalog.md` with every test file, its claim, and its deliberate exclusions.
+   Proof: a deterministic check lists test files missing from the catalog and
+   reports zero.
 7. Require a worksheet under `docs/agent/traces/`, a focused commit, relevant documentation, and a matching tag for each milestone. Checkpoint commits may preserve verified partial progress, but tags are strict completion markers. Apply a tag only to the exact commit containing implementation, final data/runtime/browser evidence, documentation, and worksheet, then rerun CI from that commit. Never create partial-completion milestone tags.
+   A fresh-eyes audit trace dated within the prior seven days must exist before
+   any milestone tag is applied. Record each applied tag in this plan as
+   `Milestone tag applied: <tag> (<YYYY-MM-DD>)`.
+   Proof: `scripts/plan-lint` fails any recorded milestone tag line without a
+   `docs/agent/traces/fresh-eyes-audit-<date>.md` trace in the prior seven days.
 8. Split deterministic unit/contract tests from live populated-data tests. CI
    starts isolated PostgreSQL, backend, and frontend instances where needed and
    never depends on an already-running local process or uncontrolled provider.
+   Proof: closed under FA-05; deterministic suites pass from a clean checkout
+   without provider keys, shown by the CI run in item 1.
 9. Record commit SHA, binary build identity, ports, process IDs, migration head,
    and database identity for every integration report. Fail on stale or occupied
    targets.
+   Proof: closed under FA-06; the verification tooling emits all six identity
+   fields and rejects an intentionally occupied port in a test.
 10. Add shared API input validation, pagination ceilings, request and database
     deadlines, concurrency limits, response-size limits, rate limits, and load
     shedding. Public requests cannot invoke ingestion or review work.
+    Proof: abuse tests prove negative and oversized limits return 400, every list
+    is clamped, and the single-machine load gate below passes with its stated
+    numbers.
 11. Replace silent test skips, accepted 404 paths, test-local reimplementations,
     and early-return assertions with production-linked deterministic proof.
+    Proof: a committed test audit lists zero remaining skips, accepted 404s, or
+    early returns, and each restored assertion is proved by a failing mutation.
 12. Report freshness by source, endpoint, cycle, and canonical data family. Do
     not allow one small success to hide a partial or failed bulk run.
+    Proof: a fixture holding one small success and one failed bulk cycle renders
+    both truthfully in `/api/sources/status` and the UI.
 13. Add loading, empty, partial, failed, stale, keyboard, accessible-name,
     skip-link, and mobile coverage for every critical route.
+    Proof: the registry-driven browser run passes keyboard, accessible-name,
+    skip-link, and 390px checks for every critical route, closing FA-28.
 
 ### Deterministic Reliability Proof Added 2026-07-12
 
@@ -962,6 +1235,90 @@ milestone.
 - Roll back application behavior by reverting the milestone commit while leaving additive evidence schema dormant.
 - Do not use destructive down migrations on ingested public records.
 - Keep legacy compatibility code until a call-site and contract audit proves it can be removed safely.
+
+## M7 - Operate In Public
+
+**State:** Open; added by the 2026-07-14 operations review
+
+**Dependency:** M6
+
+**Goal:** Make the single-machine deployment durable, observable, cacheable, and
+legally presentable before public launch. M6 proves the software; M7 proves the
+operation.
+
+### Implementation
+
+1. Add nightly `pg_dump` backups via a systemd timer to a device other than the
+   database disk, keeping 14 daily and 8 weekly archives with a manifest of
+   database identity, migration head, and size.
+   Proof: two consecutive dated archives exist, and one restore drill into a
+   clean PostgreSQL completes with exact row-count parity on ten named canonical
+   tables, transcript committed under `reports/verification/`.
+2. Define the artifact storage budget and retention policy. `/mnt/Big storage`
+   is the operator-sanctioned location for disclosure PDFs and FEC bulk archives
+   (the worker's `storage_dir()` already resolves there). Re-downloadable bulk
+   archives may be pruned by policy; source PDFs are retained. The worker parks
+   new download and OCR jobs without failing them when free space on the storage
+   volume falls below 50 GiB.
+   Proof: the budget table is committed in this plan, and a simulated low-disk
+   test shows jobs parked with zero jobs failed and zero jobs lost.
+3. Add systemd units for `intel_backend`, the Next.js frontend, and a Caddy
+   reverse proxy with TLS termination, response caching, and rate limits; keep
+   the existing `intel_worker` unit.
+   Proof: `systemctl is-enabled` succeeds for all four units, `curl -sI` over
+   HTTPS returns 200 with a valid certificate, and the M6 single-machine load
+   gate passes through the proxy rather than against bare Axum.
+4. Close FA-29: emit an explicit `Cache-Control` header from every public GET
+   route with per-route-class max-age values, so the proxy and browsers can
+   cache prepared evidence under ADR 0003.
+   Proof: a route-enumeration test asserts 100% of public GET routes return the
+   header, and the proxy records a cache hit ratio of at least 60% on the
+   repeated-dashboard segment of the load-gate traffic script.
+5. Expose operational metrics and one alert channel: per-process RSS, request
+   p95 by route class, queue depth, oldest-pending-job age, and lease-renewal
+   lag. Worker health must reflect wedged workers, not just heartbeat rows.
+   Proof: a deliberately wedged worker holding a lease past twice the renewal
+   interval flips `/api/system/worker-health` to degraded and fires the alert
+   within five minutes, and the metrics endpoint returns all five series.
+6. Add a root `LICENSE` and an `/about/data` page listing every upstream source
+   with its terms and required attribution, plus `robots.txt` reflecting the
+   read-only public plane.
+   Proof: the page renders in the browser check with one row per source (FEC,
+   House Clerk, Senate eFD, LDA, Congress.gov, Voteview, TIGERweb, Bioguide),
+   and `curl /robots.txt` returns the committed policy.
+7. Add automated dependency updates covering cargo, npm, and GitHub Actions.
+   Proof: the Dependabot or Renovate config is committed, and the first
+   generated batch is triaged to merged or deferred with reasons recorded in
+   `docs/Log.md`.
+8. Complete the `backend_server` removal audit and repoint `WATCHDOG.yml`, which
+   still cites `backend_server/src` as the routes location.
+   Proof: a committed audit lists every remaining reference, `WATCHDOG.yml`
+   points at `intel_backend`, and Retired Decisions records removal or a dated
+   keep decision.
+9. Move bill, committee, PAC, and lobbying entity search off leading-wildcard
+   `ILIKE` onto the existing GIN and tsvector indexes, matching the member
+   search path.
+   Proof: `EXPLAIN` output for each search shows index usage, and p95 stays
+   within the existing two-second search budget on the populated dataset.
+10. Add `generateMetadata` titles, descriptions, and OpenGraph tags to Member,
+    bill, committee, and organization dossiers, plus a sitemap covering all four
+    dossier types.
+    Proof: `curl` of one dossier of each type contains `og:title` and a
+    description tag, and the sitemap endpoint returns entries for all four
+    dossier types.
+
+### Exit Criteria
+
+- One rehearsed restore drill has passed with exact row-count parity and its
+  transcript is committed.
+- The worker parks rather than fails work under the 50 GiB low-disk threshold.
+- Public traffic is served through supervised units and TLS, and the load gate
+  passes through the proxy.
+- 100% of public GET routes emit `Cache-Control` and the 60% hit-ratio floor is
+  measured (FA-29 closed).
+- The wedged-worker alert fires within five minutes in a live exercise.
+- Licensing, attribution, robots, dependency-update, `backend_server`, search
+  index, and dossier metadata proofs above are all recorded.
 
 ## Public API And Type Changes
 
@@ -1035,9 +1392,76 @@ At minimum, verify:
 - Reject application console errors, failed required requests, blank screens, and horizontal overflow.
 - Save screenshots, request evidence, coverage counts, and findings under `reports/verification/`.
 
+## Verification Tooling Backlog
+
+Active process tooling. Papercut mining shows these classes of friction cost
+more repeated time than any product defect; they are in scope now, not deferred.
+Each item carries its Proof like a milestone item.
+
+- `scripts/plan-lint` (implemented 2026-07-14): deterministic plan consistency
+  check run by `scripts/self-test`.
+  Proof: it reports zero findings on this document, and a seeded regression
+  (flipping one Closed ledger row back to High) makes `scripts/self-test` fail.
+- `scripts/db-query`: credential-safe read-only SQL wrapper that loads
+  `DATABASE_URL` itself so agents never touch `.env` in shell commands.
+  Proof: `scripts/db-query "SELECT 1"` succeeds in an agent session with no
+  sensitive-path hook rejection.
+- `scripts/db-schema <table>`: prints column names and types from
+  `information_schema` before any operational SQL is written.
+  Proof: output for `source_runs` matches `\d source_runs` field for field.
+- Runtime freshness guard: a shared preamble for live proofs that fails when the
+  running binary or `.next` build is older than the newest source commit.
+  Proof: a deliberately stale binary fails the guard and a rebuilt binary
+  passes, demonstrated in one recorded run.
+- `command-watchdog` exit-code fix: classification must prioritize the exit code
+  over output text.
+  Proof: a command printing "error" that exits 0 is classified success, and a
+  silent command exiting 1 is classified failure.
+
 ## Deferred Backlog
 
 Deferred work remains visible but does not block the active roadmap.
+
+### Per-Dossier Change Feeds
+
+Precomputed RSS/Atom feeds per Member, committee, and organization covering new
+filings, new votes, range movements, and coverage changes. Fits the read-only
+plane because feeds are prepared artifacts. Promote only with a measured
+per-feed generation cost, a cache policy, and a feed-content contract test that
+reconciles feed entries to canonical rows.
+
+### Public Bulk Exports
+
+Nightly precomputed CSV/JSON dumps per dataset directory with a manifest of
+generation date, row counts, and source-run coverage. Promote only with a
+committed manifest schema, a per-dataset size ceiling, and an export-to-canonical
+row-count parity check.
+
+### Citation Permalinks
+
+A "cite this record" affordance on evidence rows: stable URL, content hash,
+retrieval date, and upstream official URL. Promote only with a permalink
+resolution contract test and a guarantee that cited URLs survive schema
+migrations unchanged.
+
+### Public Coverage Dashboard
+
+A public page reading the `source_runs` ledger: loaded, partial, stale, and
+failed coverage by source, year, and form. Promote only when its counts
+reconcile exactly to `/api/sources/coverage` in a contract test.
+
+### Member Comparison View
+
+Two Members side by side: shared roll calls with positions, channel-separated
+funding, and disclosure ranges. Requires no new data. Promote only with a
+contract test proving both columns read the same canonical queries as the
+individual dossiers and ranges remain range-first.
+
+### Published API Documentation
+
+An OpenAPI specification and docs page for the read-only public API. Promote
+only when the spec is generated or verified against the axum router so it
+cannot drift, proved by a route-parity test.
 
 ### USAspending
 
@@ -1077,8 +1501,8 @@ focused maintenance changes rather than product milestones.
 
 ## Completion Definition
 
-The master plan is complete when M0 through M6 satisfy every exit criterion,
-FA-01 through FA-28 have reproducible closure evidence, all required sources
+The master plan is complete when M0 through M7 satisfy every exit criterion,
+FA-01 through FA-29 have reproducible closure evidence, all required sources
 have measured terminal coverage, critical user flows pass
 live desktop and mobile checks, deferred work remains explicitly deferred, and
 the final verification report can reproduce every public claim from source

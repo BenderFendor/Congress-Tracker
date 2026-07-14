@@ -11,8 +11,25 @@ presence, and recent commits for quick repository orientation.
 
 ## `scripts/self-test`
 
-Runs backend formatting, clippy, check, and tests, followed by the complete
-frontend `pnpm verify` gate.
+Runs the plan consistency lint, backend formatting, clippy, check, and tests,
+followed by the complete frontend `pnpm verify` gate.
+
+## `scripts/plan-lint`
+
+Deterministic consistency check for `docs/IMPLEMENTATION_PLAN.md`, run first by
+`scripts/self-test`. Fails when the finding-ledger table disagrees with the
+closure checkpoint, a Closed finding cites a missing trace file or git tag, a
+cited repository path does not exist, a hardcoded migration-head claim appears,
+an unchecked milestone implementation item lacks a `Proof:` clause, or a
+recorded milestone tag has no fresh-eyes audit trace dated within the prior
+seven days.
+
+```bash
+scripts/plan-lint
+scripts/plan-lint path/to/copy.md --repo "$PWD"
+```
+
+Read-only. Exit 0 when clean, 1 on findings, 2 on usage errors.
 
 ## `scripts/source-run-audit`
 

@@ -1,0 +1,290 @@
+#!/usr/bin/env python3
+"""plan-lint: deterministic consistency check for docs/IMPLEMENTATION_PLAN.md.
+
+Checks
+  ledger-state       finding-table severity matches closure-checkpoint paragraphs
+  closure-evidence   Closed findings cite an existing trace file and git tag
+  path-existence     repo paths cited in ledger/baseline sections exist
+  migration-claim    no hardcoded "migrations through `NNNN`" head claims
+  proof-clause       unchecked milestone implementation items carry "Proof:"
+  audit-cadence      "Milestone tag applied:" entries have a fresh-eyes audit
+                     trace dated within the prior 7 days
+
+Exit 0 when clean, 1 when any finding exists, 2 on usage/environment errors.
+"""
+
+import argparse
+import datetime
+import os
+import re
+import subprocess
+import sys
+
+FINDING_ROW = re.compile(r"^\|\s*(FA-\d{2})\s*\|\s*([^|]+?)\s*\|")
+CHECKPOINT_CLOSED = re.compile(r"\*\*(FA-\d{2}) closed:\*\*")
+TRACE_PATH = re.compile(r"docs/agent/traces/[A-Za-z0-9_.-]+\.md")
+TAG_REF = re.compile(r"tag\s+`([A-Za-z0-9_-]+)`")
+REPO_PATH_TOKEN = re.compile(r"(?:docs|scripts|reports)/[A-Za-z0-9_/.\-]+")
+MIGRATION_CLAIM = re.compile(
+    r"migrations through `?\d+`?|through migration `?\d+`?", re.IGNORECASE
+)
+NUMBERED_ITEM = re.compile(r"^(\d+)\.\s+(.*)$")
+MILESTONE_HEADING = re.compile(r"^## (M\d+) ")
+TAG_APPLIED = re.compile(
+    r"Milestone tag applied: `?([A-Za-z0-9_-]+)`? \((\d{4}-\d{2}-\d{2})\)"
+)
+AUDIT_TRACE = re.compile(r"fresh-eyes-audit-(\d{4}-\d{2}-\d{2})\.md$")
+
+
+def section_bounds(lines, title_prefix):
+    """Return (start, end) line indices for a `## `-level section, else None."""
+    start = None
+    for i, line in enumerate(lines):
+        if start is None:
+            if line.startswith("## ") and line[3:].startswith(title_prefix):
+                start = i
+        elif line.startswith("## "):
+            return (start, i)
+    return (start, len(lines)) if start is not None else None
+
+
+def git_tags(repo):
+    out = subprocess.run(
+        ["git", "-C", repo, "tag", "--list"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return set(out.stdout.split())
+
+
+def parse_table_states(lines):
+    states = {}
+    for line in lines:
+        m = FINDING_ROW.match(line)
+        if m:
+            states[m.group(1)] = m.group(2)
+    return states
+
+
+def checkpoint_paragraphs(lines):
+    """Map FA id -> collapsed text of its `- **FA-NN closed:**` paragraph."""
+    paragraphs = {}
+    current_id = None
+    current = []
+    for line in lines:
+        m = CHECKPOINT_CLOSED.search(line)
+        starts_new = line.lstrip().startswith("- ")
+        if m and starts_new:
+            if current_id:
+                paragraphs[current_id] = " ".join(current)
+            current_id = m.group(1)
+            current = [line.strip()]
+        elif current_id:
+            if starts_new or line.startswith("#"):
+                paragraphs[current_id] = " ".join(current)
+                current_id = None
+                current = []
+            else:
+                current.append(line.strip())
+    if current_id:
+        paragraphs[current_id] = " ".join(current)
+    return paragraphs
+
+
+def check_ledger_state(states, paragraphs):
+    findings = []
+    for fa in sorted(paragraphs):
+        state = states.get(fa)
+        if state is None:
+            findings.append(f"{fa}: closed in checkpoint but missing from table")
+        elif state != "Closed":
+            findings.append(
+                f"{fa}: checkpoint says closed but table severity is '{state}'"
+            )
+    return findings
+
+
+def check_closure_evidence(states, paragraphs, table_rows, repo, tags):
+    findings = []
+    for fa, state in sorted(states.items()):
+        if state != "Closed":
+            continue
+        text = table_rows.get(fa, "") + " " + paragraphs.get(fa, "")
+        traces = TRACE_PATH.findall(text)
+        if not traces:
+            findings.append(f"{fa}: Closed but cites no docs/agent/traces/*.md file")
+        else:
+            for trace in traces:
+                if not os.path.exists(os.path.join(repo, trace)):
+                    findings.append(f"{fa}: cited trace does not exist: {trace}")
+        cited_tags = TAG_REF.findall(text)
+        if not cited_tags:
+            findings.append(f"{fa}: Closed but cites no git tag")
+        else:
+            for tag in cited_tags:
+                if tag not in tags:
+                    findings.append(f"{fa}: cited git tag does not exist: {tag}")
+    return findings
+
+
+def check_path_existence(lines, repo):
+    findings = []
+    scanned = []
+    for prefix in ("Release Disposition", "Audited Baseline"):
+        bounds = section_bounds(lines, prefix)
+        if bounds:
+            scanned.extend(lines[bounds[0] : bounds[1]])
+    seen = set()
+    for line in scanned:
+        for token in REPO_PATH_TOKEN.findall(line):
+            token = token.rstrip(".,;:`)")
+            if token in seen:
+                continue
+            seen.add(token)
+            target = os.path.join(repo, token)
+            if token.endswith("/"):
+                if not os.path.isdir(target):
+                    findings.append(f"cited directory does not exist: {token}")
+            elif not os.path.exists(target):
+                findings.append(f"cited path does not exist: {token}")
+    return findings
+
+
+def check_migration_claims(lines):
+    findings = []
+    for i, line in enumerate(lines, start=1):
+        for m in MIGRATION_CLAIM.findall(line):
+            findings.append(
+                f"line {i}: hardcoded migration-head claim '{m}' "
+                "(state the refresh command instead)"
+            )
+    return findings
+
+
+def milestone_items(lines):
+    """Yield (milestone, item_number, first_line, body_text) for implementation items."""
+    i = 0
+    while i < len(lines):
+        heading = MILESTONE_HEADING.match(lines[i])
+        if not heading:
+            i += 1
+            continue
+        milestone = heading.group(1)
+        j = i + 1
+        while j < len(lines) and not lines[j].startswith("## "):
+            if lines[j].strip() == "### Implementation":
+                k = j + 1
+                current = None
+                while k < len(lines) and not lines[k].startswith(("## ", "### ")):
+                    m = NUMBERED_ITEM.match(lines[k])
+                    if m:
+                        if current:
+                            yield current
+                        current = [milestone, m.group(1), m.group(2), m.group(2)]
+                    elif current:
+                        current[3] += " " + lines[k].strip()
+                    k += 1
+                if current:
+                    yield current
+                j = k
+                continue
+            j += 1
+        i = j
+
+
+def check_proof_clauses(lines):
+    findings = []
+    for milestone, number, first_line, body in milestone_items(lines):
+        if first_line.startswith("[x]"):
+            continue
+        if "Proof:" not in body:
+            findings.append(
+                f"{milestone} implementation item {number} is unchecked "
+                "and has no Proof: clause"
+            )
+    return findings
+
+
+def check_audit_cadence(lines, repo):
+    findings = []
+    trace_dir = os.path.join(repo, "docs/agent/traces")
+    audit_dates = []
+    if os.path.isdir(trace_dir):
+        for name in os.listdir(trace_dir):
+            m = AUDIT_TRACE.search(name)
+            if m:
+                audit_dates.append(datetime.date.fromisoformat(m.group(1)))
+    for line in lines:
+        for tag, datestr in TAG_APPLIED.findall(line):
+            tag_date = datetime.date.fromisoformat(datestr)
+            window = [
+                d for d in audit_dates if 0 <= (tag_date - d).days <= 7
+            ]
+            if not window:
+                findings.append(
+                    f"milestone tag '{tag}' ({datestr}) has no fresh-eyes audit "
+                    "trace dated within the prior 7 days"
+                )
+    return findings
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "plan",
+        nargs="?",
+        default="docs/IMPLEMENTATION_PLAN.md",
+        help="plan file to lint (default: docs/IMPLEMENTATION_PLAN.md)",
+    )
+    parser.add_argument(
+        "--repo",
+        default=None,
+        help="repository root for path/tag checks (default: cwd)",
+    )
+    args = parser.parse_args()
+    repo = args.repo or os.getcwd()
+
+    if not os.path.exists(args.plan):
+        print(f"plan-lint: plan file not found: {args.plan}", file=sys.stderr)
+        return 2
+    try:
+        tags = git_tags(repo)
+    except (subprocess.CalledProcessError, FileNotFoundError) as err:
+        print(f"plan-lint: cannot list git tags in {repo}: {err}", file=sys.stderr)
+        return 2
+
+    with open(args.plan, encoding="utf-8") as fh:
+        lines = fh.read().splitlines()
+
+    states = parse_table_states(lines)
+    table_rows = {}
+    for line in lines:
+        m = FINDING_ROW.match(line)
+        if m:
+            table_rows[m.group(1)] = line
+    paragraphs = checkpoint_paragraphs(lines)
+
+    results = {
+        "ledger-state": check_ledger_state(states, paragraphs),
+        "closure-evidence": check_closure_evidence(
+            states, paragraphs, table_rows, repo, tags
+        ),
+        "path-existence": check_path_existence(lines, repo),
+        "migration-claim": check_migration_claims(lines),
+        "proof-clause": check_proof_clauses(lines),
+        "audit-cadence": check_audit_cadence(lines, repo),
+    }
+
+    total = 0
+    for name, findings in results.items():
+        print(f"{name}: {len(findings)} finding(s)")
+        for finding in findings:
+            print(f"  - {finding}")
+        total += len(findings)
+    print(f"plan-lint: {total} finding(s) in {args.plan}")
+    return 1 if total else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

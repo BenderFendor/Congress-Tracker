@@ -4,6 +4,77 @@ This log records changes to public behavior, developer workflows, data
 contracts, and verification requirements. It does not replace Git history or
 the detailed worksheets under `docs/agent/traces/`.
 
+## 2026-07-14 - Measurable Master Plan And Plan Lint
+
+- Reconciled the finding-ledger table with the closure checkpoint: FA-02, FA-03,
+  FA-04, FA-05, FA-06, FA-09, FA-11, FA-16, and FA-17 now read Closed, and the
+  FA-01 row states its closed and open halves explicitly.
+- Removed both hardcoded migration-head claims; the baseline now names the
+  refresh command instead of a number.
+- Added a measurability convention: every unchecked milestone implementation
+  item ends with a `Proof:` clause naming a threshold, command, or artifact.
+  All 81 previously open-ended items across M0-M6 received one.
+- Added `scripts/plan-lint`, run first by `scripts/self-test`, enforcing ledger
+  consistency, closure evidence, cited-path existence, the no-hardcoded-head
+  rule, Proof clauses, and a seven-day fresh-eyes audit cadence before any
+  recorded milestone tag.
+- Added Agent Execution Guardrails to the plan encoding the most repeated
+  recorded failures (schema guessing, `.env` hook, zsh quoting, cargo filter,
+  stale-runtime verification, canonical-crate and key rules) so lower-capability
+  agents can execute items without rediscovering them.
+- Added milestone M7 (Operate In Public) with FA-29 (missing `Cache-Control`
+  headers versus ADR 0003): backups and a restore drill, a Big-storage
+  retention budget with low-disk job parking, systemd/Caddy/TLS deployment,
+  metrics and a wedged-worker alert, licensing/attribution, dependency updates,
+  the `backend_server` audit, indexed entity search, and dossier metadata.
+- Added a Verification Tooling backlog (db-query, db-schema, freshness guard,
+  command-watchdog exit-code fix) and six deferred product features with
+  numeric promotion criteria (change feeds, bulk exports, citation permalinks,
+  coverage dashboard, comparison view, API documentation).
+
+## 2026-07-12 - Member-Keyed Stock Disclosure Pages
+
+- Replaced the failing `stock_trades` materialized-view dependency in public
+  stock reads with the canonical normalized disclosure warehouse.
+- Added a bounded, paginated `/api/members/:member_id/trades` contract with
+  total counts, `has_more`, and explicit loaded-versus-not-loaded coverage.
+- Excluded five implausibly future-dated source rows consistently from lists,
+  totals, and ticker views while reporting the exclusion count in coverage.
+- Return canonical 404 for an unknown Member ID while preserving `not_loaded`
+  for a real Member with no linked transaction rows.
+- Removed the Member page's global-first-200 browser filter and now load trades
+  by canonical Bioguide ID, including honest unavailable and missing states.
+- Materialize the exact ordered page before running sector and committee
+  enrichment, limiting both enrichment functions to the requested page size.
+- Replaced the false `Standard Filing` label with actual overlap severity and
+  evidence, a neutral no-detection state, and a visible methodology caveat.
+- Added accessible tablist keyboard navigation, selected-tab mobile scrolling,
+  and member-keyed Previous/Next history windows with loading, retry,
+  completion, stale-response protection, and a fixed 100-row render bound.
+- Reject the removed global `ticker` query parameter; the canonical ticker path
+  now returns bounded pages with totals and `has_more` instead of silently
+  truncating a bare array. Invalid or excessive offsets return HTTP 400 rather
+  than being clamped into a non-terminating pagination state.
+- Added deterministic regression coverage and desktop/mobile Chrome evidence
+  for a Member with 3,134 linked records; the mobile tab strip remains
+  touch-scrollable without exposing a native scrollbar.
+
+## 2026-07-12 - Restartable LDA Refresh And Activity Identity
+
+- Added semantic uniqueness and upgrade cleanup for lobbying activities so a
+  repeated filing refresh updates provenance without multiplying activity rows.
+- Made `intel_worker` schedule bounded current/prior-year LDA refresh jobs,
+  recover expired jobs and abandoned source runs, and retain the ingest
+  command's source-run outcome ledger.
+- Switched the LDA client default to the official `lda.gov/api/v1` base with an
+  operator override, and corrected activity display/entity persistence.
+- Preserved partial counters on failed chunks, every activity-level source
+  discriminator and lobbyist association, immutable continuation page size,
+  and exact UUID correlation between worker jobs and source runs.
+- Canonicalized government entities by stable ID with normalized-name fallback,
+  and routed missing/unexpected correlated source-run outcomes through the
+  owner-checked retry budget instead of leaving jobs running.
+
 ## 2026-07-12 - Disclosure Document Atomicity
 
 - Added null-safe semantic transaction uniqueness and deterministic cleanup of
@@ -413,6 +484,19 @@ the detailed worksheets under `docs/agent/traces/`.
   direct campaign receipts from independent support and opposition spending.
 - Aligned the frontend sponsor contract with the backend and kept explicit LDA
   bill citations visually and semantically separate from heuristic suggestions.
+
+## 2026-07-12 - Exhaustive Senate Discovery Contract
+
+- Changed Senate eFD discovery defaults from a capped 2021-2026 query to an
+  open-ended January 1, 2012 through current-date window.
+- Made advertised provider totals mandatory, exhausted every page beyond 1,000
+  rows, and rejected missing, changing, empty, or short pre-terminal pages.
+- Added year/form coverage counts to the Senate audit API. Terminal flags now
+  require a successful exhaustive source run covering the complete year.
+- Required one valid unique report identity per raw provider row, made the
+  overall ambiguous-identity state use the global report set rather than the
+  response page, and made worker timeout cleanup reap the full process group
+  before releasing its advisory lock.
 
 ## 2026-07-13 - Exhaustive Member Legislation Coverage
 

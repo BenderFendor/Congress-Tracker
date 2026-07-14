@@ -5,6 +5,17 @@ echo "== Self-test =="
 echo "Working directory: $(pwd)"
 echo
 
+# ---- Plan consistency ----
+echo "--- Plan lint ---"
+if [[ -f docs/IMPLEMENTATION_PLAN.md ]]; then
+  scripts/plan-lint
+  echo "  plan lint passed"
+else
+  echo "  no docs/IMPLEMENTATION_PLAN.md; skipping plan lint"
+fi
+
+echo
+
 # ---- Backend ----
 echo "--- Backend ---"
 if [[ -f backend/Cargo.toml ]]; then
