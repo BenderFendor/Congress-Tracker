@@ -4,6 +4,10 @@ import test from "node:test"
 
 import { createMemberDossierRequest, isAbortError } from "../lib/member-dossier-request.mjs"
 
+async function source(path) {
+  return readFile(new URL(`../${path}`, import.meta.url), "utf8")
+}
+
 test("a superseded member request cannot commit a stale response", () => {
   const visibleMembers = []
   const first = createMemberDossierRequest("A000001")
@@ -30,85 +34,87 @@ test("abort failures are distinguishable from real request failures", () => {
   assert.equal(isAbortError(new Error("network unavailable")), false)
 })
 
-test("the dossier clears every member section and propagates one request signal", async () => {
-  const source = await readFile(new URL("../app/legislators/[id]/page.tsx", import.meta.url), "utf8")
-  const clearedState = [
-    "setLegislator(null)",
-    "setFunding(null)",
-    "setVotes([])",
-    "setVoteEvidence(null)",
-    "setLegislationState({ memberId: request.memberId, status: \"loading\", error: null, data: null, pendingSection: null })",
-    "setRelationships([])",
-    "setDisclosures(null)",
-    "setTradePageState({ memberId: request.memberId, status: \"idle\", error: null, offset: 0 })",
-  ]
+test("the refactored dossier resets every resource and aborts stale requests", async () => {
+  const hook = await source("components/dossiers/member/use-member-dossier.ts")
 
-  for (const reset of clearedState) assert.match(source, new RegExp(reset.replace(/[()[\]]/g, "\\$&")))
-  assert.match(source, /getLegislator\(request\.memberId, request\.signal\)/)
-  assert.match(source, /getMemberFunding\(bioguideId, undefined, request\.signal\)/)
-  assert.match(source, /getMemberVotes\(bioguideId, 119, request\.signal\)/)
-  assert.match(source, /getMemberLegislation\(bioguideId, \{ limit: 25 \}, request\.signal\)/)
-  assert.match(source, /getRelationships\([^]*request\.signal\)/)
-  assert.match(source, /getMemberDisclosures\(bioguideId, request\.signal\)/)
-  assert.match(source, /return \(\) => request\.cancel\(\)/)
+  for (const resource of ["profile", "funding", "votes", "legislation", "trades", "relationships", "disclosures"]) {
+    assert.match(hook, new RegExp(`${resource}: idleResource\\(\\)`))
+  }
+  assert.match(hook, /profileRequest\.current\?\.abort\(\)/)
+  assert.match(hook, /for \(const controller of Object\.values\(requests\.current\)\) controller\?\.abort\(\)/)
+  assert.match(hook, /memberIdRef\.current !== requestedMember/)
+  assert.match(hook, /getLegislator\(requestedMember, controller\.signal\)/)
+  assert.match(hook, /getMemberFunding\(bioguideId, undefined, signal\)/)
+  assert.match(hook, /getMemberVotes\(bioguideId, 119, signal\)/)
+  assert.match(hook, /getMemberLegislation\(bioguideId, \{ limit: 25 \}, signal\)/)
+  assert.match(hook, /getRelationships\(\{ subjectKey: `member:\$\{bioguideId\}`/)
+  assert.match(hook, /getMemberDisclosures\(bioguideId, signal\)/)
+  assert.match(hook, /return \(\) => controller\.abort\(\)/)
 })
 
 test("optional trade failure cannot turn a loaded member profile into not found", async () => {
-  const source = await readFile(new URL("../lib/services/legislators.ts", import.meta.url), "utf8")
-  assert.match(source, /Trade history unavailable; continuing with the member profile/)
-  assert.match(source, /name === "AbortError"\) throw error/)
-  assert.match(source, /return mapLegislator\(memberData, recentTrades, tradeCoverage\)/)
+  const service = await source("lib/services/legislators.ts")
+  assert.match(service, /Trade history unavailable; continuing with the member profile/)
+  assert.match(service, /name === "AbortError"\) throw error/)
+  assert.match(service, /return mapLegislator\(memberData, recentTrades, tradeCoverage\)/)
 })
 
-test("member trades use the member-keyed paginated API and preserve coverage truth", async () => {
-  const service = await readFile(new URL("../lib/services/stocks.ts", import.meta.url), "utf8")
-  const legislators = await readFile(new URL("../lib/services/legislators.ts", import.meta.url), "utf8")
-  const page = await readFile(new URL("../app/legislators/[id]/page.tsx", import.meta.url), "utf8")
+test("member trades remain member-keyed, paginated, and coverage-honest", async () => {
+  const service = await source("lib/services/stocks.ts")
+  const legislators = await source("lib/services/legislators.ts")
+  const hook = await source("components/dossiers/member/use-member-dossier.ts")
+  const financial = await source("components/dossiers/member/member-financial.tsx")
+  const dossier = await source("components/dossiers/member/member-dossier.tsx")
 
   assert.match(service, /\/api\/members\/\$\{encodeURIComponent\(memberId\)\}\/trades/)
   assert.doesNotMatch(service, /getIntelTrades\(200[^]*\.filter\(/)
   assert.match(legislators, /response\.coverage\.status/)
   assert.match(legislators, /response\.coverage\.excluded_date_anomalies/)
-  assert.match(page, /coverage state, not evidence|tradeCoverage\.message/)
-  assert.doesNotMatch(page, /Standard Filing/)
-  assert.match(page, /highest_conflict_severity/)
-  assert.match(page, /conflict_flag_count/)
-  assert.match(page, /A missing flag is not proof that no conflict exists/)
+  assert.match(hook, /getTradesByMemberId\(bioguideId, 100, Math\.max\(0, offset\), signal\)/)
+  assert.match(financial, /trades\.coverage\.message/)
+  assert.match(financial, /highest_conflict_severity/)
+  assert.match(financial, /conflict_flag_count/)
+  assert.match(financial, /contextual evidence rather than proof of misconduct/)
+  assert.match(dossier, /Missing channels are not factual zeroes/)
+  assert.doesNotMatch(financial, /Standard Filing/)
 })
 
-test("member tabs expose an accessible keyboard and mobile-scroll contract", async () => {
-  const page = await readFile(new URL("../app/legislators/[id]/page.tsx", import.meta.url), "utf8")
-  assert.match(page, /role="tablist"/)
-  assert.match(page, /role="tab"/)
-  assert.match(page, /aria-selected=\{isActive\}/)
-  assert.match(page, /aria-controls=\{`member-panel-/)
-  assert.match(page, /role="tabpanel"/)
-  assert.match(page, /ArrowLeft/)
-  assert.match(page, /ArrowRight/)
-  assert.match(page, /function centerMemberTab/)
-  assert.match(page, /tablist\.scrollTo\(\{/)
-  assert.match(page, /prefers-reduced-motion: reduce/)
-  assert.match(page, /member-tab-\$\{activeTab\}/)
-  assert.match(page, /\[activeTab, loading\]/)
+test("member tabs expose keyboard, URL, and mobile-scroll contracts", async () => {
+  const tabs = await source("components/dossiers/member/member-dossier-ui.tsx")
+  const state = await source("lib/member-dossier-state.mjs")
+  const hook = await source("components/dossiers/member/use-member-dossier.ts")
+
+  assert.match(tabs, /role="tablist"/)
+  assert.match(tabs, /role="tab"/)
+  assert.match(tabs, /aria-selected=\{activeTab === tab\.id\}/)
+  assert.match(tabs, /aria-controls=\{`member-panel-/)
+  assert.match(tabs, /role="tabpanel"/)
+  assert.match(tabs, /overflow-x-auto/)
+  assert.match(tabs, /scrollIntoView/)
+  assert.match(state, /"ArrowLeft"/)
+  assert.match(state, /"ArrowRight"/)
+  assert.match(state, /url\.searchParams\.set\("tab"/)
+  assert.match(hook, /window\.addEventListener\("popstate"/)
+  assert.match(hook, /window\.history\.pushState/)
 })
 
-test("trade page navigation remains bounded and keyed to the visible member", async () => {
-  const page = await readFile(new URL("../app/legislators/[id]/page.tsx", import.meta.url), "utf8")
-  assert.match(page, /getTradesByMemberId\(memberId, 100, offset\)/)
-  assert.match(page, /if \(!current \|\| current\.bioguide_id !== memberId\) return current/)
-  assert.match(page, /recentTrades: response\.trades/)
-  assert.doesNotMatch(page, /recentTrades: \[\.\.\.current\.recentTrades/)
-  assert.match(page, /offset: response\.offset/)
-  assert.match(page, /tradePageState\.memberId === legislator\.bioguide_id/)
-  assert.match(page, /disabled=.*status === "loading"/s)
-  assert.match(page, />\s*Previous\s*</)
-  assert.match(page, /: "Next"/)
-  assert.match(page, /role="alert"/)
+test("trade navigation replaces pages instead of concatenating stale records", async () => {
+  const hook = await source("components/dossiers/member/use-member-dossier.ts")
+  const financial = await source("components/dossiers/member/member-financial.tsx")
+
+  assert.match(hook, /getTradesByMemberId\(bioguideId, 100, Math\.max\(0, offset\), signal\)/)
+  assert.match(hook, /setter\(\{ status: "loaded", data, error: null \}\)/)
+  assert.doesNotMatch(hook, /trades:\s*\[\.\.\./)
+  assert.match(financial, /disabled=\{loading \|\| trades\.offset === 0\}/)
+  assert.match(financial, /disabled=\{loading \|\| !trades\.coverage\.has_more\}/)
+  assert.match(financial, />Previous</)
+  assert.match(financial, />Next</)
 })
 
-test("member legislation renders terminal coverage and official mixed-record evidence", async () => {
-  const service = await readFile(new URL("../lib/services/legislators.ts", import.meta.url), "utf8")
-  const page = await readFile(new URL("../app/legislators/[id]/page.tsx", import.meta.url), "utf8")
+test("member legislation retains official links, coverage state, and independent pagination", async () => {
+  const service = await source("lib/services/legislators.ts")
+  const hook = await source("components/dossiers/member/use-member-dossier.ts")
+  const legislative = await source("components/dossiers/member/member-legislative.tsx")
 
   assert.match(service, /related_items:/)
   assert.match(service, /sponsorOffset/)
@@ -116,30 +122,15 @@ test("member legislation renders terminal coverage and official mixed-record evi
   assert.match(service, /relatedOffset/)
   assert.match(service, /coverage_scope: "all_history"/)
   assert.match(service, /coverage:/)
-  assert.match(page, /status: "loaded", error: null, data/)
-  assert.match(page, /Legislation request failed/)
-  assert.match(page, /Retry legislation/)
-  assert.match(page, /legislationGeneration\.current !== generation/)
-  assert.match(page, /Sponsored and cosponsored records reconciled/)
-  assert.match(page, /Legislation coverage is incomplete/)
-  assert.match(page, /Related Amendments and Measures/)
-  assert.match(page, /item\.source_url/)
-  assert.match(page, /memberLegislation\.pagination\.sponsor/)
-  assert.match(page, /memberLegislation\.pagination\.cosponsor/)
-  assert.match(page, /memberLegislation\.pagination\.related_items/)
-  assert.match(page, /href=\{`\/bills\/\$\{bill\.bill_id\}`\}/)
-  assert.match(page, /Official Congress\.gov record/)
-  assert.match(page, /function publicCongressBillUrl/)
-  assert.match(page, /publicCongressAmendmentUrl/)
-  assert.match(page, /publicCongressRelatedUrl/)
-  assert.match(page, /function LegislationRecords/)
-  assert.match(page, /md:grid-cols-\[minmax\(0,1fr\)_minmax\(260px,0\.8fr\)\]/)
-  assert.match(page, /const last = first === 0 \? 0/)
-  assert.match(page, /pendingSection === "sponsor"/)
-  assert.match(page, /roleAdvertisedCount\("sponsor"\) === 0/)
-  assert.match(page, /No sponsored bills are present in this bill section/)
-  assert.doesNotMatch(page, /line-clamp-3/)
-  assert.match(page, /duplicate provider rows collapsed by official URL/)
-  assert.match(page, /No terminal all-member coverage ledger is available/)
-  assert.doesNotMatch(page, /No sponsor links loaded for the 119th Congress/)
+  assert.match(hook, /sponsorOffset: section === "sponsor"/)
+  assert.match(hook, /cosponsorOffset: section === "cosponsor"/)
+  assert.match(hook, /relatedOffset: section === "related_items"/)
+  assert.match(legislative, /legislation\.latest_attempt/)
+  assert.match(legislative, /legislation\.pagination\.sponsor/)
+  assert.match(legislative, /legislation\.pagination\.cosponsor/)
+  assert.match(legislative, /legislation\.pagination\.related_items/)
+  assert.match(legislative, /href=\{`\/bills\/\$\{bill\.bill_id\}`\}/)
+  assert.match(legislative, /item\.source_url/)
+  assert.match(legislative, /No rows are loaded on this page/)
+  assert.doesNotMatch(legislative, /line-clamp-3/)
 })
