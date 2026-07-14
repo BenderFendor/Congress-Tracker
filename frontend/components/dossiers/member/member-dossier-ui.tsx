@@ -91,7 +91,7 @@ export function ResourceBoundary({
 }) {
   if (status === "idle" || (status === "loading" && !hasData)) {
     return (
-      <div className="flex min-h-72 items-center justify-center border border-border bg-card/40 p-8" role="status">
+      <div className="flex min-h-72 items-center justify-center border border-border bg-card/40 p-8" aria-live="polite" aria-busy="true">
         <div className="text-center">
           <LoaderCircle className="mx-auto animate-spin text-accent" size={28} aria-hidden="true" />
           <p className="mt-3 font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">{loadingLabel}</p>
@@ -120,7 +120,7 @@ export function ResourceBoundary({
 
   if (status === "loaded" && !hasData) {
     return (
-      <div className="border border-border bg-card/50 p-6" role="status">
+      <div className="border border-border bg-card/50 p-6" aria-live="polite">
         <h2 className="font-serif text-xl font-semibold text-foreground">{emptyTitle}</h2>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{emptyDescription}</p>
       </div>
@@ -130,7 +130,7 @@ export function ResourceBoundary({
   return (
     <div aria-busy={status === "loading"}>
       {status === "error" && error ? (
-        <div className="mb-4 flex items-center justify-between gap-4 border border-amber-500/40 bg-amber-500/5 px-4 py-3 text-sm text-muted-foreground" role="status">
+        <div className="mb-4 flex items-center justify-between gap-4 border border-amber-500/40 bg-amber-500/5 px-4 py-3 text-sm text-muted-foreground" aria-live="polite">
           <span>{error}. Showing the last loaded page.</span>
           <button type="button" onClick={onRetry} className="font-mono text-[11px] font-semibold uppercase tracking-wide text-foreground hover:text-accent">Retry</button>
         </div>
