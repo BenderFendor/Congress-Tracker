@@ -3,9 +3,7 @@ pub mod parsers;
 
 #[cfg(test)]
 mod sample_corpus_tests {
-    use crate::parsers::{
-        fingerprint, parse_annual_electronic, parse_ptr_text, DocumentLayout,
-    };
+    use crate::parsers::{fingerprint, parse_annual_electronic, parse_ptr_text, DocumentLayout};
 
     const HOUSE_PTR_2024: &str = include_str!("../tests/fixtures/house_ptr_2024.txt");
     const HOUSE_ANNUAL_2024: &str = include_str!("../tests/fixtures/house_annual_2024.txt");
