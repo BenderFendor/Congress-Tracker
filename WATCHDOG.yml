@@ -20,9 +20,10 @@ advisors:
       3. When auditing pages, use the page-audit skill to systematically check
          all tabs: home, legislators, bills, influence, committees, stocks,
          portfolio, lobbying, elections, search.
-      4. Backend routes live in backend/crates/intel_backend/src/routes/ and
-         backend/crates/backend_server/src/. Frontend services in
-         frontend/lib/services/. Keep the API surface consistent.
+      4. Backend routes live in backend/crates/intel_backend/src/routes/
+         (canonical location). backend/crates/backend_server/ is deprecated
+         compatibility code — do not add new routes there. Frontend services
+         in frontend/lib/services/. Keep the API surface consistent.
       5. DeepSeek v4 is BLIND — all UI verification requires screenshots. The
          frontend-visual-verifier skill should be used for any visual changes.
       6. Run cargo check and cargo test for backend changes. Run pnpm typecheck

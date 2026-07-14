@@ -41,7 +41,8 @@ backend/crates/
   capitoltrades_api/   ← scrapes CapitolTrades.com (no API key)
   congress_api/         ← Congress.gov v3 API
   openfec_api/          ← OpenFEC API
-  backend_server/       ← Axum router, handlers, portfolio module
+  intel_backend/        ← canonical Axum router, handlers, portfolio module
+  backend_server/       ← DEPRECATED compatibility crate; do not add routes here
 
 frontend/
   app/                  ← Next.js pages & API routes
