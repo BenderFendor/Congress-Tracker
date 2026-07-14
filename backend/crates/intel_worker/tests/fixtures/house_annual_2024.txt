@@ -6,9 +6,9 @@ Period Covered: 01/01/2024 - 12/31/2024
 This synthetic fixture preserves representative House electronic-report labels, section boundaries, owner codes, identifiers, and disclosure ranges without claiming to reproduce a particular Member's filing.
 
 S A:
-Asset and Unearned Income Source                       Value of Asset
-SP Apple Inc. Common Stock (AAPL) [ST]                 $15,001 - $50,000
-JT United States Treasury Note [GS]                    $50,001 - $100,000
+Asset and Unearned Income Source                       Owner Value of Asset
+Apple Inc. Common Stock (AAPL) [ST]                    SP    $15,001 - $50,000
+United States Treasury Note [GS]                       JT    $50,001 - $100,000
 
 S C:
 Source and Type of Earned Income                       Amount
