@@ -11,6 +11,7 @@
     "test:rendered": "node scripts/rendered-route-smoke.mjs",
     "lint": "next lint --max-warnings=0",
     "lint:ox": "oxlint . --config .oxlintrc.json --deny-warnings --nextjs-plugin --react-plugin --jsx-a11y-plugin",
+    "lint:ox:ci": "node scripts/run-oxlint-ci.mjs",
     "typecheck": "tsc --noEmit",
     "verify": "pnpm test && pnpm typecheck && pnpm lint && pnpm lint:ox && pnpm build",
     "start": "next start"
