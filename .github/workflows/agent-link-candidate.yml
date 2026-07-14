@@ -1,0 +1,43 @@
+name: Link candidate dossiers
+
+on:
+  push:
+    branches:
+      - agent/refactor-frontend-and-complete-gaps
+
+permissions:
+  contents: write
+
+jobs:
+  link:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/refactor-frontend-and-complete-gaps
+          fetch-depth: 0
+      - name: Insert exact-ID dossier link
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('frontend/app/candidates/page.tsx')
+          source = path.read_text()
+          old = '''<div className="candidate-record-actions"><Link href={buildFecReceiptHref({ search: candidate.name || candidate.candidate_id })}>Search receipts <FileSearch size={14} /></Link><a href={`https://www.fec.gov/data/candidate/${encodeURIComponent(candidate.candidate_id)}/`} target="_blank" rel="noreferrer">FEC record <ExternalLink size={14} /></a></div>'''
+          new = '''<div className="candidate-record-actions"><Link href={`/candidates/${encodeURIComponent(candidate.candidate_id)}`}>Open dossier <UserRound size={14} /></Link><Link href={buildFecReceiptHref({ search: candidate.name || candidate.candidate_id })}>Search receipts <FileSearch size={14} /></Link><a href={`https://www.fec.gov/data/candidate/${encodeURIComponent(candidate.candidate_id)}/`} target="_blank" rel="noreferrer">FEC record <ExternalLink size={14} /></a></div>'''
+          if new not in source:
+              assert source.count(old) == 1
+              source = source.replace(old, new, 1)
+              path.write_text(source)
+          PY
+      - name: Commit directory link
+        run: |
+          if git diff --quiet; then
+            echo "Candidate dossier link is already present."
+            exit 0
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add frontend/app/candidates/page.tsx
+          git commit -m "feat: link candidate directory to exact-ID dossiers"
+          git push origin HEAD:agent/refactor-frontend-and-complete-gaps
