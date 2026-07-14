@@ -1,0 +1,57 @@
+# Congress Tracker reverse proxy.
+#
+# No public domain exists yet, so this terminates TLS with Caddy's local
+# self-signed CA (`tls internal`) on a high port instead of 443, since 80/443
+# are privileged and this runs as a non-root user unit. Once a real domain
+# is registered and DNS points at this host, replace:
+#   tls internal
+# with:
+#   tls admin@yourdomain.example
+# and switch the site address below from `https://localhost:8443` to the
+# real hostname on :443 — Caddy will then obtain and renew a certificate via
+# ACME (Let's Encrypt) automatically, no other config changes needed.
+
+{
+	auto_https off
+	admin off
+}
+
+https://localhost:8443 {
+	tls internal
+
+	# --- Rate limiting -----------------------------------------------------
+	# Stock Caddy (no third-party modules) does not ship a request-rate-limit
+	# directive. Real per-IP/per-route rate limiting requires a custom build
+	# via xcaddy with the caddy-ratelimit plugin, e.g.:
+	#   xcaddy build --with github.com/mholt/caddy-ratelimit
+	# This deploy deliberately does not fetch or compile third-party plugins.
+	# Until that build is produced and swapped in here, `request_body` below
+	# bounds payload size (a stock directive) as a narrow stopgap — it limits
+	# abuse amplitude, it is not a substitute for real rate limiting.
+	request_body {
+		max_size 5MB
+	}
+
+	# --- Cache behavior ------------------------------------------------------
+	# Caddy forwards whatever Cache-Control the upstream sets and does not
+	# override or strip it by default. Any hit-ratio measurement (e.g. the
+	# M6 load gate run through this proxy) depends entirely on the backend
+	# and frontend actually setting Cache-Control headers — this proxy adds
+	# no caching policy of its own.
+
+	@api path /api/*
+	handle @api {
+		reverse_proxy 127.0.0.1:4020
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:3000
+	}
+
+	log {
+		output file /home/bender/classwork/congress-tracker/deploy/caddy/access.log {
+			roll_size 10MB
+			roll_keep 5
+		}
+	}
+}

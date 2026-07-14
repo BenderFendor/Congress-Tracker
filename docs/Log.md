@@ -568,3 +568,25 @@ the detailed worksheets under `docs/agent/traces/`.
 - Added independent sponsor/cosponsor pagination, truthful zero and coverage
   ranges, internal bill links, official Congress.gov links, reduced-motion busy
   states, and responsive desktop/mobile Bills-tab layouts.
+
+## 2026-07-14 - Supervised Deployment Units
+
+- Added `deploy/systemd/congress-backend.service` and
+  `deploy/systemd/congress-frontend.service` (user-scope units, matching
+  `intel_worker.service`'s `EnvironmentFile=`/journal-logging/hardening
+  conventions but without a dedicated system account), plus
+  `deploy/caddy/Caddyfile` and `deploy/systemd/congress-caddy.service` for a
+  local-TLS reverse proxy (`/api/*` to :4020, everything else to :3000).
+- Built the previously-missing `backend/target/release/intel_backend`
+  release binary so the backend unit points at a binary that actually
+  exists.
+- Installed and enabled the backend/frontend units under
+  `~/.config/systemd/user/` without `--now`: port 4020 was already held by
+  a pre-existing dev process, so the units are enabled (`systemctl --user
+  is-enabled` reports `enabled`) but not started, per the never-kill
+  existing-processes rule.
+- Caddy is not installed on the dev host; the proxy config and unit are
+  written and internally consistent but left disabled. Rate limiting uses
+  stock Caddy's `request_body max_size` as a stopgap and documents the
+  `xcaddy --with caddy-ratelimit` build required for real per-IP limits.
+  See `reports/verification/deploy-units-proof-2026-07-14.md`.

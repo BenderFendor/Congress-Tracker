@@ -1,0 +1,22 @@
+[Unit]
+Description=Congress Tracker — Caddy reverse proxy (TLS termination)
+Documentation=https://caddyserver.com/docs/
+After=network-online.target congress-backend.service congress-frontend.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/bender/classwork/congress-tracker/deploy/caddy
+# Requires the `caddy` binary on PATH (not installed on this host as of
+# 2026-07-14 — `command -v caddy` found nothing). Install it (e.g. via the
+# distro package manager) before enabling --now.
+ExecStart=/usr/bin/caddy run --config /home/bender/classwork/congress-tracker/deploy/caddy/Caddyfile --adapter caddyfile
+ExecReload=/usr/bin/caddy reload --config /home/bender/classwork/congress-tracker/deploy/caddy/Caddyfile --adapter caddyfile
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=congress_caddy
+
+[Install]
+WantedBy=default.target

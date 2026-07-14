@@ -1,0 +1,8 @@
+[Unit]
+Description=congress-tracker nightly PostgreSQL backup
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/bender/classwork/congress-tracker
+ExecStart=/home/bender/classwork/congress-tracker/scripts/db-backup

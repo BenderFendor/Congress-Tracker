@@ -12,6 +12,35 @@ pub enum DownloadDisposition {
     Failed,
 }
 
+/// Whether a batch of disk-consuming jobs (downloads, OCR/PDF processing)
+/// should proceed against the storage volume or be parked until space frees
+/// up. Parking never fails a job — it simply declines to claim it this tick.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiskSpaceDisposition {
+    Proceed,
+    Parked,
+}
+
+/// Default free-space floor, in GiB, below which disk-consuming jobs park
+/// rather than claim. Configurable via INTEL_WORKER_MIN_FREE_GIB.
+pub const DEFAULT_MIN_FREE_GIB: u64 = 50;
+
+pub fn disk_space_disposition(free_bytes: u64, min_free_gib: u64) -> DiskSpaceDisposition {
+    let min_free_bytes = min_free_gib.saturating_mul(1024 * 1024 * 1024);
+    if free_bytes < min_free_bytes {
+        DiskSpaceDisposition::Parked
+    } else {
+        DiskSpaceDisposition::Proceed
+    }
+}
+
+pub fn min_free_gib_from_env(value: Option<&str>) -> u64 {
+    value
+        .and_then(|raw| raw.trim().parse::<u64>().ok())
+        .filter(|parsed| *parsed > 0)
+        .unwrap_or(DEFAULT_MIN_FREE_GIB)
+}
+
 pub fn retry_disposition(attempts: i32, max_attempts: i32) -> RetryDisposition {
     if attempts.saturating_add(1) >= max_attempts {
         RetryDisposition::Failed
@@ -143,5 +172,37 @@ mod tests {
         assert_eq!(retry_delay_seconds(0, None, 0), 1);
         assert_eq!(retry_delay_seconds(3, None, 29), 37);
         assert_eq!(retry_delay_seconds(100, None, 29), 1_053);
+    }
+
+    #[test]
+    fn low_disk_parks_jobs_at_the_configured_gib_floor() {
+        let one_gib = 1024u64 * 1024 * 1024;
+        assert_eq!(
+            disk_space_disposition(49 * one_gib, 50),
+            DiskSpaceDisposition::Parked
+        );
+        assert_eq!(
+            disk_space_disposition(50 * one_gib, 50),
+            DiskSpaceDisposition::Proceed
+        );
+        assert_eq!(
+            disk_space_disposition(51 * one_gib, 50),
+            DiskSpaceDisposition::Proceed
+        );
+        assert_eq!(disk_space_disposition(0, 0), DiskSpaceDisposition::Proceed);
+    }
+
+    #[test]
+    fn disk_floor_env_parsing_defaults_and_rejects_nonsense() {
+        assert_eq!(min_free_gib_from_env(None), DEFAULT_MIN_FREE_GIB);
+        assert_eq!(min_free_gib_from_env(Some("")), DEFAULT_MIN_FREE_GIB);
+        assert_eq!(
+            min_free_gib_from_env(Some("not-a-number")),
+            DEFAULT_MIN_FREE_GIB
+        );
+        assert_eq!(min_free_gib_from_env(Some("0")), DEFAULT_MIN_FREE_GIB);
+        assert_eq!(min_free_gib_from_env(Some("-5")), DEFAULT_MIN_FREE_GIB);
+        assert_eq!(min_free_gib_from_env(Some("120")), 120);
+        assert_eq!(min_free_gib_from_env(Some("  75  ")), 75);
     }
 }

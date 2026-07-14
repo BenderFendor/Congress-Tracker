@@ -209,3 +209,17 @@ Future agents should:
 - Treat watchdog interruption as a recovery test. The initial four-hour run
   peaked at 82,028 KiB and was resumed under the same source-run ID; the final
   250-second continuation peaked at 49,432 KiB and preserved loaded roles.
+- `backend/crates/intel_worker/intel_worker.service` is a system-scope
+  template (dedicated `congress_tracker` account, `/etc`-style paths,
+  `WantedBy=multi-user.target`) written for a real production host, not
+  this dev machine. When asked to "match its conventions" for a user unit
+  (`~/.config/systemd/user/`), carry over the structural patterns
+  (`EnvironmentFile=` pointing at a path rather than inlined secrets,
+  `Restart=always`, journal logging + `SyslogIdentifier`, `ProtectSystem=
+  strict` hardening) but drop `User=` and rewrite paths to the actual repo
+  location — do not copy its `/home/congress_tracker/...` paths verbatim.
+- Before enabling `--now` on a service unit, check the target port with
+  `ss -ltnp`, not just whether the systemd unit itself is new. A dev
+  process from an unrelated session can already hold the port; enabling
+  without `--now` and reporting `Active: inactive (dead)` is the correct
+  proof when that happens, not a failure to fix.

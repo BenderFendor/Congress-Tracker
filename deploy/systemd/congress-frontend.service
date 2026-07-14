@@ -1,0 +1,33 @@
+[Unit]
+Description=Congress Tracker — Next.js Frontend
+Documentation=https://github.com/congress-tracker
+After=network-online.target congress-backend.service
+Wants=network-online.target
+BindsTo=congress-backend.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/bender/classwork/congress-tracker/frontend
+# NEXT_PUBLIC_BACKEND_URL and any other build-time-baked public vars live in
+# the same repo-root env file the backend uses; this unit only references
+# its path, never its contents.
+EnvironmentFile=-/home/bender/classwork/congress-tracker/.env
+Environment=PORT=3000
+Environment=NODE_ENV=production
+# Requires a production build first: `pnpm --dir frontend build`.
+ExecStart=/home/bender/.local/share/pnpm/pnpm start
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=congress_frontend
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/bender/classwork/congress-tracker/frontend/.next
+ReadOnlyPaths=/home/bender/classwork/congress-tracker
+
+[Install]
+WantedBy=default.target

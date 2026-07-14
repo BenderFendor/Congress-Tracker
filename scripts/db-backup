@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# db-backup — nightly PostgreSQL backup for congress-tracker.
+#
+# Dumps DATABASE_URL (custom format, compressed) to the sanctioned large-
+# artifact volume, records the result in a manifest, and prunes old copies.
+#
+# Layout under BACKUP_ROOT ("/mnt/Big storage/congress-tracker/backups"):
+#   daily/congress_YYYY-MM-DDTHHMMSS.dump   — kept: newest 14
+#   weekly/congress_YYYY-MM-DDTHHMMSS.dump  — kept: newest 8, refreshed on
+#                                              Sundays or when weekly/ has
+#                                              nothing newer than 7 days
+#   manifest.tsv                            — filename<TAB>bytes<TAB>sha256<TAB>date
+#
+# Usage: scripts/db-backup [--help]
+#
+# Requires DATABASE_URL in <repo-root>/.env (same loading pattern as
+# scripts/db-query — grep + cut, never sourced). Refuses to run if the
+# destination volume has less than 20 GiB free. Exits nonzero with a clear
+# message on any failure.
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    cat <<'EOF'
+db-backup — nightly PostgreSQL backup for congress-tracker.
+
+Dumps DATABASE_URL (custom format, compressed) to the sanctioned large-
+artifact volume, records the result in a manifest, and prunes old copies.
+
+Layout under BACKUP_ROOT ("/mnt/Big storage/congress-tracker/backups"):
+  daily/congress_YYYY-MM-DDTHHMMSS.dump   - kept: newest 14
+  weekly/congress_YYYY-MM-DDTHHMMSS.dump  - kept: newest 8, refreshed on
+                                             Sundays or when weekly/ has
+                                             nothing newer than 7 days
+  manifest.tsv                            - filename<TAB>bytes<TAB>sha256<TAB>date
+
+Usage: scripts/db-backup [--help]
+
+Requires DATABASE_URL in <repo-root>/.env (same loading pattern as
+scripts/db-query - grep + cut, never sourced). Refuses to run if the
+destination volume has less than 20 GiB free. Exits nonzero with a clear
+message on any failure.
+EOF
+    exit 0
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+BACKUP_ROOT="/mnt/Big storage/congress-tracker/backups"
+DAILY_DIR="$BACKUP_ROOT/daily"
+WEEKLY_DIR="$BACKUP_ROOT/weekly"
+MANIFEST="$BACKUP_ROOT/manifest.tsv"
+MIN_FREE_GIB=20
+DAILY_KEEP=14
+WEEKLY_KEEP=8
+
+fail() {
+    echo "db-backup: $1" >&2
+    exit 1
+}
+
+command -v pg_dump >/dev/null 2>&1 || fail "pg_dump not found on PATH"
+command -v sha256sum >/dev/null 2>&1 || fail "sha256sum not found on PATH"
+
+# Parse DATABASE_URL from .env — grep + cut, never source (matches scripts/db-query)
+if [[ ! -f "$PROJECT_ROOT/.env" ]]; then
+    fail ".env file not found at $PROJECT_ROOT/.env"
+fi
+
+DATABASE_URL="$(grep -E '^DATABASE_URL=' "$PROJECT_ROOT/.env" | cut -d= -f2-)"
+
+if [[ -z "$DATABASE_URL" ]]; then
+    fail "DATABASE_URL not set in $PROJECT_ROOT/.env"
+fi
+
+mkdir -p "$DAILY_DIR" "$WEEKLY_DIR" || fail "could not create backup directories under $BACKUP_ROOT"
+
+# Free space check on the destination volume
+AVAIL_BYTES="$(df --output=avail -B1 "$BACKUP_ROOT" | tail -n1 | tr -d ' ')"
+MIN_FREE_BYTES=$((MIN_FREE_GIB * 1024 * 1024 * 1024))
+if [[ -z "$AVAIL_BYTES" || "$AVAIL_BYTES" -lt "$MIN_FREE_BYTES" ]]; then
+    fail "only $((AVAIL_BYTES / 1024 / 1024 / 1024)) GiB free on backup volume, refusing to run (need >= ${MIN_FREE_GIB} GiB)"
+fi
+
+TIMESTAMP="$(date +%Y-%m-%dT%H%M%S)"
+DUMP_FILE="$DAILY_DIR/congress_${TIMESTAMP}.dump"
+TMP_FILE="${DUMP_FILE}.partial"
+
+echo "db-backup: dumping to $DUMP_FILE"
+if ! pg_dump -Fc "$DATABASE_URL" -f "$TMP_FILE"; then
+    rm -f "$TMP_FILE"
+    fail "pg_dump failed, no archive written"
+fi
+
+mv "$TMP_FILE" "$DUMP_FILE" || fail "could not finalize dump file $DUMP_FILE"
+
+BYTES="$(stat -c%s "$DUMP_FILE")"
+SHA256="$(sha256sum "$DUMP_FILE" | cut -d' ' -f1)"
+NOW_ISO="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+printf '%s\t%s\t%s\t%s\n' "$(basename "$DUMP_FILE")" "$BYTES" "$SHA256" "$NOW_ISO" >> "$MANIFEST"
+echo "db-backup: wrote $DUMP_FILE ($BYTES bytes, sha256 $SHA256)"
+
+# Retention: keep newest DAILY_KEEP files in daily/
+prune_dir() {
+    local dir="$1" keep="$2"
+    local count
+    count="$(find "$dir" -maxdepth 1 -name 'congress_*.dump' -type f | wc -l)"
+    if [[ "$count" -gt "$keep" ]]; then
+        find "$dir" -maxdepth 1 -name 'congress_*.dump' -type f -printf '%f\n' \
+            | sort \
+            | head -n "$((count - keep))" \
+            | while read -r old; do
+                rm -f "$dir/$old"
+                echo "db-backup: pruned $dir/$old"
+            done
+    fi
+}
+
+prune_dir "$DAILY_DIR" "$DAILY_KEEP"
+
+# Weekly rollup: refresh on Sundays, or if weekly/ has nothing newer than 7 days
+DOW="$(date +%u)"  # 1=Mon .. 7=Sun
+NEWEST_WEEKLY="$(find "$WEEKLY_DIR" -maxdepth 1 -name 'congress_*.dump' -type f -mtime -7 | head -n1)"
+
+if [[ "$DOW" == "7" || -z "$NEWEST_WEEKLY" ]]; then
+    WEEKLY_TARGET="$WEEKLY_DIR/$(basename "$DUMP_FILE")"
+    if [[ ! -e "$WEEKLY_TARGET" ]]; then
+        cp "$DUMP_FILE" "$WEEKLY_TARGET" || fail "could not copy $DUMP_FILE into weekly/"
+        WEEKLY_BYTES="$(stat -c%s "$WEEKLY_TARGET")"
+        WEEKLY_SHA256="$(sha256sum "$WEEKLY_TARGET" | cut -d' ' -f1)"
+        printf '%s\t%s\t%s\t%s\n' "$(basename "$WEEKLY_TARGET")" "$WEEKLY_BYTES" "$WEEKLY_SHA256" "$NOW_ISO" >> "$MANIFEST"
+        echo "db-backup: refreshed weekly copy $WEEKLY_TARGET"
+    fi
+    prune_dir "$WEEKLY_DIR" "$WEEKLY_KEEP"
+fi
+
+echo "db-backup: done"

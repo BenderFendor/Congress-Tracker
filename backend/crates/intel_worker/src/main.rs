@@ -3,7 +3,9 @@ use clap::Parser;
 use rand::Rng;
 use sha2::{Digest, Sha256};
 use sqlx::{postgres::PgPoolOptions, PgPool, Postgres, Transaction};
-use std::path::PathBuf;
+use std::ffi::CString;
+use std::os::unix::ffi::OsStrExt;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 use std::time::Instant;
@@ -15,9 +17,10 @@ pub mod job_policy;
 pub mod parsers;
 
 use job_policy::{
-    bounded_lda_page_limit, bounded_lda_page_size, download_disposition, lda_job_identity,
-    lda_refresh_years, parse_lda_job_identity, retry_delay_seconds, retry_disposition,
-    senate_refresh_enabled, DownloadDisposition, RetryDisposition,
+    bounded_lda_page_limit, bounded_lda_page_size, disk_space_disposition, download_disposition,
+    lda_job_identity, lda_refresh_years, min_free_gib_from_env, parse_lda_job_identity,
+    retry_delay_seconds, retry_disposition, senate_refresh_enabled, DiskSpaceDisposition,
+    DownloadDisposition, RetryDisposition,
 };
 
 struct ParsedDocument {
@@ -80,6 +83,84 @@ fn storage_dir() -> PathBuf {
         external
     } else {
         PathBuf::from("./worker_storage")
+    }
+}
+
+// ── Low-disk job parking ────────────────────────────────────────────────────
+//
+// Downloads and OCR/PDF parsing are the only job types that consume real
+// storage. When the storage volume runs low, both must stop claiming new
+// work — but never fail what is already queued. Parking means "left pending,
+// tried again next tick"; everything else (resolve, refreshes, cheap parses
+// of already-fetched documents) keeps running unaffected.
+
+/// Free bytes available to unprivileged writers on the filesystem containing
+/// `path`, via statvfs(2).
+fn statvfs_free_bytes(path: &Path) -> Result<u64, std::io::Error> {
+    let c_path = CString::new(path.as_os_str().as_bytes())
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))?;
+    let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
+    // Safety: `c_path` is a valid NUL-terminated string for the duration of
+    // the call, and `stat` is a plain-old-data struct sized by libc.
+    let result = unsafe { libc::statvfs(c_path.as_ptr(), &mut stat) };
+    if result != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    // f_bavail is blocks available to unprivileged users; f_frsize is the
+    // fragment size to use for this calculation per POSIX. Widen to u128 so
+    // the multiplication cannot overflow on any platform's block count.
+    let free = u128::from(stat.f_bavail) * u128::from(stat.f_frsize);
+    Ok(u64::try_from(free).unwrap_or(u64::MAX))
+}
+
+/// Decide whether disk-consuming jobs may claim work this tick. Takes an
+/// injectable probe so callers (and tests) can simulate low disk without
+/// touching a real volume. A stat failure is not evidence the volume is
+/// full, so this fails open (Proceed) and logs the reason.
+fn disk_space_gate(
+    storage_path: &Path,
+    min_free_gib: u64,
+    probe: impl Fn(&Path) -> Result<u64, std::io::Error>,
+) -> DiskSpaceDisposition {
+    match probe(storage_path) {
+        Ok(free_bytes) => disk_space_disposition(free_bytes, min_free_gib),
+        Err(error) => {
+            warn!(
+                storage_path = %storage_path.display(),
+                error = %error,
+                "Unable to determine free disk space; proceeding without the low-disk gate"
+            );
+            DiskSpaceDisposition::Proceed
+        }
+    }
+}
+
+/// Gate a batch of disk-consuming jobs behind a free-space check on the
+/// storage volume. When space is low, the batch is parked for this tick: no
+/// jobs are claimed, so nothing transitions to `failed`, and the next tick
+/// tries again. Logs one structured warning per check, not per job.
+async fn run_disk_gated<F, Fut>(
+    job_kind: &'static str,
+    storage_path: &Path,
+    min_free_gib: u64,
+    probe: impl Fn(&Path) -> Result<u64, std::io::Error>,
+    claim_and_run: F,
+) -> Result<(), Box<dyn std::error::Error>>
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = Result<(), Box<dyn std::error::Error>>>,
+{
+    match disk_space_gate(storage_path, min_free_gib, probe) {
+        DiskSpaceDisposition::Parked => {
+            warn!(
+                job_kind,
+                storage_path = %storage_path.display(),
+                min_free_gib,
+                "Low disk space: parking disk-consuming jobs until space frees up"
+            );
+            Ok(())
+        }
+        DiskSpaceDisposition::Proceed => claim_and_run().await,
     }
 }
 
@@ -1107,7 +1188,27 @@ fn http_client() -> reqwest::Client {
         .expect("Failed to build HTTP client")
 }
 
+/// Claim and download pending documents, gated on free space in the storage
+/// volume. When the volume is low on space this parks the whole batch — no
+/// jobs are claimed, so none can be marked failed by this step.
 async fn run_downloads(pool: &PgPool, instance_id: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let storage_path = storage_dir();
+    let min_free_gib =
+        min_free_gib_from_env(std::env::var("INTEL_WORKER_MIN_FREE_GIB").ok().as_deref());
+    run_disk_gated(
+        "download_document",
+        &storage_path,
+        min_free_gib,
+        statvfs_free_bytes,
+        || download_batch(pool, instance_id),
+    )
+    .await
+}
+
+async fn download_batch(
+    pool: &PgPool,
+    instance_id: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     let profile_default = match std::env::var("WORKER_RESOURCE_PROFILE").as_deref() {
         Ok("pi") => 2,
         Ok("burst") => 12,
@@ -1349,7 +1450,25 @@ async fn download_one(
 
 // ── Parsing ──────────────────────────────────────────────────────────────────
 
+/// Claim and parse (including OCR fallback) pending documents, gated on free
+/// space in the storage volume. When the volume is low on space this parks
+/// the whole batch — no jobs are claimed, so none can be marked failed by
+/// this step.
 async fn run_parses(pool: &PgPool, instance_id: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let storage_path = storage_dir();
+    let min_free_gib =
+        min_free_gib_from_env(std::env::var("INTEL_WORKER_MIN_FREE_GIB").ok().as_deref());
+    run_disk_gated(
+        "parse_document",
+        &storage_path,
+        min_free_gib,
+        statvfs_free_bytes,
+        || parse_batch(pool, instance_id),
+    )
+    .await
+}
+
+async fn parse_batch(pool: &PgPool, instance_id: &str) -> Result<(), Box<dyn std::error::Error>> {
     let profile_default = match std::env::var("WORKER_RESOURCE_PROFILE").as_deref() {
         Ok("pi") => 1,
         Ok("burst") => 6,
@@ -2481,13 +2600,17 @@ fn truncate_utf8(input: &str, max_bytes: usize) -> &str {
 #[cfg(test)]
 mod tests {
     use super::{
-        congress_for_date, election_cycle_for_date, lda_continuation_required,
+        congress_for_date, disk_space_gate, election_cycle_for_date, lda_continuation_required,
         profile_refresh_timeout_for, recovery_priorities, require_owned_transition,
-        required_annual_sections_are_present, required_rows_present, run_process_group_bounded,
-        sibling_ingest_binary, supported_house_filing_type, truncate_utf8, IndexEntry,
-        RECOVER_DOWNLOAD_SQL, RECOVER_PARSE_SQL,
+        required_annual_sections_are_present, required_rows_present, run_disk_gated,
+        run_process_group_bounded, sibling_ingest_binary, supported_house_filing_type,
+        truncate_utf8, IndexEntry, RECOVER_DOWNLOAD_SQL, RECOVER_PARSE_SQL,
     };
+    use crate::job_policy::DiskSpaceDisposition;
     use crate::parsers::DocumentLayout;
+    use std::path::Path;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
 
     #[test]
     fn scheduled_profile_refresh_uses_calendar_correct_congress_and_cycle() {
@@ -2695,5 +2818,114 @@ mod tests {
         assert!(lda_continuation_required(Some("failed"))
             .expect_err("unexpected correlated status must retry")
             .contains("ended failed"));
+    }
+
+    const ONE_GIB: u64 = 1024 * 1024 * 1024;
+
+    #[test]
+    fn disk_gate_parks_below_the_floor_and_proceeds_above_it() {
+        let low_disk = |_: &Path| Ok(ONE_GIB);
+        let healthy_disk = |_: &Path| Ok(200 * ONE_GIB);
+        let path = Path::new("/nonexistent-for-test");
+
+        assert_eq!(
+            disk_space_gate(path, 50, low_disk),
+            DiskSpaceDisposition::Parked
+        );
+        assert_eq!(
+            disk_space_gate(path, 50, healthy_disk),
+            DiskSpaceDisposition::Proceed
+        );
+    }
+
+    #[test]
+    fn disk_gate_fails_open_when_free_space_cannot_be_determined() {
+        let broken_probe = |_: &Path| {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "no such volume",
+            ))
+        };
+        assert_eq!(
+            disk_space_gate(Path::new("/nonexistent-for-test"), 50, broken_probe),
+            DiskSpaceDisposition::Proceed
+        );
+    }
+
+    /// Proof for the M7 parking requirement: with disk simulated low, a
+    /// batch of disk-consuming jobs is never claimed, so zero jobs can
+    /// transition to `running` or `failed` — they stay pending/parked. With
+    /// disk simulated healthy, the same batch proceeds.
+    #[tokio::test]
+    async fn low_disk_parks_disk_consuming_jobs_without_claiming_or_failing_any() {
+        let pending = Arc::new(AtomicUsize::new(3));
+        let claimed = Arc::new(AtomicUsize::new(0));
+        let failed = Arc::new(AtomicUsize::new(0));
+
+        let claim_pending = pending.clone();
+        let claim_claimed = claimed.clone();
+        let claim_failed = failed.clone();
+        let low_disk_probe = |_: &Path| Ok(ONE_GIB);
+
+        let result = run_disk_gated(
+            "download_document",
+            Path::new("/nonexistent-for-test"),
+            50,
+            low_disk_probe,
+            || async move {
+                // If the gate ever lets this run while disk is low, every
+                // pending job would be claimed and (in this worst-case
+                // simulation) fail. The assertions below prove it never
+                // executes under the low-disk probe.
+                let n = claim_pending.swap(0, Ordering::SeqCst);
+                claim_claimed.fetch_add(n, Ordering::SeqCst);
+                claim_failed.fetch_add(n, Ordering::SeqCst);
+                Ok(())
+            },
+        )
+        .await;
+
+        assert!(result.is_ok(), "parking must not surface as a step error");
+        assert_eq!(
+            claimed.load(Ordering::SeqCst),
+            0,
+            "no jobs may be claimed while disk is low"
+        );
+        assert_eq!(
+            failed.load(Ordering::SeqCst),
+            0,
+            "parking must never fail a job"
+        );
+        assert_eq!(
+            pending.load(Ordering::SeqCst),
+            3,
+            "jobs must remain pending/parked while disk is low"
+        );
+    }
+
+    #[tokio::test]
+    async fn healthy_disk_lets_disk_consuming_jobs_proceed() {
+        let ran = Arc::new(AtomicUsize::new(0));
+        let claim_ran = ran.clone();
+        let healthy_probe = |_: &Path| Ok(200 * ONE_GIB);
+
+        let result = run_disk_gated(
+            "download_document",
+            Path::new("/nonexistent-for-test"),
+            50,
+            healthy_probe,
+            || async move {
+                claim_ran.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            },
+        )
+        .await;
+
+        assert!(result.is_ok());
+        assert_eq!(
+            ran.load(Ordering::SeqCst),
+            1,
+            "jobs must proceed once disk is healthy"
+        );
     }
 }

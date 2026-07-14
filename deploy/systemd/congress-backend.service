@@ -1,0 +1,33 @@
+[Unit]
+Description=Congress Tracker — Intel Backend API
+Documentation=https://github.com/congress-tracker
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/bender/classwork/congress-tracker/backend
+# Loads DATABASE_URL, CONGRESS_GOV_API_KEY, OPENFEC_API_KEY, SENATE_LDA_API_KEY
+# and friends. Never inline secrets in this unit — this file only points at
+# the env file's path; the values live in .env, which stays out of git.
+EnvironmentFile=/home/bender/classwork/congress-tracker/.env
+Environment=PORT=4020
+ExecStart=/home/bender/classwork/congress-tracker/backend/target/release/intel_backend
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=intel_backend
+
+# Security hardening (user-unit scoped: runs as the invoking user, so this
+# restricts filesystem/privilege surface rather than isolating a dedicated
+# system account the way intel_worker.service does for a production host).
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/bender/classwork/congress-tracker/backend/target
+ReadOnlyPaths=/home/bender/classwork/congress-tracker
+
+[Install]
+WantedBy=default.target
