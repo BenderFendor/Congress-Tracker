@@ -3,6 +3,7 @@ pub mod entity_resolution;
 pub mod fec;
 pub mod influence;
 pub mod lobbying;
+pub mod member_legislation;
 pub mod members;
 pub mod organizations;
 pub mod relationships;

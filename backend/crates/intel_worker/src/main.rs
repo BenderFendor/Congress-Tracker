@@ -336,6 +336,19 @@ async fn recover_missing_supported_jobs(pool: &PgPool) -> Result<RecoveryCounts,
     })
 }
 
+fn profile_refresh_timeout_for(profile: Option<&str>) -> Duration {
+    let default_seconds = match profile.unwrap_or("balanced").to_ascii_lowercase().as_str() {
+        "gaming" | "pi" | "low" => 43_200,
+        "burst" | "fast" => 14_400,
+        _ => 21_600,
+    };
+    Duration::from_secs(default_seconds)
+}
+
+fn profile_refresh_timeout() -> Duration {
+    profile_refresh_timeout_for(std::env::var("WORKER_RESOURCE_PROFILE").as_deref().ok())
+}
+
 async fn run_profile_evidence_refresh(pool: &PgPool) -> Result<(), Box<dyn std::error::Error>> {
     const LOCK_KEY: i64 = 70_311_942_026;
     let mut lock_connection = pool.acquire().await?;
@@ -349,20 +362,22 @@ async fn run_profile_evidence_refresh(pool: &PgPool) -> Result<(), Box<dyn std::
     }
 
     info!("Starting scheduled all-member profile evidence refresh");
-    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
-    let mut command = TokioCommand::new(cargo);
+    let today = chrono::Utc::now().date_naive();
+    let congress = congress_for_date(today).to_string();
+    let cycle = election_cycle_for_date(today).to_string();
+    let binary = ingest_binary();
+    let mut command = TokioCommand::new(binary);
     command
         .args([
-            "run",
-            "-p",
-            "intel_backend",
-            "--bin",
-            "ingest",
-            "--",
             "profile-evidence-all",
+            "--congress",
+            &congress,
+            "--cycle",
+            &cycle,
         ])
-        .kill_on_drop(true);
-    let result = tokio::time::timeout(Duration::from_secs(7_200), command.status()).await;
+        .env("DATABASE_URL", std::env::var("DATABASE_URL")?);
+    let timeout = profile_refresh_timeout();
+    let result = run_process_group_bounded(&mut command, timeout).await;
 
     let _: bool = sqlx::query_scalar("SELECT pg_advisory_unlock($1)")
         .bind(LOCK_KEY)
@@ -370,14 +385,47 @@ async fn run_profile_evidence_refresh(pool: &PgPool) -> Result<(), Box<dyn std::
         .await?;
 
     match result {
-        Ok(Ok(status)) if status.success() => {
+        Ok(status) if status.success() => {
             info!("Scheduled all-member profile evidence refresh completed");
             Ok(())
         }
-        Ok(Ok(status)) => Err(format!("profile evidence ingest exited with {status}").into()),
-        Ok(Err(error)) => Err(error.into()),
-        Err(_) => Err("profile evidence ingest exceeded the two-hour timeout".into()),
+        Ok(status) => Err(format!("profile evidence ingest exited with {status}").into()),
+        Err(error) if error.kind() == std::io::ErrorKind::TimedOut => Err(format!(
+            "profile evidence ingest exceeded its configured timeout of {} seconds",
+            timeout.as_secs()
+        )
+        .into()),
+        Err(error) => Err(error.into()),
     }
+}
+
+fn congress_for_date(date: chrono::NaiveDate) -> i32 {
+    let year = if date.year() % 2 == 1 && date.month() == 1 && date.day() < 3 {
+        date.year() - 1
+    } else {
+        date.year()
+    };
+    ((year - 1789) / 2) + 1
+}
+
+fn election_cycle_for_date(date: chrono::NaiveDate) -> i32 {
+    if date.year() % 2 == 0 {
+        date.year()
+    } else {
+        date.year() + 1
+    }
+}
+
+fn sibling_ingest_binary(mut current_exe: PathBuf) -> PathBuf {
+    current_exe.set_file_name(format!("ingest{}", std::env::consts::EXE_SUFFIX));
+    current_exe
+}
+
+fn ingest_binary() -> PathBuf {
+    std::env::var_os("INTEL_INGEST_BIN")
+        .map(PathBuf::from)
+        .or_else(|| std::env::current_exe().ok().map(sibling_ingest_binary))
+        .unwrap_or_else(|| PathBuf::from("target/debug/ingest"))
 }
 
 // ── FEC Bulk ZIP refresh (scheduled) ────────────────────────────────────────
@@ -414,8 +462,7 @@ async fn run_fec_bulk_refresh(pool: &PgPool) -> Result<(), Box<dyn std::error::E
         let start = current_cycle.saturating_sub(4);
         format!("{start},{},{}", start + 2, current_cycle)
     });
-    let binary =
-        std::env::var("INTEL_INGEST_BIN").unwrap_or_else(|_| "target/debug/ingest".to_string());
+    let binary = ingest_binary();
     let mut command = TokioCommand::new(binary);
     command
         .args(["fec-bulk", "--cycles", &cycles])
@@ -478,8 +525,7 @@ async fn run_senate_efd_refresh(pool: &PgPool) -> Result<(), Box<dyn std::error:
         info!("Senate eFD refresh already running on another worker");
         return Ok(());
     }
-    let binary =
-        std::env::var("INTEL_INGEST_BIN").unwrap_or_else(|_| "target/debug/ingest".to_string());
+    let binary = ingest_binary();
     let mut command = TokioCommand::new(binary);
     command
         .args(["senate-efd"])
@@ -576,8 +622,7 @@ async fn run_lda_refresh_locked(pool: &PgPool, owner: &str) -> Result<(), Worker
             .ok_or_else(|| format!("invalid LDA refresh job identity {document_id}"))?;
         let page_limit =
             bounded_lda_page_limit(std::env::var("LDA_REFRESH_PAGE_LIMIT").ok().as_deref());
-        let binary =
-            std::env::var("INTEL_INGEST_BIN").unwrap_or_else(|_| "target/debug/ingest".to_string());
+        let binary = ingest_binary();
         let mut command = TokioCommand::new(binary);
         let run_correlation_id = uuid::Uuid::new_v4().to_string();
         command.args([
@@ -783,8 +828,7 @@ async fn run_sec_crosswalk_refresh(pool: &PgPool) -> Result<(), Box<dyn std::err
     if !locked {
         return Ok(());
     }
-    let binary =
-        std::env::var("INTEL_INGEST_BIN").unwrap_or_else(|_| "target/debug/ingest".to_string());
+    let binary = ingest_binary();
     let result = tokio::time::timeout(
         Duration::from_secs(900),
         TokioCommand::new(binary)
@@ -2437,12 +2481,55 @@ fn truncate_utf8(input: &str, max_bytes: usize) -> &str {
 #[cfg(test)]
 mod tests {
     use super::{
-        lda_continuation_required, recovery_priorities, require_owned_transition,
+        congress_for_date, election_cycle_for_date, lda_continuation_required,
+        profile_refresh_timeout_for, recovery_priorities, require_owned_transition,
         required_annual_sections_are_present, required_rows_present, run_process_group_bounded,
-        supported_house_filing_type, truncate_utf8, IndexEntry, RECOVER_DOWNLOAD_SQL,
-        RECOVER_PARSE_SQL,
+        sibling_ingest_binary, supported_house_filing_type, truncate_utf8, IndexEntry,
+        RECOVER_DOWNLOAD_SQL, RECOVER_PARSE_SQL,
     };
     use crate::parsers::DocumentLayout;
+
+    #[test]
+    fn scheduled_profile_refresh_uses_calendar_correct_congress_and_cycle() {
+        let before_transition = chrono::NaiveDate::from_ymd_opt(2027, 1, 2).unwrap();
+        let transition = chrono::NaiveDate::from_ymd_opt(2027, 1, 3).unwrap();
+        let even_year = chrono::NaiveDate::from_ymd_opt(2026, 7, 13).unwrap();
+
+        assert_eq!(congress_for_date(before_transition), 119);
+        assert_eq!(congress_for_date(transition), 120);
+        assert_eq!(congress_for_date(even_year), 119);
+        assert_eq!(election_cycle_for_date(even_year), 2026);
+        assert_eq!(election_cycle_for_date(transition), 2028);
+    }
+
+    #[test]
+    fn profile_refresh_timeout_matches_resource_profile_and_is_bounded() {
+        assert_eq!(
+            profile_refresh_timeout_for(Some("gaming")).as_secs(),
+            43_200
+        );
+        assert_eq!(profile_refresh_timeout_for(Some("pi")).as_secs(), 43_200);
+        assert_eq!(
+            profile_refresh_timeout_for(Some("balanced")).as_secs(),
+            21_600
+        );
+        assert_eq!(profile_refresh_timeout_for(Some("burst")).as_secs(), 14_400);
+    }
+
+    #[test]
+    fn scheduled_ingest_uses_the_workers_build_profile() {
+        let release_worker = std::path::PathBuf::from("/srv/app/target/release/intel_worker");
+        let debug_worker = std::path::PathBuf::from("/srv/app/target/debug/intel_worker");
+
+        assert_eq!(
+            sibling_ingest_binary(release_worker),
+            std::path::PathBuf::from("/srv/app/target/release/ingest")
+        );
+        assert_eq!(
+            sibling_ingest_binary(debug_worker),
+            std::path::PathBuf::from("/srv/app/target/debug/ingest")
+        );
+    }
 
     #[tokio::test]
     async fn bounded_async_process_kills_descendants_before_returning() {

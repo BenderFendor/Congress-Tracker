@@ -1,0 +1,20 @@
+{
+  "classification": [
+    "success"
+  ],
+  "command": [
+    "backend/target/debug/ingest",
+    "member-legislation-all",
+    "--congress",
+    "119",
+    "--resume-run-id",
+    "15a69481-0e6f-4380-9d26-9e01c571a295"
+  ],
+  "cwd": "/home/bender/classwork/congress-tracker",
+  "duration_seconds": 250.105,
+  "max_rss_kb": 49432,
+  "returncode": 0,
+  "stderr_tail": "",
+  "stdout_tail": "2026-07-14T00:57:03.124856Z  INFO sqlx::postgres::notice: relation \"_sqlx_migrations\" already exists, skipping",
+  "timed_out": false
+}

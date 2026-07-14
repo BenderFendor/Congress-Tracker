@@ -359,6 +359,90 @@ async fn assert_government_entity_identity_is_stable(pool: &PgPool) {
     assert_eq!(count, 1);
 }
 
+async fn assert_member_legislation_terminal_coverage_reconciles_writes(pool: &PgPool) {
+    sqlx::query(
+        "INSERT INTO members (bioguide_id, official_full_name, in_office)
+         VALUES ('M999998', 'Migration Coverage Fixture', true)
+         ON CONFLICT (bioguide_id) DO NOTHING",
+    )
+    .execute(pool)
+    .await
+    .expect("member legislation coverage fixture member inserts");
+    let run_id: uuid::Uuid = sqlx::query_scalar(
+        "INSERT INTO source_runs (source, endpoint, params)
+         VALUES ('congress_gov', '/migration/member-legislation', '{}')
+         RETURNING id",
+    )
+    .fetch_one(pool)
+    .await
+    .expect("member legislation coverage fixture run inserts");
+
+    let mismatch = sqlx::query(
+        "INSERT INTO member_legislation_coverage
+         (source_run_id, bioguide_id, congress, role, status,
+          advertised_count, rows_seen, rows_written, pages_fetched, finished_at)
+         VALUES ($1, 'M999998', 119, 'sponsor', 'loaded', 1, 1, 0, 1, now())",
+    )
+    .bind(run_id)
+    .execute(pool)
+    .await;
+    assert!(
+        mismatch.is_err(),
+        "loaded coverage must reject advertised rows that were not persisted"
+    );
+
+    sqlx::query(
+        "INSERT INTO member_legislation_coverage
+         (source_run_id, bioguide_id, congress, role, status,
+          advertised_count, rows_seen, rows_written, pages_fetched, finished_at)
+         VALUES ($1, 'M999998', 119, 'sponsor', 'loaded', 1, 1, 1, 1, now())",
+    )
+    .bind(run_id)
+    .execute(pool)
+    .await
+    .expect("fully reconciled member legislation coverage inserts");
+
+    sqlx::query(
+        "INSERT INTO member_legislation_coverage
+         (source_run_id, bioguide_id, congress, role, status,
+          advertised_count, rows_seen, rows_written, duplicate_rows,
+          pages_fetched, finished_at)
+         VALUES ($1, 'M999998', 119, 'cosponsor', 'loaded', 2, 2, 1, 1, 1, now())",
+    )
+    .bind(run_id)
+    .execute(pool)
+    .await
+    .expect("explicit provider duplicates reconcile without multiplying evidence");
+
+    for title in ["Initial title", "Corrected title"] {
+        sqlx::query(
+            "INSERT INTO member_legislation_items
+             (bioguide_id, role, source_url, congress, item_kind, item_type,
+              item_number, title, raw_item, source_run_id)
+             VALUES ('M999998', 'sponsor',
+                     'https://api.congress.gov/v3/amendment/119/hamdt/1',
+                     119, 'amendment', 'hamdt', 1, $1, '{}', $2)
+             ON CONFLICT (bioguide_id, role, source_url) DO UPDATE SET
+               title=EXCLUDED.title, raw_item=EXCLUDED.raw_item,
+               source_run_id=EXCLUDED.source_run_id, updated_at=now()",
+        )
+        .bind(title)
+        .bind(run_id)
+        .execute(pool)
+        .await
+        .expect("Member legislation evidence rerun remains idempotent");
+    }
+    let evidence: (i64, String) = sqlx::query_as(
+        "SELECT COUNT(*)::bigint, MAX(title)::text
+         FROM member_legislation_items
+         WHERE bioguide_id='M999998' AND role='sponsor'",
+    )
+    .fetch_one(pool)
+    .await
+    .expect("Member legislation evidence remains queryable");
+    assert_eq!(evidence, (1, "Corrected title".to_string()));
+}
+
 #[tokio::test]
 #[ignore = "requires a disposable PostgreSQL database"]
 async fn migration_fresh_database() {
@@ -411,6 +495,7 @@ async fn migration_fresh_database() {
     .expect("fresh lobbying activity fixture inserts");
     assert_lobbying_activity_identity_is_unique(&pool, "fresh-lda").await;
     assert_lobbying_source_discriminators_remain_distinct(&pool).await;
+    assert_member_legislation_terminal_coverage_reconciles_writes(&pool).await;
 }
 
 #[tokio::test]
@@ -465,6 +550,7 @@ async fn migration_upgrade_from_prior_committed_schema() {
     assert_lobbying_activity_identity_is_unique(&pool, "upgrade-lda").await;
     assert_government_entity_identity_is_stable(&pool).await;
     assert_lobbying_source_discriminators_remain_distinct(&pool).await;
+    assert_member_legislation_terminal_coverage_reconciles_writes(&pool).await;
 
     let depiction_url: String =
         sqlx::query_scalar("SELECT depiction_url FROM members WHERE bioguide_id = 'a000370'")

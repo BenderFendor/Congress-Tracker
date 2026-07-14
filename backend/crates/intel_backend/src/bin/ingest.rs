@@ -4,12 +4,15 @@
 //! `source_runs` row, processes data in batches of 500, then finishes
 //! the source run with an accurate status and row counts.
 
-use std::sync::Arc;
 use std::{
     collections::HashMap,
     fs::File,
     io::{BufRead, BufReader},
     process::Command as ProcessCommand,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
 };
 
 use chrono::NaiveDate;
@@ -26,6 +29,10 @@ use intel_backend::{
         lobbying::{
             LobbyingActivityUpsert, LobbyingFilingUpsert, LobbyingLobbyistUpsert,
             LobbyingRegistrantUpsert,
+        },
+        member_legislation::{
+            MemberLegislationBillWrite, MemberLegislationCoverageProgress,
+            MemberLegislationEvidenceWrite,
         },
         members::{CommitteeAssignmentUpsert, MemberTermUpsert, MemberUpsert},
         relationships::RelationshipEvidenceInsert,
@@ -61,6 +68,14 @@ enum Command {
         congress: u32,
         #[arg(long, default_value_t = 2026)]
         cycle: u32,
+    },
+    /// Exhaustively refresh sponsored and cosponsored legislation for every current member.
+    MemberLegislationAll {
+        #[arg(long, default_value_t = 119)]
+        congress: u32,
+        /// Resume an interrupted source run, skipping roles already terminal-loaded.
+        #[arg(long)]
+        resume_run_id: Option<uuid::Uuid>,
     },
     /// Seed the database with influence network definitions
     InfluenceSeeds,
@@ -273,7 +288,19 @@ async fn main() {
 
     match &cli.command {
         Command::ProfileEvidenceAll { congress, cycle } => {
-            cmd_profile_evidence_all(&repo, *congress, *cycle).await
+            if let Err(error) = cmd_profile_evidence_all(&repo, *congress, *cycle).await {
+                tracing::error!(error, "All-member profile evidence refresh failed");
+                std::process::exit(1);
+            }
+        }
+        Command::MemberLegislationAll {
+            congress,
+            resume_run_id,
+        } => {
+            if let Err(error) = cmd_member_legislation_all(&repo, *congress, *resume_run_id).await {
+                tracing::error!(error, "All-member legislation refresh failed");
+                std::process::exit(1);
+            }
         }
         Command::InfluenceSeeds => cmd_influence_seeds(&repo).await,
         Command::Members {
@@ -399,7 +426,11 @@ async fn main() {
     }
 }
 
-async fn cmd_profile_evidence_all(repo: &Repository, congress: u32, cycle: u32) {
+async fn cmd_profile_evidence_all(
+    repo: &Repository,
+    congress: u32,
+    cycle: u32,
+) -> Result<(), String> {
     info!(
         congress,
         cycle, "Starting deterministic all-member profile evidence refresh"
@@ -409,7 +440,14 @@ async fn cmd_profile_evidence_all(repo: &Repository, congress: u32, cycle: u32) 
     cmd_congress_members(repo, 1_000).await;
     cmd_voteview(repo, true, true, true).await;
     cmd_congress_bills(repo, congress, 250).await;
-    cmd_member_legislation_all(repo, congress).await;
+    let mut stage_errors = Vec::new();
+    if let Err(error) = cmd_member_legislation_all(repo, congress, None).await {
+        warn!(
+            error,
+            "Member legislation refresh finished without complete coverage"
+        );
+        stage_errors.push(format!("member legislation: {error}"));
+    }
     cmd_fec_candidates(repo, cycle, 1_000).await;
     cmd_refresh_materialized_views(repo).await;
     cmd_refresh_relationships(repo).await;
@@ -417,129 +455,704 @@ async fn cmd_profile_evidence_all(repo: &Repository, congress: u32, cycle: u32) 
         congress,
         cycle, "All-member profile evidence refresh finished"
     );
+    if stage_errors.is_empty() {
+        Ok(())
+    } else {
+        Err(stage_errors.join(" | "))
+    }
 }
 
-async fn cmd_member_legislation_all(repo: &Repository, congress: u32) {
-    let api_key = match std::env::var("CONGRESS_GOV_API_KEY") {
-        Ok(key) if !key.is_empty() => key,
-        _ => {
-            tracing::warn!("Skipping all-member legislation: CONGRESS_GOV_API_KEY is unavailable");
-            return;
+async fn cmd_member_legislation_all(
+    repo: &Repository,
+    congress: u32,
+    resume_run_id: Option<uuid::Uuid>,
+) -> Result<(), String> {
+    const LOCK_KEY: i64 = 70_311_942_027;
+    let mut lock_connection = repo
+        .pool()
+        .acquire()
+        .await
+        .map_err(|error| format!("acquire member-legislation lock connection: {error}"))?;
+    let locked: bool = sqlx::query_scalar("SELECT pg_try_advisory_lock($1)")
+        .bind(LOCK_KEY)
+        .fetch_one(&mut *lock_connection)
+        .await
+        .map_err(|error| format!("acquire member-legislation advisory lock: {error}"))?;
+    if !locked {
+        return Err("all-member legislation refresh is already running".to_string());
+    }
+    let result = cmd_member_legislation_all_locked(repo, congress, resume_run_id).await;
+    let unlock_result: Result<bool, sqlx::Error> =
+        sqlx::query_scalar("SELECT pg_advisory_unlock($1)")
+            .bind(LOCK_KEY)
+            .fetch_one(&mut *lock_connection)
+            .await;
+    match (result, unlock_result) {
+        (result, Ok(true)) => result,
+        (Ok(()), Ok(false)) => Err("member-legislation advisory lock was lost".to_string()),
+        (Err(error), Ok(false)) => Err(format!(
+            "{error}; member-legislation advisory lock was also lost"
+        )),
+        (Ok(()), Err(error)) => Err(format!(
+            "release member-legislation advisory lock: {error}"
+        )),
+        (Err(run_error), Err(unlock_error)) => Err(format!(
+            "{run_error}; additionally failed to release member-legislation advisory lock: {unlock_error}"
+        )),
+    }
+}
+
+async fn cmd_member_legislation_all_locked(
+    repo: &Repository,
+    congress: u32,
+    resume_run_id: Option<uuid::Uuid>,
+) -> Result<(), String> {
+    let run_id = if let Some(run_id) = resume_run_id {
+        let resumed = sqlx::query(
+            "UPDATE source_runs
+             SET status='running', finished_at=NULL, error_message=NULL
+             WHERE id=$1
+               AND endpoint='/v3/member/{bioguide}/sponsored-and-cosponsored-legislation'
+               AND params->>'congress'=$2
+               AND status IN ('running', 'failed', 'partial')",
+        )
+        .bind(run_id)
+        .bind(congress.to_string())
+        .execute(repo.pool())
+        .await
+        .map_err(|error| format!("resume member-legislation source run: {error}"))?
+        .rows_affected();
+        if resumed != 1 {
+            return Err(format!(
+                "source run {run_id} is not resumable for Congress {congress}"
+            ));
         }
-    };
-    let run_id = repo
-        .create_source_run(
+        sqlx::query(
+            "UPDATE member_legislation_coverage
+             SET status='failed', finished_at=now(),
+                 error_message='interrupted before terminal coverage; role will be retried'
+             WHERE source_run_id=$1 AND status='running'",
+        )
+        .bind(run_id)
+        .execute(repo.pool())
+        .await
+        .map_err(|error| format!("prepare interrupted coverage for resume: {error}"))?;
+        run_id
+    } else {
+        repo.fail_orphaned_member_legislation_runs()
+            .await
+            .map_err(|error| format!("recover orphaned member-legislation runs: {error}"))?;
+        repo.create_source_run(
             SOURCE_CONGRESS_GOV,
             "/v3/member/{bioguide}/sponsored-and-cosponsored-legislation",
-            serde_json::json!({ "congress": congress, "scope": "all_current_members" }),
+            serde_json::json!({
+                "congress": congress,
+                "scope": "all_current_members",
+                "pagination": "exhaustive",
+                "max_page_limit": congress_api::MEMBER_LEGISLATION_PAGE_LIMIT,
+                "min_page_limit": congress_api::MEMBER_LEGISLATION_MIN_PAGE_LIMIT,
+                "adaptive_page_reduction": true,
+                "max_rows_per_member_role": congress_api::MEMBER_LEGISLATION_MAX_ROWS,
+                "member_concurrency": member_legislation_concurrency()
+            }),
         )
         .await
-        .expect("Failed to create all-member legislation source_run");
+        .map_err(|error| format!("create source run: {error}"))?
+    };
+    let api_key = match std::env::var("CONGRESS_GOV_API_KEY") {
+        Ok(key) if !key.trim().is_empty() => key,
+        _ => {
+            let message = "CONGRESS_GOV_API_KEY is unavailable";
+            repo.finish_source_run(run_id, "auth_missing", 0, 0, Some(message))
+                .await
+                .map_err(|error| format!("finish auth-missing source run: {error}"))?;
+            return Err(message.to_string());
+        }
+    };
+    let outcome = run_member_legislation_all(repo, run_id, congress, api_key).await;
+    let (selected_members, summary) = match outcome {
+        Ok(result) => result,
+        Err(error) => {
+            let summary = repo
+                .member_legislation_coverage_summary(run_id)
+                .await
+                .unwrap_or_default();
+            let status = if error.contains("API key is invalid or expired") {
+                "auth_missing"
+            } else if summary.loaded_rows > 0 {
+                "partial"
+            } else {
+                "failed"
+            };
+            repo.finish_source_run(
+                run_id,
+                status,
+                summary.rows_seen,
+                summary.rows_written,
+                Some(&error),
+            )
+            .await
+            .map_err(|finish_error| {
+                format!(
+                    "{error}; additionally failed to finish all-member legislation source run: {finish_error}"
+                )
+            })?;
+            return Err(error);
+        }
+    };
+    let complete = summary.is_complete() && summary.current_members == selected_members;
+    let status = if complete {
+        "success"
+    } else if summary.loaded_rows > 0 {
+        "partial"
+    } else {
+        "failed"
+    };
+    let error = (!complete).then(|| {
+        format!(
+            "terminal coverage incomplete: selected_members={selected_members}, current_members={}, expected_rows={}, coverage_rows={}, loaded={}, reconciled={}, failed={}, running={}",
+            summary.current_members,
+            selected_members.saturating_mul(2),
+            summary.coverage_rows,
+            summary.loaded_rows,
+            summary.reconciled_rows,
+            summary.failed_rows,
+            summary.running_rows
+        )
+    });
+    repo.finish_source_run(
+        run_id,
+        status,
+        summary.rows_seen,
+        summary.rows_written,
+        error.as_deref(),
+    )
+    .await
+    .map_err(|finish_error| format!("finish all-member legislation source run: {finish_error}"))?;
+    if let Some(error) = error {
+        Err(error)
+    } else {
+        Ok(())
+    }
+}
+
+async fn run_member_legislation_all(
+    repo: &Repository,
+    run_id: uuid::Uuid,
+    congress: u32,
+    api_key: String,
+) -> Result<
+    (
+        i64,
+        intel_backend::repository::member_legislation::MemberLegislationCoverageSummary,
+    ),
+    String,
+> {
     let member_ids: Vec<String> = sqlx::query_scalar(
         "SELECT bioguide_id FROM members WHERE in_office = true ORDER BY bioguide_id",
     )
     .fetch_all(repo.pool())
     .await
-    .unwrap_or_default();
+    .map_err(|error| format!("load current member IDs: {error}"))?;
+    if member_ids.is_empty() {
+        return Err(
+            "current-member roster is empty; refusing to mark all-member legislation coverage successful"
+                .to_string(),
+        );
+    }
+    let member_snapshot = member_ids.join("\n");
+    let member_snapshot_sha256 = format!("{:x}", Sha256::digest(member_snapshot.as_bytes()));
+    sqlx::query(
+        "UPDATE source_runs
+         SET params = params || jsonb_build_object(
+             'expected_member_count', $2::bigint,
+             'member_snapshot_sha256', $3::text
+         )
+         WHERE id = $1 AND status = 'running'",
+    )
+    .bind(run_id)
+    .bind(i64::try_from(member_ids.len()).unwrap_or(i64::MAX))
+    .bind(member_snapshot_sha256)
+    .execute(repo.pool())
+    .await
+    .map_err(|error| format!("record current-member snapshot: {error}"))?;
     let client = congress_api::Client::new(api_key);
-    let mut seen = 0i64;
-    let mut written = 0i64;
-
-    for bioguide_id in member_ids {
-        let sponsored = client.get_member_sponsored_legislation(&bioguide_id).await;
-        if let Ok(response) = sponsored {
-            for bill in response
-                .sponsored_legislation
-                .into_iter()
-                .filter(|bill| bill.congress == congress as i32)
-            {
-                seen += 1;
-                if ingest_member_legislation_item(repo, run_id, &bioguide_id, "sponsor", bill)
+    let loaded_roles: Vec<(String, String)> = sqlx::query_as(
+        "SELECT bioguide_id, role
+         FROM member_legislation_coverage
+         WHERE source_run_id=$1 AND status='loaded'",
+    )
+    .bind(run_id)
+    .fetch_all(repo.pool())
+    .await
+    .map_err(|error| format!("load terminal Member-role coverage: {error}"))?;
+    let loaded_roles = Arc::new(
+        loaded_roles
+            .into_iter()
+            .collect::<std::collections::HashSet<_>>(),
+    );
+    let concurrency = member_legislation_concurrency();
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(concurrency));
+    let invalid_api_key = Arc::new(AtomicBool::new(false));
+    let mut tasks = tokio::task::JoinSet::new();
+    for bioguide_id in &member_ids {
+        if ["sponsor", "cosponsor"]
+            .iter()
+            .all(|role| loaded_roles.contains(&(bioguide_id.clone(), (*role).to_string())))
+        {
+            continue;
+        }
+        if invalid_api_key.load(Ordering::Acquire) {
+            break;
+        }
+        let permit = semaphore
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(|_| "member-legislation concurrency gate closed".to_string())?;
+        if invalid_api_key.load(Ordering::Acquire) {
+            drop(permit);
+            break;
+        }
+        let task_repo = repo.clone();
+        let task_client = client.clone();
+        let task_member = bioguide_id.clone();
+        let task_invalid_api_key = Arc::clone(&invalid_api_key);
+        let task_loaded_roles = Arc::clone(&loaded_roles);
+        tasks.spawn(async move {
+            let _permit = permit;
+            let mut role_errors = Vec::new();
+            for role in ["sponsor", "cosponsor"] {
+                if task_loaded_roles.contains(&(task_member.clone(), role.to_string())) {
+                    continue;
+                }
+                if task_invalid_api_key.load(Ordering::Acquire) {
+                    break;
+                }
+                if let Err(error) = task_repo
+                    .start_member_legislation_coverage(run_id, &task_member, congress as i32, role)
                     .await
-                    .is_ok()
                 {
-                    written += 2;
+                    role_errors.push(format!("start coverage for {task_member}/{role}: {error}"));
+                    continue;
+                }
+                if let Err(error) = ingest_member_legislation_role(
+                    &task_repo,
+                    &task_client,
+                    run_id,
+                    &task_member,
+                    congress as i32,
+                    role,
+                    &task_invalid_api_key,
+                )
+                .await
+                {
+                    role_errors.push(format!("finish coverage for {task_member}/{role}: {error}"));
                 }
             }
-        }
-        let cosponsored = client
-            .get_member_cosponsored_legislation(&bioguide_id)
-            .await;
-        if let Ok(response) = cosponsored {
-            for bill in response
-                .cosponsored_legislation
-                .into_iter()
-                .filter(|bill| bill.congress == congress as i32)
-            {
-                seen += 1;
-                if ingest_member_legislation_item(repo, run_id, &bioguide_id, "cosponsor", bill)
-                    .await
-                    .is_ok()
-                {
-                    written += 2;
-                }
+            if role_errors.is_empty() {
+                Ok(())
+            } else {
+                Err(role_errors.join(" | "))
             }
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    let mut task_errors = Vec::new();
+    while let Some(result) = tasks.join_next().await {
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => task_errors.push(error),
+            Err(error) => task_errors.push(format!("member-legislation task failed: {error}")),
         }
-        tokio::time::sleep(std::time::Duration::from_millis(75)).await;
+    }
+    if invalid_api_key.load(Ordering::Acquire) {
+        return Err("Congress.gov API key is invalid or expired".to_string());
+    }
+    if !task_errors.is_empty() {
+        return Err(task_errors
+            .into_iter()
+            .take(20)
+            .collect::<Vec<_>>()
+            .join(" | "));
     }
 
-    let status = if seen > 0 { "success" } else { "partial" };
-    repo.finish_source_run(run_id, status, seen, written, None)
+    let summary = repo
+        .member_legislation_coverage_summary(run_id)
         .await
-        .expect("Failed to finish all-member legislation source_run");
+        .map_err(|error| format!("summarize member legislation coverage: {error}"))?;
+    let selected_members = i64::try_from(member_ids.len()).unwrap_or(i64::MAX);
+    Ok((selected_members, summary))
 }
 
-async fn ingest_member_legislation_item(
+fn member_legislation_concurrency() -> usize {
+    member_legislation_concurrency_for(std::env::var("WORKER_RESOURCE_PROFILE").as_deref().ok())
+}
+
+fn member_legislation_concurrency_for(profile: Option<&str>) -> usize {
+    match profile.unwrap_or("balanced").to_ascii_lowercase().as_str() {
+        "gaming" | "pi" | "low" => 1,
+        "burst" | "fast" => 4,
+        _ => 2,
+    }
+}
+
+fn retryable_member_legislation_write(error: &sqlx::Error) -> bool {
+    matches!(
+        error,
+        sqlx::Error::Database(database)
+            if matches!(database.code().as_deref(), Some("40P01" | "40001"))
+    )
+}
+
+async fn upsert_member_legislation_page_with_retry(
     repo: &Repository,
+    source_run_id: uuid::Uuid,
+    bills: &[MemberLegislationBillWrite],
+    evidence: &[MemberLegislationEvidenceWrite],
+) -> Result<(), sqlx::Error> {
+    const MAX_ATTEMPTS: u32 = 4;
+    for attempt in 1..=MAX_ATTEMPTS {
+        match repo
+            .upsert_member_legislation_page(source_run_id, bills, evidence)
+            .await
+        {
+            Err(error) if attempt < MAX_ATTEMPTS && retryable_member_legislation_write(&error) => {
+                warn!(
+                    attempt,
+                    error = %error,
+                    "Member-legislation page write conflicted; retrying the complete transaction"
+                );
+                tokio::time::sleep(std::time::Duration::from_millis(50 * u64::from(attempt))).await;
+            }
+            result => return result,
+        }
+    }
+    unreachable!("Member-legislation write loop returns on its final attempt")
+}
+
+async fn ingest_member_legislation_role(
+    repo: &Repository,
+    client: &congress_api::Client,
     run_id: uuid::Uuid,
+    bioguide_id: &str,
+    congress: i32,
+    role: &str,
+    invalid_api_key: &AtomicBool,
+) -> Result<(), sqlx::Error> {
+    let mut pagination = congress_api::MemberLegislationPagination::default();
+    let mut offset = 0u32;
+    let mut page_limit = congress_api::MEMBER_LEGISLATION_PAGE_LIMIT;
+    let mut pages_fetched = 0i32;
+    let mut rows_written = 0i64;
+    let mut persisted_identities = std::collections::HashSet::new();
+    let mut errors = Vec::new();
+
+    'pages: loop {
+        let (provider_page, bills) = loop {
+            let response = if role == "sponsor" {
+                client
+                    .get_member_sponsored_legislation_page(bioguide_id, page_limit, offset)
+                    .await
+                    .map(|response| (response.pagination, response.sponsored_legislation))
+            } else {
+                client
+                    .get_member_cosponsored_legislation_page(bioguide_id, page_limit, offset)
+                    .await
+                    .map(|response| (response.pagination, response.cosponsored_legislation))
+            };
+            match response {
+                Ok(response) => break response,
+                Err(error)
+                    if page_limit > congress_api::MEMBER_LEGISLATION_MIN_PAGE_LIMIT
+                        && error.allows_member_legislation_page_reduction() =>
+                {
+                    let reduced_limit =
+                        (page_limit / 2).max(congress_api::MEMBER_LEGISLATION_MIN_PAGE_LIMIT);
+                    warn!(
+                        bioguide_id,
+                        role,
+                        offset,
+                        page_limit,
+                        reduced_limit,
+                        error = %error,
+                        "Congress.gov Member-legislation page failed; reducing the page size"
+                    );
+                    page_limit = reduced_limit;
+                }
+                Err(error) => {
+                    if error.is_invalid_api_key() {
+                        invalid_api_key.store(true, Ordering::Release);
+                    }
+                    errors.push(format!(
+                        "request offset={offset} limit={page_limit}: {error}"
+                    ));
+                    break 'pages;
+                }
+            }
+        };
+        pages_fetched = pages_fetched.saturating_add(1);
+        let progress = match pagination.accept_page(offset, page_limit, &provider_page, &bills) {
+            Ok(progress) => progress,
+            Err(error) => {
+                errors.push(format!("page offset={offset}: {error}"));
+                break;
+            }
+        };
+        let mut page_bills = Vec::new();
+        let mut page_evidence = Vec::new();
+        for bill in bills {
+            let identity = format!(
+                "{}/{}/{}",
+                bill.congress,
+                bill.bill_type.as_deref().unwrap_or("<missing-type>"),
+                bill.number.as_deref().unwrap_or("<missing-number>")
+            );
+            match prepare_member_legislation_item(bioguide_id, role, bill) {
+                Ok((prepared_bill, evidence)) => {
+                    let canonical_identity = prepared_bill
+                        .as_ref()
+                        .map(|prepared| format!("bill:{}", prepared.bill_id))
+                        .unwrap_or_else(|| {
+                            let normalized_url =
+                                congress_api::canonical_member_legislation_source_url(
+                                    &evidence.source_url,
+                                )
+                                .unwrap_or_else(|| evidence.source_url.clone());
+                            format!("evidence:{normalized_url}")
+                        });
+                    if persisted_identities.insert(canonical_identity) {
+                        if let Some(prepared_bill) = prepared_bill {
+                            page_bills.push(prepared_bill);
+                        }
+                        page_evidence.push(evidence);
+                    }
+                }
+                Err(error) => errors.push(format!("row {identity}: {error}")),
+            }
+        }
+        page_bills.sort_by(|left, right| left.bill_id.cmp(&right.bill_id));
+        page_evidence.sort_by(|left, right| {
+            (&left.bioguide_id, &left.role, &left.source_url).cmp(&(
+                &right.bioguide_id,
+                &right.role,
+                &right.source_url,
+            ))
+        });
+        if !page_evidence.is_empty() {
+            match upsert_member_legislation_page_with_retry(
+                repo,
+                run_id,
+                &page_bills,
+                &page_evidence,
+            )
+            .await
+            {
+                Ok(()) => {
+                    rows_written = rows_written
+                        .saturating_add(i64::try_from(page_evidence.len()).unwrap_or(i64::MAX));
+                }
+                Err(error) => {
+                    errors.push(format!("persist page offset={offset}: {error}"));
+                    break;
+                }
+            }
+        }
+        match progress {
+            congress_api::PageProgress::Complete => break,
+            congress_api::PageProgress::Next { offset: next } => offset = next,
+        }
+    }
+
+    let progress = MemberLegislationCoverageProgress {
+        advertised_count: pagination.advertised_count().map(i64::from),
+        rows_seen: i64::from(pagination.rows_seen()),
+        rows_written,
+        duplicate_rows: i64::from(pagination.duplicate_rows()),
+        pages_fetched,
+    };
+    if errors.is_empty() {
+        repo.finish_member_legislation_coverage_loaded(
+            run_id,
+            bioguide_id,
+            congress,
+            role,
+            progress,
+        )
+        .await
+    } else {
+        let error_message = errors.into_iter().take(20).collect::<Vec<_>>().join(" | ");
+        repo.finish_member_legislation_coverage_failed(
+            run_id,
+            bioguide_id,
+            congress,
+            role,
+            progress,
+            &error_message,
+        )
+        .await
+    }
+}
+
+fn prepare_member_legislation_item(
     bioguide_id: &str,
     sponsor_type: &str,
     bill: congress_api::MemberSponsoredBill,
-) -> Result<(), sqlx::Error> {
-    let bill_number = bill.number.parse::<i32>().unwrap_or(0);
-    let bill_type = bill.bill_type.to_lowercase();
-    let bill_id = schema::build_bill_id(bill.congress, &bill_type, bill_number);
-    let introduced_date = bill
-        .introduced_date
-        .as_deref()
-        .and_then(|date| NaiveDate::parse_from_str(date, "%Y-%m-%d").ok());
-    let latest_action_date = bill
-        .latest_action
-        .as_ref()
-        .and_then(|action| action.action_date.as_deref())
-        .and_then(|date| NaiveDate::parse_from_str(date, "%Y-%m-%d").ok());
+) -> Result<
+    (
+        Option<MemberLegislationBillWrite>,
+        MemberLegislationEvidenceWrite,
+    ),
+    String,
+> {
+    let raw_item = serde_json::to_value(&bill)
+        .map_err(|error| format!("serialize provider legislation row: {error}"))?;
+    let source_url = stable_member_legislation_url(&bill)?;
+    let latest_action_date = parse_member_legislation_date(
+        bill.latest_action
+            .as_ref()
+            .and_then(|action| action.action_date.as_deref()),
+        "latestAction.actionDate",
+    )?;
     let latest_action_text = bill
         .latest_action
         .as_ref()
         .and_then(|action| action.text.as_deref());
-    let policy_area = bill.policy_area.as_ref().map(|area| area.name.as_str());
+    let introduced_date =
+        parse_member_legislation_date(bill.introduced_date.as_deref(), "introducedDate")?;
 
-    repo.upsert_bill(BillUpsert {
+    let bill_identity = bill
+        .number
+        .as_deref()
+        .zip(bill.bill_type.as_deref())
+        .map(|(number, bill_type)| (number.trim(), bill_type.trim().to_lowercase()));
+    if let Some((raw_bill_number, bill_type)) = bill_identity {
+        let bill_number = raw_bill_number
+            .parse::<i32>()
+            .map_err(|error| format!("invalid bill number {raw_bill_number:?}: {error}"))?;
+        if bill_number <= 0 || bill_type.is_empty() {
+            return Err(format!(
+                "invalid bill identity type={bill_type:?} number={bill_number}"
+            ));
+        }
+        let provider_title = bill
+            .title
+            .as_deref()
+            .filter(|title| !title.trim().is_empty())
+            .map(str::trim);
+        let title = provider_title.map(ToString::to_string).unwrap_or_else(|| {
+            format!(
+                "Title unavailable ({} {})",
+                bill_type.to_uppercase(),
+                bill_number
+            )
+        });
+        let policy_area = bill
+            .policy_area
+            .as_ref()
+            .and_then(|area| area.name.as_deref());
+        let bill_id = schema::build_bill_id(bill.congress, &bill_type, bill_number);
+        let prepared_bill = MemberLegislationBillWrite {
+            congress: bill.congress,
+            bill_type: bill_type.clone(),
+            bill_number,
+            bill_id,
+            title: title.clone(),
+            introduced_date,
+            policy_area: policy_area.map(ToString::to_string),
+            latest_action_date,
+            latest_action_text: latest_action_text.map(ToString::to_string),
+            status: latest_action_text.unwrap_or("introduced").to_string(),
+            source_url: source_url.clone(),
+            bioguide_id: bioguide_id.to_string(),
+            sponsor_type: sponsor_type.to_string(),
+        };
+        let evidence = MemberLegislationEvidenceWrite {
+            bioguide_id: bioguide_id.to_string(),
+            role: sponsor_type.to_string(),
+            source_url,
+            congress: bill.congress,
+            item_kind: "bill".to_string(),
+            item_type: Some(bill_type),
+            item_number: Some(bill_number),
+            title: provider_title.map(ToString::to_string),
+            introduced_date,
+            latest_action_date,
+            latest_action_text: latest_action_text.map(ToString::to_string),
+            raw_item,
+        };
+        return Ok((Some(prepared_bill), evidence));
+    }
+
+    let (item_kind, item_type, item_number) = member_legislation_url_identity(&source_url)
+        .unwrap_or_else(|| ("other".to_string(), None, None));
+    let evidence = MemberLegislationEvidenceWrite {
+        bioguide_id: bioguide_id.to_string(),
+        role: sponsor_type.to_string(),
+        source_url,
         congress: bill.congress,
-        bill_type: &bill_type,
-        bill_number,
-        bill_id: &bill_id,
-        title: &bill.title,
+        item_kind,
+        item_type,
+        item_number,
+        title: bill.title,
         introduced_date,
-        origin_chamber: None,
-        policy_area,
         latest_action_date,
-        latest_action_text,
-        status: latest_action_text.unwrap_or("introduced"),
-        url: None,
-        source_run_id: Some(run_id),
-    })
-    .await?;
-    repo.upsert_bill_sponsor(BillSponsorUpsert {
-        bill_id: &bill_id,
-        bioguide_id: Some(bioguide_id),
-        sponsor_type,
-        sponsorship_date: introduced_date,
-        is_original_cosponsor: false,
-        source_run_id: Some(run_id),
-    })
-    .await?;
-    Ok(())
+        latest_action_text: latest_action_text.map(ToString::to_string),
+        raw_item,
+    };
+    Ok((None, evidence))
+}
+
+fn stable_member_legislation_url(
+    bill: &congress_api::MemberSponsoredBill,
+) -> Result<String, String> {
+    if let Some(url) = bill
+        .url
+        .as_deref()
+        .and_then(congress_api::canonical_member_legislation_source_url)
+    {
+        return Ok(url);
+    }
+    let bill_type = bill.bill_type.as_deref().map(str::trim);
+    let number = bill.number.as_deref().map(str::trim);
+    match (bill_type, number) {
+        (Some(bill_type), Some(number)) if !bill_type.is_empty() && !number.is_empty() => {
+            Ok(format!(
+                "https://api.congress.gov/v3/bill/{}/{}/{}",
+                bill.congress,
+                bill_type.to_ascii_lowercase(),
+                number
+            ))
+        }
+        _ => Err("provider row has neither a source URL nor a bill identity".to_string()),
+    }
+}
+
+fn member_legislation_url_identity(
+    source_url: &str,
+) -> Option<(String, Option<String>, Option<i32>)> {
+    let segments = source_url.split('/').collect::<Vec<_>>();
+    let marker = segments
+        .iter()
+        .position(|segment| *segment == "amendment")?;
+    let item_type = segments.get(marker + 2)?.trim().to_ascii_lowercase();
+    let item_number = segments.get(marker + 3)?.trim().parse::<i32>().ok()?;
+    if item_type.is_empty() || item_number <= 0 {
+        return None;
+    }
+    Some(("amendment".to_string(), Some(item_type), Some(item_number)))
+}
+
+fn parse_member_legislation_date(
+    value: Option<&str>,
+    field: &str,
+) -> Result<Option<NaiveDate>, String> {
+    value
+        .map(|date| {
+            NaiveDate::parse_from_str(date, "%Y-%m-%d")
+                .map_err(|error| format!("invalid {field} {date:?}: {error}"))
+        })
+        .transpose()
 }
 
 async fn cmd_refresh_relationships(repo: &Repository) {
@@ -4132,6 +4745,81 @@ mod member_portrait_tests {
         );
         assert_eq!(bioguide_portrait_url("not-an-id"), None);
         assert_eq!(bioguide_portrait_url(""), None);
+    }
+}
+
+#[cfg(test)]
+mod member_legislation_ingest_tests {
+    use super::{
+        member_legislation_concurrency_for, member_legislation_url_identity,
+        prepare_member_legislation_item, stable_member_legislation_url,
+    };
+
+    fn amendment() -> congress_api::MemberSponsoredBill {
+        congress_api::MemberSponsoredBill {
+            congress: 118,
+            url: Some(
+                "https://api.congress.gov/v3/amendment/118/hamdt/725?format=json".to_string(),
+            ),
+            bill_type: None,
+            number: None,
+            title: None,
+            introduced_date: None,
+            latest_action: None,
+            policy_area: None,
+        }
+    }
+
+    #[test]
+    fn official_amendment_rows_keep_a_stable_typed_identity() {
+        let source_url = stable_member_legislation_url(&amendment()).unwrap();
+        assert_eq!(
+            source_url,
+            "https://api.congress.gov/v3/amendment/118/hamdt/725"
+        );
+        assert_eq!(
+            member_legislation_url_identity(&source_url),
+            Some((
+                "amendment".to_string(),
+                Some("hamdt".to_string()),
+                Some(725)
+            ))
+        );
+    }
+
+    #[test]
+    fn rows_without_an_official_url_or_bill_identity_are_rejected() {
+        let mut row = amendment();
+        row.url = None;
+        assert!(stable_member_legislation_url(&row).is_err());
+    }
+
+    #[test]
+    fn nullable_bill_titles_preserve_the_official_row_without_inventing_a_title() {
+        let row = congress_api::MemberSponsoredBill {
+            congress: 119,
+            url: Some("https://api.congress.gov/v3/bill/119/hr/42".to_string()),
+            bill_type: Some("HR".to_string()),
+            number: Some("42".to_string()),
+            title: None,
+            introduced_date: None,
+            latest_action: None,
+            policy_area: None,
+        };
+
+        let (bill, evidence) = prepare_member_legislation_item("A000001", "sponsor", row)
+            .expect("nullable title should not discard a valid official bill identity");
+        let bill = bill.expect("valid bill identity should keep a normalized bill row");
+        assert_eq!(bill.title, "Title unavailable (HR 42)");
+        assert_eq!(evidence.title, None);
+    }
+
+    #[test]
+    fn hardware_profiles_bound_member_refresh_concurrency() {
+        assert_eq!(member_legislation_concurrency_for(Some("gaming")), 1);
+        assert_eq!(member_legislation_concurrency_for(Some("pi")), 1);
+        assert_eq!(member_legislation_concurrency_for(None), 2);
+        assert_eq!(member_legislation_concurrency_for(Some("burst")), 4);
     }
 }
 

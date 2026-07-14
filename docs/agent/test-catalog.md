@@ -142,6 +142,19 @@ multi-row terminal transitions so only the current lease owner can complete or
 retry a job. Live lifecycle proof is still
 required because these structural unit tests do not execute PostgreSQL inserts.
 
+`congress_api/src/pagination.rs` verifies stable advertised counts, exact next
+offsets, bounded pages and 50,000-row totals, premature termination, run-wide
+duplicate bill and official-URL identities, variable page limits, and nullable
+amendment rows that remain available for row-level validation. Client tests
+cover retrying truncated response bodies, typed key-safe authentication errors,
+and no adaptive fallback for permanent failures. `intel_backend/src/bin/ingest.rs`
+verifies official amendment URL classification, rejection of identity-less
+rows, profile-derived 1-4 stream concurrency, resumable source-run validation,
+and preservation of loaded roles. Repository coverage tests require two
+reconciled terminal roles per current Member. Fresh and prior-schema migration
+tests reject unexplained count differences, accept explicitly counted provider
+duplicates, and prove repeated generic evidence upserts remain one row.
+
 ## Frontend Test Files
 
 | Test file | Coverage | Exclusions |
@@ -153,7 +166,7 @@ required because these structural unit tests do not execute PostgreSQL inserts.
 | `frontend/scripts/fec-lda-separation.test.mjs` | FEC/LDA structural separation contract: campaign finance and lobbying amounts never combined | Live data integration |
 | `frontend/scripts/networth-range.test.mjs` | Conservative net worth range validation: null maxima, missing residence, cross-bounds | Live snapshot computation |
 | `frontend/scripts/navigation-registry.test.mjs` | M1 through M5 destination coverage, shared registry use, and command-palette modal/combobox structure | Rendered menu layout and browser focus behavior |
-| `frontend/scripts/member-dossier-isolation.test.mjs` | Superseded and mismatched Member responses cannot commit, route changes clear every dossier section, and one abort signal reaches every dossier request | Browser navigation timing and backend response latency |
+| `frontend/scripts/member-dossier-isolation.test.mjs` | Superseded and mismatched Member responses cannot commit, route changes clear every dossier section, one abort signal reaches every dossier request, stock disclosures use fixed-size replacement pages with honest coverage/conflict states, accessible keyboard tabs, later-page responses cannot cross Member identity, and legislation renders independent sponsor/cosponsor pages with truthful coverage, zero ranges, busy states, and official source links | Browser navigation timing and backend response latency |
 | `frontend/scripts/truth-states.test.mjs` | Genuine zero versus failed-count presentation, independent loading/error/unavailable/empty/partial/loaded request classification with precedence rules, empty influence-network affiliation coverage, and source-supplied cycle metadata | Rendered failure states and live request behavior |
 | `frontend/scripts/detail-request-state.test.mjs` | Detail response classification keeps confirmed 404 absence separate from server and transport failures | Rendered retry interaction and live backend responses |
 | `frontend/scripts/verification-topology.test.mjs` | The default `*.test.mjs` suite excludes populated live flows and the live command can only enter through the isolated-backend wrapper | Whether the populated database satisfies live API assertions |

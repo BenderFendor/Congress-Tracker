@@ -37,8 +37,7 @@ test("the dossier clears every member section and propagates one request signal"
     "setFunding(null)",
     "setVotes([])",
     "setVoteEvidence(null)",
-    "setSponsoredBills([])",
-    "setCosponsoredBills([])",
+    "setLegislationState({ memberId: request.memberId, status: \"loading\", error: null, data: null, pendingSection: null })",
     "setRelationships([])",
     "setDisclosures(null)",
     "setTradePageState({ memberId: request.memberId, status: \"idle\", error: null, offset: 0 })",
@@ -48,7 +47,7 @@ test("the dossier clears every member section and propagates one request signal"
   assert.match(source, /getLegislator\(request\.memberId, request\.signal\)/)
   assert.match(source, /getMemberFunding\(bioguideId, undefined, request\.signal\)/)
   assert.match(source, /getMemberVotes\(bioguideId, 119, request\.signal\)/)
-  assert.match(source, /getMemberLegislation\(bioguideId, 119, request\.signal\)/)
+  assert.match(source, /getMemberLegislation\(bioguideId, \{ limit: 25 \}, request\.signal\)/)
   assert.match(source, /getRelationships\([^]*request\.signal\)/)
   assert.match(source, /getMemberDisclosures\(bioguideId, request\.signal\)/)
   assert.match(source, /return \(\) => request\.cancel\(\)/)
@@ -86,7 +85,11 @@ test("member tabs expose an accessible keyboard and mobile-scroll contract", asy
   assert.match(page, /role="tabpanel"/)
   assert.match(page, /ArrowLeft/)
   assert.match(page, /ArrowRight/)
-  assert.match(page, /scrollIntoView\(\{ behavior: "smooth", block: "nearest", inline: "nearest" \}\)/)
+  assert.match(page, /function centerMemberTab/)
+  assert.match(page, /tablist\.scrollTo\(\{/)
+  assert.match(page, /prefers-reduced-motion: reduce/)
+  assert.match(page, /member-tab-\$\{activeTab\}/)
+  assert.match(page, /\[activeTab, loading\]/)
 })
 
 test("trade page navigation remains bounded and keyed to the visible member", async () => {
@@ -101,4 +104,42 @@ test("trade page navigation remains bounded and keyed to the visible member", as
   assert.match(page, />\s*Previous\s*</)
   assert.match(page, /: "Next"/)
   assert.match(page, /role="alert"/)
+})
+
+test("member legislation renders terminal coverage and official mixed-record evidence", async () => {
+  const service = await readFile(new URL("../lib/services/legislators.ts", import.meta.url), "utf8")
+  const page = await readFile(new URL("../app/legislators/[id]/page.tsx", import.meta.url), "utf8")
+
+  assert.match(service, /related_items:/)
+  assert.match(service, /sponsorOffset/)
+  assert.match(service, /cosponsorOffset/)
+  assert.match(service, /relatedOffset/)
+  assert.match(service, /coverage_scope: "all_history"/)
+  assert.match(service, /coverage:/)
+  assert.match(page, /status: "loaded", error: null, data/)
+  assert.match(page, /Legislation request failed/)
+  assert.match(page, /Retry legislation/)
+  assert.match(page, /legislationGeneration\.current !== generation/)
+  assert.match(page, /Sponsored and cosponsored records reconciled/)
+  assert.match(page, /Legislation coverage is incomplete/)
+  assert.match(page, /Related Amendments and Measures/)
+  assert.match(page, /item\.source_url/)
+  assert.match(page, /memberLegislation\.pagination\.sponsor/)
+  assert.match(page, /memberLegislation\.pagination\.cosponsor/)
+  assert.match(page, /memberLegislation\.pagination\.related_items/)
+  assert.match(page, /href=\{`\/bills\/\$\{bill\.bill_id\}`\}/)
+  assert.match(page, /Official Congress\.gov record/)
+  assert.match(page, /function publicCongressBillUrl/)
+  assert.match(page, /publicCongressAmendmentUrl/)
+  assert.match(page, /publicCongressRelatedUrl/)
+  assert.match(page, /function LegislationRecords/)
+  assert.match(page, /md:grid-cols-\[minmax\(0,1fr\)_minmax\(260px,0\.8fr\)\]/)
+  assert.match(page, /const last = first === 0 \? 0/)
+  assert.match(page, /pendingSection === "sponsor"/)
+  assert.match(page, /roleAdvertisedCount\("sponsor"\) === 0/)
+  assert.match(page, /No sponsored bills are present in this bill section/)
+  assert.doesNotMatch(page, /line-clamp-3/)
+  assert.match(page, /duplicate provider rows collapsed by official URL/)
+  assert.match(page, /No terminal all-member coverage ledger is available/)
+  assert.doesNotMatch(page, /No sponsor links loaded for the 119th Congress/)
 })

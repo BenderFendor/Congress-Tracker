@@ -426,6 +426,25 @@ async fn test_legislator_legislation_endpoint() {
     assert!(body["sponsor"].is_array(), "sponsor should be an array");
     assert!(body["cosponsor"].is_array(), "cosponsor should be an array");
     assert!(
+        body["related_items"].is_array(),
+        "related amendment and measure evidence should be an array"
+    );
+    assert!(
+        body["coverage"].is_array(),
+        "per-role terminal coverage should be an array"
+    );
+    assert_eq!(body["coverage_scope"], "all_history");
+    assert!(
+        body["pagination"].is_object(),
+        "independent section pagination should be present"
+    );
+    for section in ["sponsor", "cosponsor", "related_items"] {
+        assert!(body["pagination"][section]["total"].as_i64().is_some());
+        assert!(body["pagination"][section]["limit"].as_i64().is_some());
+        assert!(body["pagination"][section]["offset"].as_i64().is_some());
+        assert!(body["pagination"][section]["has_more"].as_bool().is_some());
+    }
+    assert!(
         body["provenance"].is_object(),
         "provenance should be present"
     );
@@ -442,6 +461,33 @@ async fn test_legislator_legislation_endpoint() {
                 first["status"].as_str().is_some(),
                 "bill should have status"
             );
+            assert!(
+                first.get("url").is_some(),
+                "bill should expose its official URL field"
+            );
+        }
+    }
+
+    if let Some(coverage) = body["coverage"].as_array() {
+        for role in coverage {
+            assert!(matches!(
+                role["role"].as_str(),
+                Some("sponsor" | "cosponsor")
+            ));
+            assert!(role["status"].as_str().is_some());
+            assert!(role["refresh_congress"].as_i64().is_some());
+            assert!(role["rows_seen"].as_i64().is_some());
+            assert!(role["rows_written"].as_i64().is_some());
+            assert!(role["duplicate_rows"].as_i64().is_some());
+            assert!(role["pages_fetched"].as_i64().is_some());
+        }
+    }
+
+    if let Some(related_items) = body["related_items"].as_array() {
+        for item in related_items {
+            assert!(item["source_url"].as_str().is_some());
+            assert!(item["item_kind"].as_str().is_some());
+            assert!(item["sponsor_type"].as_str().is_some());
         }
     }
 
@@ -461,9 +507,14 @@ async fn test_legislator_legislation_endpoint() {
 
     summarize_json("legislation", &body);
     println!(
-        "  ✓ sponsor={}, cosponsor={}",
+        "  ✓ sponsor={}, cosponsor={}, related={}, coverage_roles={}",
         body["sponsor"].as_array().map(|a| a.len()).unwrap_or(0),
         body["cosponsor"].as_array().map(|a| a.len()).unwrap_or(0),
+        body["related_items"]
+            .as_array()
+            .map(|a| a.len())
+            .unwrap_or(0),
+        body["coverage"].as_array().map(|a| a.len()).unwrap_or(0),
     );
 
     kill_server(&mut child).await;

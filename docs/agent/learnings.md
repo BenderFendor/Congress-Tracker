@@ -154,3 +154,42 @@ What failed:
 Future agents should:
 - Treat public cache configuration as delivery policy, not an ingestion
   mechanism. Test public routes structurally for provider calls and writes.
+
+## 2026-07-13 - Congress.gov Member legislation is a mixed evidence stream
+
+Context:
+- The official sponsored/cosponsored endpoints advertise bills and amendments
+  in one paginated count. Amendment rows retain an official URL but may have
+  null bill-style type, number, title, and policy fields.
+
+What worked:
+- Count every raw row for pagination, use valid bill identities or normalized
+  official URLs for duplicate detection, and preserve every accepted row in a
+  generic Member-legislation evidence ledger.
+- Upsert one provider page in one database transaction. Three bulk statements
+  replace hundreds of per-record round trips while keeping bill, sponsor, and
+  evidence writes atomic at page scope.
+- Separate provider completeness (`rows_seen`) from successful item persistence
+  (`rows_written`) and reported duplicate rows. Publish `loaded` only when raw
+  provider rows equal unique persisted evidence plus explicitly collapsed
+  duplicates.
+
+Future agents should:
+- Do not model mixed provider rows as one non-null bill struct.
+- Preserve official amendment and other measure URLs even when the bill fields
+  are absent, and expose those records on the Member dossier.
+- Keep normal refresh concurrency profile-aware: one stream during gaming/Pi
+  use, two balanced, and four only as an explicit burst ceiling.
+- Keep response-body parsing inside the retry loop. A successful response head
+  can still end in a timed-out or truncated body.
+- Adapt page size only for size-sensitive request/body/decode failures. Typed
+  authentication and permanent client errors should stop the bounded active
+  wave instead of triggering four versions of the same invalid request.
+- Derive safety bounds from live distributions. Congress 119 includes Member
+  roles above 10,000 rows; the verified maximum was 17,397, so the contract uses
+  a still-bounded 50,000 ceiling.
+- Sort page writes before bulk persistence and retry only PostgreSQL deadlock or
+  serialization failures. Never count writes until the transaction commits.
+- Treat watchdog interruption as a recovery test. The initial four-hour run
+  peaked at 82,028 KiB and was resumed under the same source-run ID; the final
+  250-second continuation peaked at 49,432 KiB and preserved loaded roles.

@@ -413,3 +413,35 @@ the detailed worksheets under `docs/agent/traces/`.
   direct campaign receipts from independent support and opposition spending.
 - Aligned the frontend sponsor contract with the backend and kept explicit LDA
   bill citations visually and semantically separate from heuristic suggestions.
+
+## 2026-07-13 - Exhaustive Member Legislation Coverage
+
+- Exhausted stable Congress.gov sponsored and cosponsored pagination for every
+  current Member and retained request, page, row, and persistence failures in a
+  per-Member/per-role terminal coverage ledger.
+- Preserved mixed amendment rows by their official Congress.gov URLs instead of
+  failing the complete response page when bill-style fields are null.
+- Added a generic Member-legislation evidence ledger, page-atomic bulk bill,
+  sponsor, and evidence writes, exact advertised/seen/written reconciliation,
+  current-member snapshot fingerprints, interrupted-run recovery, and a
+  process-wide advisory lock.
+- Recorded exact official-URL duplicates separately so cross-page provider
+  repetition remains visible without multiplying canonical dossier evidence.
+- Made scheduled refresh use the native ingest executable with calendar-derived
+  Congress/cycle values and profile-aware 1-4 stream concurrency so gaming/Pi
+  mode remains low-impact while burst mode finishes faster.
+- Added Member dossier coverage diagnostics and official related-amendment
+  links rather than rendering an unexplained blank Bills section.
+- Retry transient send, response-body, 429, and server failures without leaking
+  the API key; typed authentication failures cancel the remaining roster wave.
+  Size-sensitive failures alone reduce page size through 250, 125, 62, and 50.
+- Permit bounded Member-role totals up to 50,000 after live evidence disproved
+  the original 10,000 ceiling; the largest observed role contained 17,397 rows.
+- Retry page transactions only for PostgreSQL deadlock and serialization codes,
+  and resume interrupted source runs without resetting already loaded roles.
+- Completed Congress 119 coverage for 537 Members and 1,074 roles: 1,219,881
+  advertised and seen rows, 1,219,187 persisted rows, 694 duplicates, and 5,544
+  pages, with zero non-loaded or unreconciled roles.
+- Added independent sponsor/cosponsor pagination, truthful zero and coverage
+  ranges, internal bill links, official Congress.gov links, reduced-motion busy
+  states, and responsive desktop/mobile Bills-tab layouts.

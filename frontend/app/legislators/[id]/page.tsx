@@ -1,7 +1,7 @@
 "use client"
 
 import { createLogger } from "@/lib/tracing"
-import { useState, useEffect } from "react"
+import { useEffect, useRef, useState } from "react"
 import type { KeyboardEvent, MouseEvent } from "react"
 import Link from "next/link"
 import {
@@ -13,6 +13,7 @@ import {
   AlertCircle
 } from "lucide-react"
 import { getLegislator, getMemberLegislation, Legislator } from "@/lib/services/legislators"
+import type { MemberLegislationPage, MemberLegislationResponse } from "@/lib/services/legislators"
 import { getMemberFunding, MemberFunding } from "@/lib/services/funding"
 import { classifyFundingCoverage } from "@/lib/funding-coverage.mjs"
 import { ProvenanceSummary } from "@/lib/services/provenance"
@@ -52,6 +53,93 @@ interface BillRow {
   status: string;
   latest_action: string;
   date?: string;
+  url?: string | null;
+}
+
+type LegislationSection = "sponsor" | "cosponsor" | "related_items"
+
+type LegislationLoadState = {
+  memberId: string
+  status: "idle" | "loading" | "loaded" | "error"
+  error: string | null
+  data: MemberLegislationResponse | null
+  pendingSection: LegislationSection | null
+}
+
+function LegislationPager({
+  label,
+  page,
+  busy,
+  disabled,
+  onPage,
+}: {
+  label: string
+  page: MemberLegislationPage
+  busy: boolean
+  disabled: boolean
+  onPage: (offset: number) => void
+}) {
+  const first = page.total === 0 || page.offset >= page.total ? 0 : page.offset + 1
+  const last = first === 0 ? 0 : Math.min(page.offset + page.limit, page.total)
+  return (
+    <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-border pt-4" aria-busy={busy}>
+      <button
+        type="button"
+        onClick={() => onPage(Math.max(0, page.offset - page.limit))}
+        disabled={page.offset === 0 || disabled}
+        aria-label={`Previous ${label} page`}
+        className="min-h-11 border border-border bg-card px-4 py-2 font-mono text-xs font-semibold uppercase tracking-wide text-foreground transition-colors hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        Previous
+      </button>
+      <button
+        type="button"
+        onClick={() => onPage(page.offset + page.limit)}
+        disabled={!page.has_more || disabled}
+        aria-label={`Next ${label} page`}
+        className="min-h-11 border border-border bg-card px-4 py-2 font-mono text-xs font-semibold uppercase tracking-wide text-foreground transition-colors hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        {busy ? "Loading…" : "Next"}
+      </button>
+      <span className="font-mono text-xs text-muted-foreground" aria-live="polite">
+        Showing {first.toLocaleString()}–{last.toLocaleString()} of {page.total.toLocaleString()}
+      </span>
+    </div>
+  )
+}
+
+function LegislationRecords({ bills }: { bills: BillRow[] }) {
+  return (
+    <ul className="divide-y divide-border border-y border-border">
+      {bills.map((bill) => (
+        <li key={bill.bill_id} className="grid gap-4 px-1 py-5 md:grid-cols-[minmax(0,1fr)_minmax(260px,0.8fr)] md:px-4">
+          <div className="min-w-0">
+            <Link href={`/bills/${bill.bill_id}`} className="font-mono text-xs font-bold uppercase tracking-wide text-accent hover:underline">
+              {bill.bill_id}
+            </Link>
+            <Link href={`/bills/${bill.bill_id}`} className="mt-2 block font-serif text-lg font-medium leading-snug text-foreground transition-colors hover:text-accent">
+              {bill.title}
+            </Link>
+            {bill.url ? (
+              <a href={bill.url} target="_blank" rel="noreferrer" className="mt-3 inline-flex min-h-11 items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-wide text-muted-foreground transition-colors hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+                Official Congress.gov record <ExternalLink size={13} aria-hidden="true" />
+              </a>
+            ) : null}
+            {bill.status !== bill.latest_action ? (
+              <p className="mt-2 font-mono text-[11px] uppercase tracking-wide text-muted-foreground">{bill.status}</p>
+            ) : null}
+          </div>
+          <div className="min-w-0 border-l-2 border-accent/40 pl-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+              <span>Latest action</span>
+              {bill.date ? <span>{bill.date}</span> : null}
+            </div>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">{bill.latest_action}</p>
+          </div>
+        </li>
+      ))}
+    </ul>
+  )
 }
 
 function completedServiceYears(startDate: string | null | undefined) {
@@ -80,6 +168,47 @@ function externalIdentifierUrl(scheme: string, value: string) {
   return routes[scheme.toLowerCase()]?.(value) ?? null
 }
 
+function publicCongressAmendmentUrl(congress: number, itemType?: string | null, itemNumber?: number | null) {
+  if (!itemType || !itemNumber) return null
+  const publicType = itemType.toLowerCase() === "hamdt"
+    ? "house-amendment"
+    : itemType.toLowerCase() === "samdt"
+      ? "senate-amendment"
+      : null
+  return publicType
+    ? `https://www.congress.gov/amendment/${congress}th-congress/${publicType}/${itemNumber}`
+    : null
+}
+
+function publicCongressBillUrl(billId: string, sourceUrl?: string | null) {
+  const match = /^([a-z]+)(\d+)-(\d+)$/.exec(billId.toLowerCase())
+  const publicTypes: Record<string, string> = {
+    hr: "house-bill",
+    s: "senate-bill",
+    hjres: "house-joint-resolution",
+    sjres: "senate-joint-resolution",
+    hconres: "house-concurrent-resolution",
+    sconres: "senate-concurrent-resolution",
+    hres: "house-resolution",
+    sres: "senate-resolution",
+  }
+  if (match && publicTypes[match[1]]) {
+    return `https://www.congress.gov/bill/${match[3]}th-congress/${publicTypes[match[1]]}/${match[2]}`
+  }
+  return sourceUrl?.startsWith("https://www.congress.gov/") ? sourceUrl : null
+}
+
+function publicCongressRelatedUrl(
+  congress: number,
+  itemType?: string | null,
+  itemNumber?: number | null,
+  sourceUrl?: string | null,
+) {
+  return publicCongressAmendmentUrl(congress, itemType, itemNumber)
+    ?? (itemType && itemNumber ? publicCongressBillUrl(`${itemType}${itemNumber}-${congress}`) : null)
+    ?? (sourceUrl?.startsWith("https://www.congress.gov/") ? sourceUrl : null)
+}
+
 const log = createLogger("LegislatorPage")
 
 const MEMBER_TABS = [
@@ -92,6 +221,16 @@ const MEMBER_TABS = [
   { id: "disclosures", label: "Disclosures" },
   { id: "biography", label: "Biography" },
 ] as const
+
+function centerMemberTab(target: HTMLButtonElement | null, behavior: ScrollBehavior) {
+  if (!target) return
+  const tablist = target.closest('[role="tablist"]') as HTMLElement | null
+  if (!tablist) return
+  tablist.scrollTo({
+    left: Math.max(0, target.offsetLeft - (tablist.clientWidth - target.offsetWidth) / 2),
+    behavior,
+  })
+}
 
 function tradeConflictEvidence(trade: StockTrade) {
   if (trade.conflict_flag_count <= 0) {
@@ -108,14 +247,20 @@ function tradeConflictEvidence(trade: StockTrade) {
 }
 
 export default function LegislatorProfilePage({ params }: { params: { id: string } }) {
+  const legislationGeneration = useRef(0)
   const [activeTab, setActiveTab] = useState("overview")
   const [legislator, setLegislator] = useState<Legislator | null>(null)
   const [funding, setFunding] = useState<MemberFunding | null>(null)
   const [fundingError, setFundingError] = useState<string | null>(null)
   const [votes, setVotes] = useState<Vote[]>([])
   const [voteEvidence, setVoteEvidence] = useState<MemberVotesResult | null>(null)
-  const [sponsoredBills, setSponsoredBills] = useState<BillRow[]>([])
-  const [cosponsoredBills, setCosponsoredBills] = useState<BillRow[]>([])
+  const [legislationState, setLegislationState] = useState<LegislationLoadState>({
+    memberId: "",
+    status: "idle",
+    error: null,
+    data: null,
+    pendingSection: null,
+  })
   const [relationships, setRelationships] = useState<RelationshipEvidence[]>([])
   const [disclosures, setDisclosures] = useState<MemberDisclosures | null>(null)
   const [loading, setLoading] = useState(true)
@@ -128,7 +273,14 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
 
   function selectTab(tabId: string, target: HTMLButtonElement) {
     setActiveTab(tabId)
-    target.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" })
+    const url = new URL(window.location.href)
+    if (tabId === "overview") url.searchParams.delete("tab")
+    else url.searchParams.set("tab", tabId)
+    window.history.replaceState(window.history.state, "", url)
+    centerMemberTab(
+      target,
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+    )
   }
 
   function handleTabClick(tabId: string, event: MouseEvent<HTMLButtonElement>) {
@@ -191,17 +343,57 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
     }
   }
 
+  async function loadLegislationPage(section: LegislationSection | null, targetOffset = 0) {
+    if (!legislator) return
+    const memberId = legislator.bioguide_id || legislator.id
+    const current = legislationState.data
+    const sponsorOffset = section === "sponsor" ? targetOffset : current?.pagination.sponsor.offset ?? 0
+    const cosponsorOffset = section === "cosponsor" ? targetOffset : current?.pagination.cosponsor.offset ?? 0
+    const relatedOffset = section === "related_items" ? targetOffset : current?.pagination.related_items.offset ?? 0
+    const generation = legislationGeneration.current + 1
+    legislationGeneration.current = generation
+    setLegislationState((state) => state.memberId === memberId
+      ? { ...state, status: "loading", error: null, pendingSection: section }
+      : state)
+
+    try {
+      const data = await getMemberLegislation(memberId, {
+        limit: current?.pagination.sponsor.limit ?? 25,
+        sponsorOffset,
+        cosponsorOffset,
+        relatedOffset,
+      })
+      if (legislationGeneration.current !== generation) return
+      setLegislationState((state) => state.memberId === memberId
+        ? { memberId, status: "loaded", error: null, data, pendingSection: null }
+        : state)
+    } catch (error) {
+      if (legislationGeneration.current !== generation) return
+      setLegislationState((state) => state.memberId === memberId
+        ? {
+            ...state,
+            status: "error",
+            error: error instanceof Error ? error.message : "Legislation records could not be loaded.",
+            pendingSection: null,
+          }
+        : state)
+    }
+  }
+
   useEffect(() => {
     const request = createMemberDossierRequest(params.id)
+    const legislationRequestGeneration = legislationGeneration.current + 1
+    legislationGeneration.current = legislationRequestGeneration
 
-    setActiveTab("overview")
+    const requestedTab = new URLSearchParams(window.location.search).get("tab")
+    const validTab = MEMBER_TABS.find(tab => tab.id === requestedTab)?.id ?? "overview"
+    setActiveTab(validTab)
     setLegislator(null)
     setFunding(null)
     setFundingError(null)
     setVotes([])
     setVoteEvidence(null)
-    setSponsoredBills([])
-    setCosponsoredBills([])
+    setLegislationState({ memberId: request.memberId, status: "loading", error: null, data: null, pendingSection: null })
     setRelationships([])
     setDisclosures(null)
     setTradePageState({ memberId: request.memberId, status: "idle", error: null, offset: 0 })
@@ -237,13 +429,22 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
             if (!isAbortError(e)) log.error("Background fetch failed", { error: String(e) })
           })
 
-          getMemberLegislation(bioguideId, 119, request.signal).then(data => {
+          getMemberLegislation(bioguideId, { limit: 25 }, request.signal).then(data => {
+            if (legislationGeneration.current !== legislationRequestGeneration) return
             request.commit(request.memberId, () => {
-              setSponsoredBills(data.sponsor.map(mapLegislationToBill))
-              setCosponsoredBills(data.cosponsor.map(mapLegislationToBill))
+              setLegislationState({ memberId: request.memberId, status: "loaded", error: null, data, pendingSection: null })
             })
           }).catch(e => {
-            if (!isAbortError(e)) log.error("Background fetch failed", { error: String(e) })
+            if (isAbortError(e)) return
+            if (legislationGeneration.current !== legislationRequestGeneration) return
+            request.commit(request.memberId, () => setLegislationState({
+              memberId: request.memberId,
+              status: "error",
+              error: e instanceof Error ? e.message : "Legislation records could not be loaded.",
+              data: null,
+              pendingSection: null,
+            }))
+            log.error("Legislation fetch failed", { error: String(e) })
           })
 
           getRelationships({ subjectKey: `member:${bioguideId}`, limit: 25 }, request.signal)
@@ -269,12 +470,23 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
     return () => request.cancel()
   }, [params.id])
 
+  useEffect(() => {
+    const revealTabFrame = window.requestAnimationFrame(() => {
+      centerMemberTab(
+        document.getElementById(`member-tab-${activeTab}`) as HTMLButtonElement | null,
+        "auto",
+      )
+    })
+    return () => window.cancelAnimationFrame(revealTabFrame)
+  }, [activeTab, loading])
+
   function mapLegislationToBill(bill: {
     bill_id: string
     title: string
     status: string
     latest_action_date?: string | null
     latest_action_text?: string | null
+    url?: string | null
   }): BillRow {
     return {
       bill_id: bill.bill_id,
@@ -282,8 +494,21 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
       status: bill.status,
       latest_action: bill.latest_action_text || "No latest action recorded",
       date: bill.latest_action_date || undefined,
+      url: publicCongressBillUrl(bill.bill_id, bill.url),
     }
   }
+
+  const memberLegislation = legislationState.data
+  const sponsoredBills = (memberLegislation?.sponsor ?? []).map(mapLegislationToBill)
+  const cosponsoredBills = (memberLegislation?.cosponsor ?? []).map(mapLegislationToBill)
+  const roleCoverageExact = (role: "sponsor" | "cosponsor") => memberLegislation?.coverage.some(item =>
+    item.role === role
+      && item.status === "loaded"
+      && item.advertised_count === item.rows_seen
+      && item.rows_seen === item.rows_written + item.duplicate_rows
+  ) ?? false
+  const roleAdvertisedCount = (role: "sponsor" | "cosponsor") => memberLegislation?.coverage.find(item => item.role === role)?.advertised_count ?? null
+  const legislationCoverageExact = roleCoverageExact("sponsor") && roleCoverageExact("cosponsor")
 
   if (loading) return (
     <div className="min-h-screen bg-background flex items-center justify-center">
@@ -864,69 +1089,143 @@ export default function LegislatorProfilePage({ params }: { params: { id: string
 
           {activeTab === 'bills' && (
             <div className="space-y-8">
-              <ArchivePanel title="Sponsored Legislation" kicker="Primary Sponsor">
-                {sponsoredBills.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <table className="w-full border-collapse font-sans text-sm">
-                      <thead>
-                        <tr className="border-b border-border text-left font-mono text-xs uppercase text-muted-foreground">
-                          <th className="p-4">Bill ID</th>
-                          <th className="p-4">Title</th>
-                          <th className="p-4">Status</th>
-                          <th className="p-4">Latest Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {sponsoredBills.map((b, idx) => (
-                          <tr key={idx} className="border-b border-border hover:bg-muted/40 transition-colors">
-                            <td className="p-4 font-mono text-xs font-bold text-accent whitespace-nowrap">{b.bill_id}</td>
-                            <td className="p-4 font-serif font-medium">{b.title}</td>
-                            <td className="p-4 font-mono text-xs uppercase whitespace-nowrap">{b.status}</td>
-                            <td className="p-4 text-xs text-muted-foreground">{b.latest_action}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+              {legislationState.status === "loading" && !memberLegislation ? (
+                <div className="border border-border bg-card p-6" aria-live="polite" aria-busy="true">
+                  <div className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-accent">Congress.gov records</div>
+                  <div className="mt-3 h-2 w-full max-w-md overflow-hidden bg-muted">
+                    <div className="h-full w-1/2 animate-pulse bg-accent" />
+                  </div>
+                  <p className="mt-3 text-sm text-muted-foreground">Loading this member&apos;s linked legislation history…</p>
+                </div>
+              ) : legislationState.status === "error" && !memberLegislation ? (
+                <div className="border border-destructive/50 bg-card p-6" role="alert">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="mt-0.5 shrink-0 text-destructive" size={20} />
+                    <div>
+                      <h3 className="font-serif text-xl font-semibold text-foreground">Legislation request failed</h3>
+                      <p className="mt-2 text-sm leading-6 text-muted-foreground">{legislationState.error}</p>
+                      <button
+                        type="button"
+                        onClick={() => loadLegislationPage(null)}
+                        className="mt-4 border border-border bg-card px-4 py-2 font-mono text-xs font-semibold uppercase tracking-wide text-foreground transition-colors hover:border-accent hover:text-accent"
+                      >
+                        Retry legislation
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : memberLegislation ? (
+                <>
+              {legislationState.status === "error" ? (
+                <div className="flex flex-wrap items-center justify-between gap-3 border border-destructive/50 bg-card p-4" role="alert">
+                  <p className="text-sm text-muted-foreground">{legislationState.error} The last loaded page remains visible.</p>
+                  <button type="button" onClick={() => loadLegislationPage(null)} className="font-mono text-xs font-semibold uppercase tracking-wide text-accent hover:underline">Retry</button>
+                </div>
+              ) : null}
+              <div className="border border-border bg-card p-5">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <div className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-accent">Congress.gov coverage</div>
+                    <h3 className="mt-2 font-serif text-xl font-semibold text-foreground">
+                      {memberLegislation.coverage.length === 2 && memberLegislation.coverage.every(item => item.status === "loaded" && item.advertised_count === item.rows_seen && item.rows_seen === item.rows_written + item.duplicate_rows)
+                        ? "Sponsored and cosponsored records reconciled"
+                        : "Legislation coverage is incomplete"}
+                    </h3>
+                  </div>
+                  <ProvenanceBadge provenance={memberLegislation.provenance} />
+                </div>
+                {memberLegislation?.coverage.length ? (
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    {memberLegislation.coverage.map(item => (
+                      <div key={item.role} className="border border-border bg-muted/20 p-3 font-mono text-xs text-muted-foreground">
+                        <div className="font-semibold uppercase text-foreground">{item.role}</div>
+                        <div className="mt-1">{item.rows_written.toLocaleString()} of {item.advertised_count?.toLocaleString() ?? "unknown"} career records persisted across {item.pages_fetched.toLocaleString()} pages</div>
+                        {item.duplicate_rows > 0 ? <div className="mt-1">{item.duplicate_rows.toLocaleString()} duplicate provider rows collapsed by official URL</div> : null}
+                        {item.error_message ? <div className="mt-2 text-destructive">{item.error_message}</div> : null}
+                      </div>
+                    ))}
                   </div>
                 ) : (
+                  <p className="mt-3 text-sm leading-6 text-muted-foreground">No terminal all-member coverage ledger is available. Records below may be partial.</p>
+                )}
+                <p className="mt-4 border-t border-border pt-3 font-mono text-[11px] leading-5 text-muted-foreground">
+                  {legislationCoverageExact
+                    ? `Coverage scope: reconciled provider history from refresh snapshot ${memberLegislation.coverage_snapshot_congress ? `Congress ${memberLegislation.coverage_snapshot_congress}` : "not recorded"}.`
+                    : "Coverage target: all provider history. No complete reconciled snapshot is currently available."}
+                  {memberLegislation.latest_attempt?.status === "running"
+                    ? " A newer refresh is currently running."
+                    : memberLegislation.latest_attempt && memberLegislation.latest_attempt.status !== "success"
+                      ? legislationCoverageExact
+                        ? ` The latest refresh attempt ended ${memberLegislation.latest_attempt.status.replaceAll("_", " ")}; the reconciled snapshot above remains the last known complete evidence.`
+                        : ` The latest refresh attempt ended ${memberLegislation.latest_attempt.status.replaceAll("_", " ")}.`
+                      : ""}
+                </p>
+              </div>
+              <ArchivePanel title="Sponsored Legislation" kicker="Primary Sponsor">
+                {sponsoredBills.length > 0 ? (
+                  <LegislationRecords bills={sponsoredBills} />
+                ) : (
                   <div className="border border-border bg-muted/20 p-6">
-                    <div className="font-serif text-lg font-semibold text-foreground">No sponsor links loaded for the 119th Congress</div>
-                    <p className="mt-2 text-sm leading-6 text-muted-foreground">This is a Congress.gov linkage coverage gap, not evidence that this member sponsored no legislation. The page does not infer sponsorship from titles or names.</p>
+                    <div className="font-serif text-lg font-semibold text-foreground">{roleCoverageExact("sponsor") && memberLegislation.pagination.sponsor.total === 0 ? "No sponsored bills in this section" : "Sponsored legislation is unavailable for this coverage snapshot"}</div>
+                    <p className="mt-2 text-sm leading-6 text-muted-foreground">{roleCoverageExact("sponsor") && memberLegislation.pagination.sponsor.total === 0 ? roleAdvertisedCount("sponsor") === 0 ? "Congress.gov reports zero sponsor-linked records in the reconciled provider history." : "No sponsored bills are present in this bill section. Related official records may appear below." : "This is a Congress.gov linkage coverage gap, not evidence that this member sponsored no legislation. The page does not infer sponsorship from titles or names."}</p>
                   </div>
                 )}
+                <LegislationPager label="sponsored legislation" page={memberLegislation.pagination.sponsor} busy={legislationState.pendingSection === "sponsor"} disabled={legislationState.status === "loading"} onPage={(offset) => loadLegislationPage("sponsor", offset)} />
               </ArchivePanel>
 
               <ArchivePanel title="Cosponsored Legislation" kicker="Co-Sponsor">
                 {cosponsoredBills.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <table className="w-full border-collapse font-sans text-sm">
-                      <thead>
-                        <tr className="border-b border-border text-left font-mono text-xs uppercase text-muted-foreground">
-                          <th className="p-4">Bill ID</th>
-                          <th className="p-4">Title</th>
-                          <th className="p-4">Status</th>
-                          <th className="p-4">Latest Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {cosponsoredBills.map((b, idx) => (
-                          <tr key={idx} className="border-b border-border hover:bg-muted/40 transition-colors">
-                            <td className="p-4 font-mono text-xs font-bold text-accent whitespace-nowrap">{b.bill_id}</td>
-                            <td className="p-4 font-serif font-medium">{b.title}</td>
-                            <td className="p-4 font-mono text-xs uppercase whitespace-nowrap">{b.status}</td>
-                            <td className="p-4 text-xs text-muted-foreground">{b.latest_action}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <LegislationRecords bills={cosponsoredBills} />
                 ) : (
                   <div className="border border-border bg-muted/20 p-6">
-                    <div className="font-serif text-lg font-semibold text-foreground">No cosponsor links loaded for the 119th Congress</div>
-                    <p className="mt-2 text-sm leading-6 text-muted-foreground">Cosponsorship is shown only when the canonical bill-to-member relation is present. Missing ingestion is reported as unavailable rather than a factual zero.</p>
+                    <div className="font-serif text-lg font-semibold text-foreground">{roleCoverageExact("cosponsor") && memberLegislation.pagination.cosponsor.total === 0 ? "No cosponsored bills in this section" : "Cosponsored legislation is unavailable for this coverage snapshot"}</div>
+                    <p className="mt-2 text-sm leading-6 text-muted-foreground">{roleCoverageExact("cosponsor") && memberLegislation.pagination.cosponsor.total === 0 ? roleAdvertisedCount("cosponsor") === 0 ? "Congress.gov reports zero cosponsor-linked records in the reconciled provider history." : "No cosponsored bills are present in this bill section. Related official records may appear below." : "Cosponsorship is shown only when the canonical bill-to-member relation is present. Missing ingestion is reported as unavailable rather than a factual zero."}</p>
                   </div>
                 )}
+                <LegislationPager label="cosponsored legislation" page={memberLegislation.pagination.cosponsor} busy={legislationState.pendingSection === "cosponsor"} disabled={legislationState.status === "loading"} onPage={(offset) => loadLegislationPage("cosponsor", offset)} />
               </ArchivePanel>
+              <ArchivePanel title="Related Amendments and Measures" kicker="Official linked records">
+                {memberLegislation?.related_items.length ? (
+                  <div className="grid gap-3">
+                    {memberLegislation.related_items.map(item => {
+                      const identifier = item.item_number
+                        ? `${item.item_type?.toUpperCase() || item.item_kind} ${item.item_number}`
+                        : item.item_kind
+                      const publicUrl = publicCongressRelatedUrl(item.congress, item.item_type, item.item_number, item.source_url)
+                      const content = (
+                        <>
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="font-mono text-xs font-semibold uppercase tracking-wide text-accent">{identifier} · {item.sponsor_type}</div>
+                            {publicUrl ? <ExternalLink size={14} className="text-muted-foreground transition-colors group-hover:text-accent" /> : null}
+                          </div>
+                          <div className="mt-2 font-serif font-medium text-foreground">{item.title || item.latest_action_text || "Official Congress.gov record"}</div>
+                          {item.latest_action_date ? <div className="mt-2 font-mono text-xs text-muted-foreground">Latest action {item.latest_action_date}</div> : null}
+                        </>
+                      )
+                      return publicUrl ? (
+                        <a
+                          key={`${item.sponsor_type}:${item.source_url}`}
+                          href={publicUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="group border border-border bg-card p-4 transition-colors hover:border-accent"
+                        >
+                          {content}
+                        </a>
+                      ) : (
+                        <div key={`${item.sponsor_type}:${item.source_url}`} className="border border-border bg-card p-4">
+                          {content}
+                        </div>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div className="border border-border bg-muted/20 p-6 text-sm text-muted-foreground">{memberLegislation.pagination.related_items.total === 0 && legislationCoverageExact ? "No additional amendment or measure records are linked in the reconciled provider history." : memberLegislation.pagination.related_items.total > 0 ? "This related-record page is empty; return to the previous page." : "Related amendment and measure coverage is unavailable until both legislation roles reconcile."}</div>
+                )}
+                <LegislationPager label="related legislation" page={memberLegislation.pagination.related_items} busy={legislationState.pendingSection === "related_items"} disabled={legislationState.status === "loading"} onPage={(offset) => loadLegislationPage("related_items", offset)} />
+              </ArchivePanel>
+                </>
+              ) : null}
             </div>
           )}
 

@@ -1,5 +1,31 @@
 # Known Errors
 
+## A Concurrent Backend Applied An In-Progress Migration
+
+Symptom:
+
+```text
+migration N was previously applied but has been modified
+```
+
+Cause:
+
+- Another agent or development backend started while a new migration file was
+  still being refined in the shared worktree.
+- Later edits changed the file checksum recorded in `_sqlx_migrations`.
+
+Fix:
+
+1. Query the installed checksum and inspect the applied schema.
+2. Restore the applied migration byte-for-byte, including trailing newlines.
+3. Put every refinement in the next forward migration. Never rewrite the
+   `_sqlx_migrations` ledger to hide drift.
+4. Compare file SHA-384 with installed checksums before restarting any migrator.
+5. Coordinate migration ownership in `docs/agent/hey.md`; do not launch a
+   backend against the shared database until the new migration bytes are final.
+
+---
+
 ## Next Dev Loses Webpack Chunks During A Concurrent Production Build
 
 Symptom:
@@ -231,9 +257,28 @@ Cause:
 - Congress.gov API may change response shapes between releases
 
 Fix:
-1. Use the `raw_json` field in database tables to inspect the actual API response
-2. Update the corresponding types in `backend/crates/congress_api/src/types.rs`
-3. Update the ingest parser in `backend/crates/intel_backend/src/ingest/`
+1. Inspect the exact official response before changing the type. Member
+   sponsored/cosponsored pages legitimately mix bill rows with amendment rows;
+   amendment rows have a canonical `url` but null `type`, `number`, and `title`.
+2. Decode nullable row fields without failing the complete page, then validate
+   each row independently and preserve it in `member_legislation_items`.
+3. Keep bill/member upserts and the raw official evidence page-atomic. A
+   terminal `loaded` coverage row requires `advertised_count = rows_seen =
+   rows_written + duplicate_rows`; do not turn a nullable amendment into a
+   request failure or silently discard it.
+4. If an in-progress migration has already been installed by another process,
+   restore its exact SHA-384 bytes and add the correction as a new forward
+   migration. Never rewrite an applied migration.
+5. Do not impose a 10,000-row Member-role ceiling. Congress 119 live data
+   contained a 17,397-row role; the bounded implementation ceiling is 50,000.
+6. Retry transient sends, body reads, 429s, and 5xx responses inside the HTTP
+   attempt loop. Reduce page size through 250, 125, 62, and 50 only for request,
+   body, or decode timeouts; authentication and other permanent 4xx failures
+   must remain typed terminal errors.
+7. Retry page transactions only for PostgreSQL `40P01` deadlocks and `40001`
+   serialization failures. If an external watchdog interrupts a long backfill,
+   resume the same source run with `member-legislation-all --congress N
+   --resume-run-id UUID`; loaded Member roles must never be reset.
 
 ## Congress.gov vote resource returns 404
 

@@ -10,7 +10,7 @@ User=congress_tracker
 WorkingDirectory=/home/congress_tracker/classwork/congress-tracker/backend
 EnvironmentFile=/home/congress_tracker/classwork/congress-tracker/.env
 Environment=WORKER_STORAGE_DIR=/var/lib/congress-tracker/disclosures
-ExecStart=/home/congress_tracker/.cargo/bin/cargo run -p intel_worker --bin intel_worker --release
+ExecStart=/home/congress_tracker/classwork/congress-tracker/backend/target/release/intel_worker
 Restart=always
 RestartSec=10
 StandardOutput=journal

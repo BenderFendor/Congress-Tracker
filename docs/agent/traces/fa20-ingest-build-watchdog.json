@@ -1,0 +1,21 @@
+{
+  "classification": [
+    "success"
+  ],
+  "command": [
+    "cargo",
+    "build",
+    "-p",
+    "intel_backend",
+    "--bin",
+    "ingest",
+    "--locked"
+  ],
+  "cwd": "/home/bender/classwork/congress-tracker/backend",
+  "duration_seconds": 7.083,
+  "max_rss_kb": 1160580,
+  "returncode": 0,
+  "stderr_tail": "   Compiling congress_api v0.1.0 (/home/bender/classwork/congress-tracker/backend/crates/congress_api)\n   Compiling intel_backend v0.1.0 (/home/bender/classwork/congress-tracker/backend/crates/intel_backend)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 7.04s",
+  "stdout_tail": "",
+  "timed_out": false
+}

@@ -1,0 +1,17 @@
+{
+  "classification": [
+    "failure"
+  ],
+  "command": [
+    "env",
+    "DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres",
+    "scripts/verify-migrations"
+  ],
+  "cwd": "/home/bender/classwork/congress-tracker",
+  "duration_seconds": 30.898,
+  "max_rss_kb": 1279160,
+  "returncode": 0,
+  "stderr_tail": "NOTICE:  database \"congress_tracker_migration_fresh\" does not exist, skipping\nNOTICE:  database \"congress_tracker_migration_upgrade\" does not exist, skipping\n   Compiling intel_backend v0.1.0 (/home/bender/classwork/congress-tracker/backend/crates/intel_backend)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 15.01s\n     Running tests/migration_test.rs (target/debug/deps/migration_test-1f46bca8b4eb3db3)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.21s\n     Running tests/migration_test.rs (target/debug/deps/migration_test-1f46bca8b4eb3db3)",
+  "stdout_tail": "\nrunning 1 test\ntest migration_fresh_database ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 1.43s\n\n\nrunning 1 test\ntest migration_upgrade_from_prior_committed_schema ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 2.09s\n",
+  "timed_out": false
+}

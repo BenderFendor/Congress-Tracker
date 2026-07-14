@@ -273,23 +273,80 @@ export type MemberLegislationItem = {
     introduced_date?: string | null;
     latest_action_date?: string | null;
     latest_action_text?: string | null;
+    url?: string | null;
     sponsor_type: "sponsor" | "cosponsor";
     sponsorship_date?: string | null;
     is_original_cosponsor: boolean;
 };
 
 export type MemberLegislationResponse = {
+    bioguide_id: string;
+    congress?: number | null;
     sponsor: MemberLegislationItem[];
     cosponsor: MemberLegislationItem[];
+    related_items: Array<{
+        congress: number;
+        item_kind: "amendment" | "other";
+        item_type?: string | null;
+        item_number?: number | null;
+        title?: string | null;
+        source_url: string;
+        latest_action_date?: string | null;
+        latest_action_text?: string | null;
+        sponsor_type: "sponsor" | "cosponsor";
+    }>;
+    pagination: {
+        sponsor: MemberLegislationPage;
+        cosponsor: MemberLegislationPage;
+        related_items: MemberLegislationPage;
+    };
+    coverage_scope: "all_history";
+    coverage_snapshot_congress?: number | null;
+    coverage: Array<{
+        refresh_congress: number;
+        role: "sponsor" | "cosponsor";
+        status: "loaded" | "failed" | "running";
+        advertised_count?: number | null;
+        rows_seen: number;
+        rows_written: number;
+        duplicate_rows: number;
+        pages_fetched: number;
+        error_message?: string | null;
+    }>;
+    latest_attempt?: {
+        status: "running" | "success" | "partial" | "failed" | "auth_missing" | "rate_limited";
+        started_at: string;
+        finished_at?: string | null;
+        error_message?: string | null;
+    } | null;
     provenance?: ProvenanceSummary;
+};
+
+export type MemberLegislationPage = {
+    total: number;
+    limit: number;
+    offset: number;
+    has_more: boolean;
+};
+
+export type MemberLegislationQuery = {
+    congress?: number;
+    limit?: number;
+    sponsorOffset?: number;
+    cosponsorOffset?: number;
+    relatedOffset?: number;
 };
 
 export async function getMemberLegislation(
     bioguideId: string,
-    congress = 119,
+    query: MemberLegislationQuery = {},
     signal?: AbortSignal,
 ): Promise<MemberLegislationResponse> {
-    const params = new URLSearchParams({ congress: String(congress), limit: "200" });
+    const params = new URLSearchParams({ limit: String(query.limit ?? 25) });
+    if (query.congress !== undefined) params.set("congress", String(query.congress));
+    if (query.sponsorOffset !== undefined) params.set("sponsor_offset", String(query.sponsorOffset));
+    if (query.cosponsorOffset !== undefined) params.set("cosponsor_offset", String(query.cosponsorOffset));
+    if (query.relatedOffset !== undefined) params.set("related_offset", String(query.relatedOffset));
     const response = await fetch(
         `${BACKEND_URL}/api/members/${encodeURIComponent(bioguideId)}/legislation?${params}`,
         { signal },

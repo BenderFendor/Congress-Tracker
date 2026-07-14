@@ -2,7 +2,7 @@ use crate::models::{MemberVoteSummary, ProvenanceSource, ProvenanceSummary, Vote
 use crate::routes::AppState;
 use axum::extract::{Path, Query, State};
 use axum::Json;
-use chrono::NaiveDate;
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -90,6 +90,9 @@ pub struct MemberLegislationQuery {
     pub role: Option<String>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
+    pub sponsor_offset: Option<i64>,
+    pub cosponsor_offset: Option<i64>,
+    pub related_offset: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
@@ -103,9 +106,70 @@ pub struct MemberLegislationItem {
     pub introduced_date: Option<NaiveDate>,
     pub latest_action_date: Option<NaiveDate>,
     pub latest_action_text: Option<String>,
+    pub url: Option<String>,
     pub sponsor_type: String,
     pub sponsorship_date: Option<NaiveDate>,
     pub is_original_cosponsor: bool,
+}
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct MemberRelatedLegislationItem {
+    pub congress: i32,
+    pub item_kind: String,
+    pub item_type: Option<String>,
+    pub item_number: Option<i32>,
+    pub title: Option<String>,
+    pub source_url: String,
+    pub latest_action_date: Option<NaiveDate>,
+    pub latest_action_text: Option<String>,
+    pub sponsor_type: String,
+}
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct MemberLegislationCoverageItem {
+    pub refresh_congress: i32,
+    pub role: String,
+    pub status: String,
+    pub advertised_count: Option<i64>,
+    pub rows_seen: i64,
+    pub rows_written: i64,
+    pub duplicate_rows: i64,
+    pub pages_fetched: i32,
+    pub error_message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct MemberLegislationLatestAttempt {
+    pub status: String,
+    pub started_at: DateTime<Utc>,
+    pub finished_at: Option<DateTime<Utc>>,
+    pub error_message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MemberLegislationPage {
+    pub total: i64,
+    pub limit: i64,
+    pub offset: i64,
+    pub has_more: bool,
+}
+
+impl MemberLegislationPage {
+    fn new(total: i64, limit: i64, offset: i64, returned: usize) -> Self {
+        Self {
+            total,
+            limit,
+            offset,
+            has_more: offset.saturating_add(returned as i64) < total,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MemberLegislationPagination {
+    pub sponsor: MemberLegislationPage,
+    pub cosponsor: MemberLegislationPage,
+    pub related_items: MemberLegislationPage,
 }
 
 #[derive(Debug, Serialize)]
@@ -114,6 +178,12 @@ pub struct MemberLegislationResponse {
     pub congress: Option<i32>,
     pub sponsor: Vec<MemberLegislationItem>,
     pub cosponsor: Vec<MemberLegislationItem>,
+    pub related_items: Vec<MemberRelatedLegislationItem>,
+    pub pagination: MemberLegislationPagination,
+    pub coverage_scope: &'static str,
+    pub coverage_snapshot_congress: Option<i32>,
+    pub coverage: Vec<MemberLegislationCoverageItem>,
+    pub latest_attempt: Option<MemberLegislationLatestAttempt>,
     pub provenance: ProvenanceSummary,
 }
 
@@ -126,8 +196,24 @@ pub async fn get_member_legislation(
     Path(bioguide_id): Path<String>,
     Query(query): Query<MemberLegislationQuery>,
 ) -> Result<Json<MemberLegislationResponse>, crate::models::AppError> {
+    let member_exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM members WHERE bioguide_id=$1)")
+            .bind(&bioguide_id)
+            .fetch_one(state.repo.pool())
+            .await
+            .map_err(|e| crate::models::AppError::Internal(format!("database error: {}", e)))?;
+    if !member_exists {
+        return Err(crate::models::AppError::NotFound(format!(
+            "Member {} not found",
+            bioguide_id
+        )));
+    }
+
     let limit = query.limit.unwrap_or(100).clamp(1, 500);
-    let offset = query.offset.unwrap_or(0).max(0);
+    let fallback_offset = query.offset.unwrap_or(0).max(0);
+    let sponsor_offset = query.sponsor_offset.unwrap_or(fallback_offset).max(0);
+    let cosponsor_offset = query.cosponsor_offset.unwrap_or(fallback_offset).max(0);
+    let related_offset = query.related_offset.unwrap_or(fallback_offset).max(0);
     let role = query.role.unwrap_or_default().to_lowercase();
     if !role.is_empty() && role != "sponsor" && role != "cosponsor" {
         return Err(crate::models::AppError::BadRequest(
@@ -135,16 +221,17 @@ pub async fn get_member_legislation(
         ));
     }
 
-    let rows: Vec<MemberLegislationItem> = sqlx::query_as(
+    let sponsor: Vec<MemberLegislationItem> = sqlx::query_as(
         r#"SELECT b.bill_id, b.congress, b.bill_type, b.bill_number, b.title,
                   b.status, b.introduced_date, b.latest_action_date,
-                  b.latest_action_text, bs.sponsor_type, bs.sponsorship_date,
+                  b.latest_action_text, b.url, bs.sponsor_type, bs.sponsorship_date,
                   bs.is_original_cosponsor
            FROM bill_sponsors bs
            JOIN bills b ON b.bill_id = bs.bill_id
            WHERE bs.bioguide_id = $1
              AND ($2::int IS NULL OR b.congress = $2)
-             AND ($3 = '' OR bs.sponsor_type = $3)
+             AND bs.sponsor_type = 'sponsor'
+             AND ($3 = '' OR $3 = 'sponsor')
            ORDER BY b.latest_action_date DESC NULLS LAST,
                     b.introduced_date DESC NULLS LAST, b.bill_id
            LIMIT $4 OFFSET $5"#,
@@ -153,37 +240,181 @@ pub async fn get_member_legislation(
     .bind(query.congress)
     .bind(&role)
     .bind(limit)
-    .bind(offset)
+    .bind(sponsor_offset)
     .fetch_all(state.repo.pool())
     .await
     .map_err(|e| crate::models::AppError::Internal(format!("database error: {}", e)))?;
 
-    let mut sponsor = Vec::new();
-    let mut cosponsor = Vec::new();
-    for row in rows {
-        if row.sponsor_type == "sponsor" {
-            sponsor.push(row);
-        } else {
-            cosponsor.push(row);
-        }
-    }
+    let cosponsor: Vec<MemberLegislationItem> = sqlx::query_as(
+        r#"SELECT b.bill_id, b.congress, b.bill_type, b.bill_number, b.title,
+                  b.status, b.introduced_date, b.latest_action_date,
+                  b.latest_action_text, b.url, bs.sponsor_type, bs.sponsorship_date,
+                  bs.is_original_cosponsor
+           FROM bill_sponsors bs
+           JOIN bills b ON b.bill_id = bs.bill_id
+           WHERE bs.bioguide_id = $1
+             AND ($2::int IS NULL OR b.congress = $2)
+             AND bs.sponsor_type = 'cosponsor'
+             AND ($3 = '' OR $3 = 'cosponsor')
+           ORDER BY b.latest_action_date DESC NULLS LAST,
+                    b.introduced_date DESC NULLS LAST, b.bill_id
+           LIMIT $4 OFFSET $5"#,
+    )
+    .bind(&bioguide_id)
+    .bind(query.congress)
+    .bind(&role)
+    .bind(limit)
+    .bind(cosponsor_offset)
+    .fetch_all(state.repo.pool())
+    .await
+    .map_err(|e| crate::models::AppError::Internal(format!("database error: {}", e)))?;
 
-    let status = if sponsor.is_empty() && cosponsor.is_empty() {
-        "empty"
-    } else {
+    let related_items: Vec<MemberRelatedLegislationItem> = sqlx::query_as(
+        r#"SELECT congress, item_kind, item_type, item_number, title, source_url,
+                  latest_action_date, latest_action_text, role AS sponsor_type
+           FROM member_legislation_items
+           WHERE bioguide_id=$1 AND item_kind <> 'bill'
+             AND ($2::int IS NULL OR congress=$2)
+             AND ($3='' OR role=$3)
+           ORDER BY latest_action_date DESC NULLS LAST, source_url
+           LIMIT $4 OFFSET $5"#,
+    )
+    .bind(&bioguide_id)
+    .bind(query.congress)
+    .bind(&role)
+    .bind(limit)
+    .bind(related_offset)
+    .fetch_all(state.repo.pool())
+    .await
+    .map_err(|e| crate::models::AppError::Internal(format!("database error: {}", e)))?;
+
+    let sponsor_total: i64 = sqlx::query_scalar(
+        r#"SELECT COUNT(*)
+           FROM bill_sponsors bs
+           JOIN bills b ON b.bill_id = bs.bill_id
+           WHERE bs.bioguide_id=$1
+             AND bs.sponsor_type='sponsor'
+             AND ($2::int IS NULL OR b.congress=$2)
+             AND ($3='' OR $3='sponsor')"#,
+    )
+    .bind(&bioguide_id)
+    .bind(query.congress)
+    .bind(&role)
+    .fetch_one(state.repo.pool())
+    .await
+    .map_err(|e| crate::models::AppError::Internal(format!("database error: {}", e)))?;
+    let cosponsor_total: i64 = sqlx::query_scalar(
+        r#"SELECT COUNT(*)
+           FROM bill_sponsors bs
+           JOIN bills b ON b.bill_id = bs.bill_id
+           WHERE bs.bioguide_id=$1
+             AND bs.sponsor_type='cosponsor'
+             AND ($2::int IS NULL OR b.congress=$2)
+             AND ($3='' OR $3='cosponsor')"#,
+    )
+    .bind(&bioguide_id)
+    .bind(query.congress)
+    .bind(&role)
+    .fetch_one(state.repo.pool())
+    .await
+    .map_err(|e| crate::models::AppError::Internal(format!("database error: {}", e)))?;
+    let related_total: i64 = sqlx::query_scalar(
+        r#"SELECT COUNT(*) FROM member_legislation_items
+           WHERE bioguide_id=$1 AND item_kind <> 'bill'
+             AND ($2::int IS NULL OR congress=$2)
+             AND ($3='' OR role=$3)"#,
+    )
+    .bind(&bioguide_id)
+    .bind(query.congress)
+    .bind(&role)
+    .fetch_one(state.repo.pool())
+    .await
+    .map_err(|e| crate::models::AppError::Internal(format!("database error: {}", e)))?;
+
+    let coverage: Vec<MemberLegislationCoverageItem> = sqlx::query_as(
+        r#"SELECT coverage.congress AS refresh_congress, coverage.role, coverage.status,
+                  coverage.advertised_count,
+                  coverage.rows_seen, coverage.rows_written, coverage.duplicate_rows,
+                  coverage.pages_fetched,
+                  coverage.error_message
+           FROM member_legislation_coverage coverage
+           WHERE coverage.bioguide_id=$1
+             AND coverage.source_run_id=(
+               SELECT prior.source_run_id
+               FROM member_legislation_coverage prior
+               WHERE prior.bioguide_id=$1 AND prior.status <> 'running'
+               ORDER BY prior.finished_at DESC NULLS LAST
+               LIMIT 1
+             )
+           ORDER BY coverage.role"#,
+    )
+    .bind(&bioguide_id)
+    .fetch_all(state.repo.pool())
+    .await
+    .map_err(|e| crate::models::AppError::Internal(format!("database error: {}", e)))?;
+
+    let latest_attempt: Option<MemberLegislationLatestAttempt> = sqlx::query_as(
+        r#"SELECT status::text AS status, started_at, finished_at, error_message
+           FROM source_runs
+           WHERE endpoint='/v3/member/{bioguide}/sponsored-and-cosponsored-legislation'
+           ORDER BY started_at DESC
+           LIMIT 1"#,
+    )
+    .fetch_optional(state.repo.pool())
+    .await
+    .map_err(|e| crate::models::AppError::Internal(format!("database error: {}", e)))?;
+
+    let coverage_loaded = coverage.len() == 2
+        && coverage.iter().all(|item| {
+            item.status == "loaded"
+                && item.advertised_count == Some(item.rows_seen)
+                && item.rows_written + item.duplicate_rows == item.rows_seen
+        });
+    let status = if coverage_loaded {
         "loaded"
+    } else if coverage.is_empty() {
+        "not_loaded"
+    } else {
+        "partial"
     };
-    let response_congress = query.congress.or_else(|| {
-        sponsor
-            .first()
-            .map(|item| item.congress)
-            .or_else(|| cosponsor.first().map(|item| item.congress))
-    });
+    let pagination = MemberLegislationPagination {
+        sponsor: MemberLegislationPage::new(sponsor_total, limit, sponsor_offset, sponsor.len()),
+        cosponsor: MemberLegislationPage::new(
+            cosponsor_total,
+            limit,
+            cosponsor_offset,
+            cosponsor.len(),
+        ),
+        related_items: MemberLegislationPage::new(
+            related_total,
+            limit,
+            related_offset,
+            related_items.len(),
+        ),
+    };
+    let coverage_snapshot_congress = coverage.first().map(|item| item.refresh_congress);
+    let refresh_warning =
+        latest_attempt
+            .as_ref()
+            .and_then(|attempt| match attempt.status.as_str() {
+                "success" => None,
+                "running" => Some("member_legislation_refresh_running".to_string()),
+                status => Some(match attempt.error_message.as_deref() {
+                    Some(error) => format!("member_legislation_latest_attempt_{status}: {error}"),
+                    None => format!("member_legislation_latest_attempt_{status}"),
+                }),
+            });
     Ok(Json(MemberLegislationResponse {
         bioguide_id,
-        congress: response_congress,
+        congress: query.congress,
         sponsor,
         cosponsor,
+        related_items,
+        pagination,
+        coverage_scope: "all_history",
+        coverage_snapshot_congress,
+        coverage: coverage.clone(),
+        latest_attempt,
         provenance: ProvenanceSummary {
             sources: vec![ProvenanceSource {
                 source: "congress_gov".to_string(),
@@ -191,10 +422,23 @@ pub async fn get_member_legislation(
                 fetched_at: None,
                 confidence: Some("verified".to_string()),
             }],
-            warnings: if status == "empty" {
-                vec!["no_sponsorship_rows_loaded_for_filters".to_string()]
+            warnings: if status == "loaded" {
+                refresh_warning.into_iter().collect()
+            } else if coverage.is_empty() {
+                let mut warnings = vec!["member_legislation_coverage_not_loaded".to_string()];
+                warnings.extend(refresh_warning);
+                warnings
             } else {
-                Vec::new()
+                let mut warnings: Vec<String> = coverage
+                    .iter()
+                    .filter_map(|item| {
+                        item.error_message
+                            .as_ref()
+                            .map(|error| format!("{}: {error}", item.role))
+                    })
+                    .collect();
+                warnings.extend(refresh_warning);
+                warnings
             },
         },
     }))

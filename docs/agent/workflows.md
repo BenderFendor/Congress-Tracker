@@ -34,7 +34,13 @@ This runs, in order: `members --current-only --limit 25`, `influence-seeds`, `fe
 
 `intel_worker` owns normal profile freshness. On startup and every six hours by default it runs the idempotent `profile-evidence-all` pipeline under a PostgreSQL advisory lock. The pipeline refreshes all current members, Congress.gov member and bill coverage, Voteview ideology and roll calls, FEC candidates, materialized views, and derived relationships. Voteview is the canonical vote source because the current Congress.gov v3 API does not expose the legacy `/vote` resource.
 
-Set `PROFILE_EVIDENCE_REFRESH_SECONDS` to change the interval. Manual ingest subcommands are diagnostics only and are not required for normal server operation.
+Set `PROFILE_EVIDENCE_REFRESH_SECONDS` to change the interval. The scheduled
+child uses `INTEL_INGEST_BIN` directly, derives the current Congress and election
+cycle from the calendar, and reaps its complete process group before releasing
+the advisory lock. Member legislation uses one request/write stream for
+`gaming`, `pi`, or `low`, two for the default balanced profile, and four only
+for `burst`/`fast`. Manual ingest subcommands are diagnostics only and are not
+required for normal server operation.
 
 The worker schedules canonical FEC bulk refreshes for the current cycle and two
 prior even cycles by default. `FEC_CYCLES` overrides that window. Until every
@@ -136,6 +142,30 @@ Requires `CONGRESS_GOV_API_KEY` set in environment or `.env`:
 cd backend
 CONGRESS_GOV_API_KEY=your_key cargo run -p intel_backend --bin ingest -- congress-bills --congress 119 --limit 50
 ```
+
+### Refresh All Current-Member Legislation
+
+Normal refresh is worker-owned and runs the native ingest executable. The
+manual command is a diagnostic and recovery entry point:
+
+```bash
+cd backend
+CONGRESS_GOV_API_KEY=your_key cargo run -p intel_backend --bin ingest -- member-legislation-all --congress 119
+```
+
+The provider contract exhausts both Member roles with a 50,000-row safety
+ceiling. It starts at 250 rows per request and reduces only size-sensitive
+failures through 125, 62, and 50. If an external watchdog interrupts a valid
+run, resume the same coverage ledger without resetting loaded roles:
+
+```bash
+backend/target/release/ingest member-legislation-all --congress 119 --resume-run-id UUID
+```
+
+Worker subprocess timeouts are profile-aware: 12 hours for gaming/Pi/low, six
+hours for balanced/interactive, and four hours for burst/fast. All profiles
+produce the same evidence and terminal reconciliation; only concurrency and
+resource ceilings differ.
 
 ### Ingest FEC Data
 

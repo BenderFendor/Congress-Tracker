@@ -202,7 +202,7 @@ pub struct BillSubject {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BillPolicyArea {
-    pub name: String,
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -274,21 +274,26 @@ pub struct AmendmentAction {
 pub struct MemberSponsoredResponse {
     #[serde(rename = "sponsoredLegislation")]
     pub sponsored_legislation: Vec<MemberSponsoredBill>,
+    pub pagination: Pagination,
+    pub request: Option<Request>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MemberCosponsoredResponse {
     #[serde(rename = "cosponsoredLegislation")]
     pub cosponsored_legislation: Vec<MemberSponsoredBill>,
+    pub pagination: Pagination,
+    pub request: Option<Request>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MemberSponsoredBill {
     pub congress: i32,
+    pub url: Option<String>,
     #[serde(rename = "type")]
-    pub bill_type: String,
-    pub number: String,
-    pub title: String,
+    pub bill_type: Option<String>,
+    pub number: Option<String>,
+    pub title: Option<String>,
     #[serde(rename = "introducedDate")]
     pub introduced_date: Option<String>,
     #[serde(rename = "latestAction")]

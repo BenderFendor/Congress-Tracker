@@ -199,7 +199,7 @@ where applicable, worksheet, focused commit, and milestone tag all exist.
 | FA-17 | High | M5 | Party-line alignment chooses a majority on ties, uses current party for historical votes, and vote rows omit measure context. | Exclude ties; use party at vote time; add measure-aware vote contracts and tie, switch, amendment, nomination, and procedure fixtures. |
 | FA-18 | High | M3 | Senate discovery defaults to 2021-2026, stops at 1,000 rows, and can mark truncated discovery successful. | Use an open-ended 2012-present window, exhaust pagination, prove year-level terminal counts, and reject truncated success. |
 | FA-19 | High | M4 | Lobbying activity insertion is append-only and the worker has no scheduled LDA refresh. | Add semantic idempotency, clean duplicates, schedule bounded refresh and recovery, and prove rerun stability. |
-| FA-20 | High | M5 | All-Member legislation ingestion does not paginate, drops request and row errors, and can declare partial work successful. | Exhaust provider pagination, retain per-Member failures, and require terminal Member-level coverage. |
+| FA-20 | Closed | M5 | All-Member legislation ingestion did not paginate, dropped request and row errors, and could declare partial work successful. | Closed with exhaustive mixed-row pagination, restartable Member-role coverage, scheduled native ingestion, exact reconciliation, dossier truth states, and live 537-Member proof. |
 | FA-21 | High | M6 | The public API has no rate, concurrency, timeout, response-size, or load-shedding protection; several limits accept negative or huge values. | Enforce shared request budgets and bounded pagination, then pass the single-machine load and abuse cases. |
 | FA-22 | High | M6 | Source status can hide failed bulk cycles behind a small successful request; disclosure coverage counts attempts and duplicates as completion. | Report source, endpoint, cycle, and document-version coverage separately; reconcile UI totals to canonical ledgers. |
 | FA-23 | High | M6 | Several tests exercise test-only literals, accept 404, skip without a database, or return before their central assertion. | Link each claimed contract to production code and add negative mutations or equivalent confidence proof. |
@@ -272,6 +272,18 @@ where applicable, worksheet, focused commit, and milestone tag all exist.
   measure-aware context. Adam Schiff rendered 100 contextual votes without
   overflow. Evidence: `docs/agent/traces/fa17-vote-semantics.md`, tag
   `fa17-vote-semantics`.
+- **FA-20 closed:** `congress_api` exhausts stable sponsored and cosponsored
+  pagination, tolerates nullable amendment rows, retries transient request and
+  response-body failures, adapts page size from 250 to 50 only for size-sensitive
+  failures, and permits bounded Member-role totals up to 50,000. The worker-owned
+  native ingest path records restartable page-atomic evidence and terminal
+  Member-role coverage. Live Congress 119 proof reconciled all 537 current
+  Members and 1,074 roles: 1,219,881 advertised and seen rows equal 1,219,187
+  persisted rows plus 694 explicit duplicates across 5,544 pages, with zero
+  non-loaded or unreconciled roles. The dossier exposes coverage, independent
+  pagination, amendments, loading/error states, and official source links.
+  Evidence: `docs/agent/traces/fa20-member-legislation.md`, tag
+  `fa20-member-legislation`.
 
 ## Audited Baseline
 
@@ -833,9 +845,7 @@ through explicit contracts and provenance.
     zero handling, and sponsor N+1 query path.
 15. Fix FA-17 by excluding tied party comparisons, using party at vote time,
     and returning measure-aware vote evidence.
-16. Fix FA-20 by exhausting legislation pagination and retaining per-Member
-    request, row, and terminal coverage states.
-17. Before implementing money-votes, replace the invalid committee-type design
+16. Before implementing money-votes, replace the invalid committee-type design
     with a licensed donor-industry source, schema, provenance, and numeric
     contribution/vote sample thresholds. OpenSecrets cannot become canonical
     until its license and redistribution terms are recorded and accepted.
@@ -866,7 +876,7 @@ evidence page reading `backend_server`, a static fixture, or an archived CSV;
 the two visualization component imports from `csvUtils` use only currency
 formatting. See `reports/verification/M5-EVIDENCE-CONTRACTS.md`. This evidence
 covers the earlier items only and does not close FA-01, FA-03, FA-07, FA-08,
-FA-12 through FA-17, FA-20, or FA-28.
+FA-12 through FA-17, or FA-28.
 
 ## M6 - Verification, CI, And Operations
 
