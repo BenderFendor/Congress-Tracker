@@ -9,8 +9,7 @@ congress-tracker/
 │   ├── crates/
 │   │   ├── intel_backend/                  # NEW — Canonical Postgres-backed intelligence backend
 │   │   │   ├── Cargo.toml
-│   │   │   ├── migrations/
-│   │   │   │   └── 0001_core.sql           # PostgreSQL schema (enums, tables, indexes, MVs)
+│   │   │   ├── migrations/                   # 51 numbered SQL migrations (0001–0051)
 │   │   │   └── src/
 │   │   │       ├── main.rs                 # Server binary (port 4020)
 │   │   │       ├── lib.rs                  # Public entrypoint (AppState, build_router, Db, etc.)
@@ -25,15 +24,25 @@ congress-tracker/
 │   │   │       │   └── ingest.rs           # CLI ingest binary (clap subcommands)
 │   │   │       ├── routes/
 │   │   │       │   ├── mod.rs              # Route registration
-│   │   │       │   ├── admin.rs            # GET /api/admin/entity-resolution-queue
-│   │   │       │   ├── bills.rs            # GET /api/bills/{congress}/{type}/{number}/intel
-│   │   │       │   ├── chambers.rs         # GET /api/chambers/{chamber}/dashboard
-│   │   │       │   ├── committees.rs       # GET /api/committees, /api/committees/{id}
-│   │   │       │   ├── funding.rs          # GET /api/members/{id}/funding
-│   │   │       │   ├── health.rs           # GET /api/health
-│   │   │       │   ├── influence.rs        # GET /api/influence/networks, /api/influence/networks/{slug}
-│   │   │       │   ├── members.rs          # GET /api/members/{id}/profile
-│   │   │       │   └── search.rs           # GET /api/search
+│   │   │       │   ├── bills.rs            # Bill intel routes
+│   │   │       │   ├── chambers.rs         # Chamber dashboard routes
+│   │   │       │   ├── committees.rs       # Committee routes
+│   │   │       │   ├── fec.rs              # FEC campaign finance routes
+│   │   │       │   ├── financial.rs        # Financial disclosure routes
+│   │   │       │   ├── funding.rs          # Member funding routes
+│   │   │       │   ├── health.rs           # Health check endpoint
+│   │   │       │   ├── home.rs             # Home/intel summary routes
+│   │   │       │   ├── influence.rs        # Influence network routes
+│   │   │       │   ├── lobbying.rs         # Lobbying data routes
+│   │   │       │   ├── member_intel.rs     # Member intelligence routes
+│   │   │       │   ├── members.rs          # Member profile routes
+│   │   │       │   ├── organizations.rs    # Organization detail routes
+│   │   │       │   ├── portfolio.rs        # Portfolio analysis routes
+│   │   │       │   ├── search.rs           # Full-text search routes
+│   │   │       │   ├── sources.rs          # Source attribution routes
+│   │   │       │   ├── system.rs           # System/worker health routes
+│   │   │       │   ├── trades.rs           # Stock trade routes
+│   │   │       │   └── visualizations.rs   # Visualization data routes
 │   │   │       └── repository/
 │   │   │           ├── mod.rs              # Repository module exports
 │   │   │           ├── members.rs          # Member data access
@@ -47,9 +56,9 @@ congress-tracker/
 │   │   │           ├── source_runs.rs      # Source run tracking
 │   │   │           └── entity_resolution.rs# Entity resolution queue access
 │   │   │
-│   │   ├── backend_server/                 # Older Axum server; do not add new page features here
+│   │   ├── backend_server/                 # DEPRECATED compatibility crate; intel_backend is canonical
 │   │   │   └── src/
-│   │   │       └── main.rs                 # Original server, will delegate routes to intel_backend
+│   │   │       └── main.rs                 # Legacy server entrypoint; routes should migrate to intel_backend
 │   │   │
 │   │   ├── congress_api/                   # Congress.gov API client
 │   │   ├── openfec_api/                    # OpenFEC API client

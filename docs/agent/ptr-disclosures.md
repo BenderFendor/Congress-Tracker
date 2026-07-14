@@ -1,3 +1,5 @@
+Superseded: 2026-07-14
+
 # PTR Disclosures — Worker Pipeline
 
 ## Overview

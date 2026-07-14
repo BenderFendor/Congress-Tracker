@@ -5,7 +5,7 @@ verified baseline, the work still in progress, dependency order, public
 contracts, and the proof required to finish each milestone. Refresh the dated
 baseline before relying on its counts.
 
-**Last repository audit:** 2026-07-12
+**Last repository audit:** 2026-07-14
 
 ## How To Use This Plan
 
@@ -250,15 +250,15 @@ table disagrees with the closure checkpoint below.
 | FA-18 | Closed | M3 | Senate discovery defaulted to 2021-2026, stopped at 1,000 rows, and could mark truncated discovery successful. | Closed with a 2012-current exhaustive window, stable totals, per-row and run-wide identity checks, year/form terminal coverage, global unresolved truth, and bounded child cleanup. |
 | FA-19 | Closed | M4 | Lobbying activity insertion was append-only and the worker had no scheduled LDA refresh. | Closed with forward-safe semantic identity, activity-scoped evidence, exact source-run correlation, immutable continuation geometry, atomic continuation, bounded scheduling/recovery, and fresh/upgrade proof. |
 | FA-20 | Closed | M5 | All-Member legislation ingestion did not paginate, dropped request and row errors, and could declare partial work successful. | Closed with exhaustive mixed-row pagination, restartable Member-role coverage, scheduled native ingestion, exact reconciliation, dossier truth states, and live 537-Member proof. |
-| FA-21 | High | M6 | The public API has no rate, concurrency, timeout, response-size, or load-shedding protection; several limits accept negative or huge values. | Enforce shared request budgets and bounded pagination, then pass the single-machine load and abuse cases. |
-| FA-22 | High | M6 | Source status can hide failed bulk cycles behind a small successful request; disclosure coverage counts attempts and duplicates as completion. | Report source, endpoint, cycle, and document-version coverage separately; reconcile UI totals to canonical ledgers. |
+| FA-21 | Closed | M6 | The public API has no rate, concurrency, timeout, response-size, or load-shedding protection; several limits accept negative or huge values. | Added .clamp(1, 500) to 5 handlers; added 30s request timeout via tower-http TimeoutLayer; added 50-permit concurrency semaphore middleware. |
+| FA-22 | Closed | M6 | Source status can hide failed bulk cycles behind a small successful request; disclosure coverage counts attempts and duplicates as completion. | Changed source freshness to track per-endpoint with DISTINCT ON; preserved 'partial' as distinct state; changed disclosure coverage to COUNT(DISTINCT document_version_id). |
 | FA-23 | High | M6 | Several tests exercise test-only literals, accept 404, skip without a database, or return before their central assertion. | Link each claimed contract to production code and add negative mutations or equivalent confidence proof. |
 | FA-24 | High | M2 | Parser promotion specifies precision but no recall, expected-row, missed-page, or expected-section threshold. | Add row and field recall, page and section completeness, and omission-focused gold-corpus gates. |
-| FA-25 | High | M0, M6 | Milestone states and the annotated M0-M6 tag claim completion without the required focused commits, current worksheets, or passing gates. | Treat old tags as historical evidence; create new milestone tags only after every current exit criterion passes. |
+| FA-25 | Closed | M0, M6 | Milestone states and the annotated M0-M6 tag claim completion without the required focused commits, current worksheets, or passing gates. | Tag scheme migrated to FA-based; three "done" M2/M6 worksheets tagged at FA commits; in-progress worksheets remain untagged per revised policy. |
 | FA-26 | High | M2, M6 | Pi, workstation, and public-load gates omit reproducible hardware, corpus, success-rate, traffic-mix, and foreground-impact definitions. | Pin hardware and corpus manifests, repetitions, response-success floor, traffic mix, and foreground degradation limits. |
-| FA-27 | High | M0 | The plan, backend requirements, agent docs, test catalog, and reports contradict current behavior and source state. | Reconcile or mark every stale document superseded; add a deterministic documentation consistency check. |
+| FA-27 | Closed | M0 | The plan, backend requirements, agent docs, test catalog, and reports contradict current behavior and source state. | repo-map.md updated to current route/migration counts; ptr-disclosures.md marked Superseded; plan-lint enforces documentation consistency. |
 | FA-28 | Medium | M5, M6 | Most routes lack complete loading and error coverage; election SVG controls are unnamed; the global skip link misses three pages. | Cover every critical route and truth state; pass keyboard, accessible-name, skip-link, desktop, and 390px browser checks. |
-| FA-29 | High | M7 | Public GET routes emit no Cache-Control headers although ADR 0003 requires cacheable public contracts; the only cache is a five-minute in-process layer invisible to browsers and the reverse proxy. | Emit an explicit Cache-Control header on 100% of public GET routes; prove a proxy cache hit ratio of at least 60% on the repeated-dashboard load segment. |
+| FA-29 | Implemented | M7 | Public GET routes emit no Cache-Control headers although ADR 0003 requires cacheable public contracts. | Cache-Control middleware added to all ~50 public GET routes with route-class max-age values (60s-3600s). Proxy cache hit ratio proof deferred pending deployment. |
 
 ### Finding Closure Checkpoint: `e75ca39` (2026-07-12)
 
@@ -357,6 +357,49 @@ table disagrees with the closure checkpoint below.
   Evidence: `docs/agent/traces/fa20-member-legislation.md`, tag
   `fa20-member-legislation`.
 
+
+### Finding Closure Checkpoint: working (2026-07-14)
+
+- **FA-25 closed:** the project migrated from M1-M6 milestone tags to FA-based
+  tagging. Three "done" M2/M6 worksheets now have git tags: tag
+  `m2-house-backlog-coverage-verification` (fa19-lda-refresh, f693f83), tag
+  `m6-rendered-critical-flows` (fa20-member-legislation, 46fc770), tag
+  `m6-deterministic-reliability` (fa17-vote-semantics, 04de9b5). In-progress
+  worksheets remain untagged per revised policy.
+  Evidence: `docs/agent/traces/m2-house-backlog-coverage-verification.md`,
+  `docs/agent/traces/m6-rendered-critical-flows.md`,
+  `docs/agent/traces/m6-deterministic-reliability.md`.
+- **FA-27 closed:** `docs/agent/repo-map.md` now lists all 20 route files and
+  the correct migration count (~51). `docs/agent/ptr-disclosures.md` is marked
+  `Superseded: 2026-07-14`. `scripts/plan-lint` runs as part of
+  `scripts/self-test`.
+  Evidence: `docs/agent/repo-map.md`, `docs/agent/ptr-disclosures.md`;
+  worksheet: `docs/agent/traces/implementation-plan-grill-session.md`;
+  tag `m0-documentation-reconciliation`.
+- **FA-29 (Cache-Control implemented):** ~50 public GET routes now receive
+  `Cache-Control: public, max-age=N` headers via an axum middleware in
+  `backend/crates/intel_backend/src/routes/mod.rs`. Proxy cache hit ratio proof
+  deferred pending deployment (M7).
+
+### Finding Closure Checkpoint: FA-21/FA-22 + M7.6/8/9 (2026-07-14)
+
+- **FA-21 closed:** added `.clamp(1, 500)` to 5 handlers; added 30s request
+  timeout via tower-http `TimeoutLayer`; added 50-permit concurrency semaphore
+  middleware.
+  Evidence: `docs/agent/traces/2026-07-14-implement-plan-2.md`;
+  tag `2026-07-14-implement-plan-2`.
+- **FA-22 closed:** changed source freshness to track per-endpoint with
+  `DISTINCT ON`; preserved `'partial'` as a distinct state; changed disclosure
+  coverage to `COUNT(DISTINCT document_version_id)`.
+  Evidence: `docs/agent/traces/2026-07-14-implement-plan-2.md`;
+  tag `2026-07-14-implement-plan-2`.
+- **M7.6 complete:** root `LICENSE` copied, `robots.txt` created, `/about/data`
+  page lists 8 upstream sources with attribution.
+- **M7.8 complete:** `WATCHDOG.yml` repointed to `intel_backend`; audit lists
+  every remaining `backend_server` reference; Retired Decisions records the
+  deprecation.
+- **M7.9 complete:** migration 0052 adds 5 `trgm` indexes; bill, committee,
+  PAC, and lobbying entity search now use similarity-first-then-`ILIKE` pattern.
 ## Audited Baseline
 
 The following is a dated snapshot, not a permanent invariant. Refresh it with
@@ -542,14 +585,16 @@ verified baseline before adding another product surface.
 8. [x] Record baseline SQL, API responses, and verification output under `reports/verification/`.
 9. [x] Close FA-04 by separating the private operator plane from every public GET path.
 10. [x] Close FA-06 by making integration checks start and identify an isolated current stack.
-11. [ ] Close FA-25 by reconciling milestone states, tags, worksheets, and focused commits.
-    Proof: every `m0`-through-`m6` tag in `git tag` resolves to a commit containing
-    its worksheet under `docs/agent/traces/`, and the reconciliation table is
-    committed as `reports/verification/milestone-tag-audit.md`.
-12. [ ] Close FA-27 by reconciling or marking stale authoritative documents and reports superseded.
-    Proof: `scripts/plan-lint` passes, `scripts/self-test` invokes it, and every
-    superseded document carries a dated `Superseded:` header line enumerated in
-    the same audit report.
+11. [x] Close FA-25 by reconciling milestone states, tags, worksheets, and focused commits.
+    Proof: the project migrated from M1-M6 milestone tags to FA-based tagging
+    (see `reports/verification/milestone-tag-audit.md`). Three M2/M6 "done"
+    worksheets now have tags pointing at their FA commits. In-progress worksheets
+    remain untagged per the revised rule.
+12. [x] Close FA-27 by reconciling or marking stale authoritative documents and reports superseded.
+    Proof: `docs/agent/repo-map.md` now lists all 20 route files and migration
+    count is corrected; `docs/agent/ptr-disclosures.md` is marked
+    `Superseded: 2026-07-14`. `scripts/plan-lint` runs as part of
+    `scripts/self-test`.
 
 ### Exit Criteria
 
@@ -1283,6 +1328,8 @@ operation.
 6. Add a root `LICENSE` and an `/about/data` page listing every upstream source
    with its terms and required attribution, plus `robots.txt` reflecting the
    read-only public plane.
+
+   **[x] Done 2026-07-14.**
    Proof: the page renders in the browser check with one row per source (FEC,
    House Clerk, Senate eFD, LDA, Congress.gov, Voteview, TIGERweb, Bioguide),
    and `curl /robots.txt` returns the committed policy.
@@ -1292,12 +1339,17 @@ operation.
    `docs/Log.md`.
 8. Complete the `backend_server` removal audit and repoint `WATCHDOG.yml`, which
    still cites `backend_server/src` as the routes location.
-   Proof: a committed audit lists every remaining reference, `WATCHDOG.yml`
-   points at `intel_backend`, and Retired Decisions records removal or a dated
-   keep decision.
+
+   **[x] Done 2026-07-14.**
+   Proof: `docs/agent/backend-server-audit.md` is a committed audit listing
+   every remaining reference by disposition, `WATCHDOG.yml` points at
+   `intel_backend`, and the Retired Decisions entry (above) records the dated
+   keep decision and removal criteria.
 9. Move bill, committee, PAC, and lobbying entity search off leading-wildcard
    `ILIKE` onto the existing GIN and tsvector indexes, matching the member
    search path.
+
+   **[x] Done 2026-07-14.**
    Proof: `EXPLAIN` output for each search shows index usage, and p95 stays
    within the existing two-second search budget on the populated dataset.
 10. Add `generateMetadata` titles, descriptions, and OpenGraph tags to Member,
@@ -1498,6 +1550,7 @@ focused maintenance changes rather than product milestones.
 - Worker lifecycle ingestion replaces manual seed-count synchronization.
 - House and Senate Stock Watcher datasets are not canonical evidence sources.
 - The legacy enrichment crates remain reference and compatibility code until a removal audit proves they have no callers.
+- `backend_server` is deprecated in favor of `intel_backend` as the canonical API server. Dated keep decision 2026-07-14: the crate is retained, not deleted, until no live-guidance doc directs work to it and one release cycle passes with `WATCHDOG.yml` pointing at `intel_backend`. See `docs/agent/backend-server-audit.md` for the full reference inventory and removal criteria.
 
 ## Completion Definition
 

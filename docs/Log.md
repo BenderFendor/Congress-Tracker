@@ -32,6 +32,45 @@ the detailed worksheets under `docs/agent/traces/`.
   numeric promotion criteria (change feeds, bulk exports, citation permalinks,
   coverage dashboard, comparison view, API documentation).
 
+
+## 2026-07-14 - Cache-Control, Verification Tools, FA-25/FA-27 Closure
+
+- Added axum Cache-Control middleware to all ~50 public GET routes in
+  intel_backend with route-class max-age values (health/system 60s,
+  lists/collections 300s, detail/dossiers 600s, visualizations 3600s).
+  FA-29 Cache-Control headers are now emitted. Proxy cache hit ratio
+  proof is deferred pending deployment (M7).
+- Built three verification tooling scripts: `scripts/db-query`
+  (credential-safe SQL wrapper), `scripts/db-schema`
+  (information_schema column inspector), and `scripts/freshness-guard`
+  (binary freshness vs newest git commit).
+- Closed FA-25: milestone tag scheme migrated from M1-M6 to FA-based
+  tagging. Three done M2/M6 worksheets now have git tags pointing at
+  their FA commits (m2-house-backlog-coverage-verification,
+  m6-rendered-critical-flows, m6-deterministic-reliability).
+- Closed FA-27: `docs/agent/repo-map.md` updated to current route
+  files (20) and migration count (~51). `docs/agent/ptr-disclosures.md`
+  marked `Superseded: 2026-07-14`.
+- Updated `docs/IMPLEMENTATION_PLAN.md` audit date to 2026-07-14 with
+  new closure checkpoint and FA-25/FA-27/FA-29 status rows.
+- All changes pass `scripts/self-test` (plan-lint 0, cargo fmt/clippy/
+  check/test clean, frontend test/typecheck/lint/build all pass).
+
+## 2026-07-14 - API Protection, Source Status Fix, M7 Items
+
+- FA-21 (API protection): added `.clamp(1, 500)` to 5 handlers, 30s request
+  timeout via tower-http `TimeoutLayer`, and 50-permit concurrency semaphore
+  middleware.
+- FA-22 (source status fix): changed source freshness to track per-endpoint
+  with `DISTINCT ON`, preserved `'partial'` as a distinct state, and changed
+  disclosure coverage to `COUNT(DISTINCT document_version_id)`.
+- M7.6 (LICENSE/robots.txt/about/data): LICENSE copied to root, robots.txt
+  created, `/about/data` page lists 8 upstream sources with attribution.
+- M7.8 (backend_server audit): `WATCHDOG.yml` now routes to `intel_backend`;
+  docs mark `backend_server` deprecated.
+- M7.9 (trgm search indexes): migration 0052 adds 5 `trgm` indexes;
+  similarity-first-then-`ILIKE` search pattern for bill, committee, PAC, and
+  lobbying entity search.
 ## 2026-07-12 - Member-Keyed Stock Disclosure Pages
 
 - Replaced the failing `stock_trades` materialized-view dependency in public

@@ -155,6 +155,22 @@ Future agents should:
 - Treat public cache configuration as delivery policy, not an ingestion
   mechanism. Test public routes structurally for provider calls and writes.
 
+## 2026-07-13 - Fault-injection cleanup must be owner-wide
+
+Context:
+- A short-lived live worker proof reclaimed the target orphan correctly, but it
+  claimed a second queued job before shutdown.
+
+What worked:
+- Query every `running` job for the proof worker's exact owner UUID after the
+  process exits, confirm no matching process exists, and return each orphan to
+  `pending` with an audit message.
+
+Future agents should:
+- Cleanup and verify by worker owner, not only by the one injected job ID.
+- Re-run the complete `ingest_jobs` and `source_runs` ledger audit after any
+  live worker exercise before claiming that no lease was stranded.
+
 ## 2026-07-13 - Congress.gov Member legislation is a mixed evidence stream
 
 Context:

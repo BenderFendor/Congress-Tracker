@@ -65,16 +65,16 @@ do not replace live source, runtime, or browser evidence.
 
 | Test file | Coverage | Exclusions |
 |---|---|---|
-| `backend/crates/backend_server/tests/api_test.rs` | Legacy server environment and Congress API integration boundary | Canonical `intel_backend` page contracts |
-| `backend/crates/backend_server/tests/e2e_test.rs` | Legacy-to-canonical server compatibility startup | Full browser flows and live source coverage |
+| `backend/crates/backend_server/tests/api_test.rs` [deprecated] | Legacy server environment and Congress API integration boundary | Canonical `intel_backend` page contracts |
+| `backend/crates/backend_server/tests/e2e_test.rs` [deprecated] | Legacy-to-canonical server compatibility startup | Full browser flows and live source coverage |
 | `backend/crates/capitoltrades_api/src/lib_test.rs` | CapitolTrades adapter parsing helpers | Canonical disclosure ingestion |
 | `backend/crates/capitoltrades_api/tests/schema_test.rs` | CapitolTrades schema deserialization | Live upstream responses and canonical persistence |
 | `backend/crates/intel_backend/tests/fec_bulk_pipeline_test.rs` | Amendment precedence, ranking partitions, and public donor classification | Multi-million-row live cycle completion |
 | `backend/crates/intel_backend/tests/influence_financials_test.rs` | Per-committee direct/support/opposition reconciliation and the direct-only recipient total against migrated PostgreSQL fixtures | Provider completeness and browser graph rendering |
-| `backend/crates/intel_backend/tests/full_api_contract_test.rs` | Canonical endpoint status and JSON contracts when the database is available; normalized bill amendments; explicit LDA bill-link separation; campaign-finance visualization parity with canonical cycle summaries | Provider completeness and browser rendering |
+| `backend/crates/intel_backend/tests/full_api_contract_test.rs` | Canonical endpoint status and JSON contracts when the database is available; bounded Member-keyed stock transaction metadata, anomaly counts, and unknown-Member 404; normalized bill amendments; explicit LDA bill-link separation; campaign-finance visualization parity with canonical cycle summaries | Provider completeness and browser rendering |
 | `backend/crates/intel_backend/tests/ingestion_pipeline_test.rs` | Idempotency, source-run tracking, members, FEC candidates, view refresh, and chronology guards | Full public-source backfills |
 | `backend/crates/intel_backend/tests/legislator_tabs_test.rs` | Member profile, votes, legislation, funding, disclosures, and relationship routes | Browser interaction and source freshness |
-| `backend/crates/intel_backend/tests/migration_test.rs` | Fresh and `0016`-baseline PostgreSQL migration paths, migration ledger state, and idempotent reruns | Production data-volume migration timing and arbitrary historical snapshots |
+| `backend/crates/intel_backend/tests/migration_test.rs` | Fresh and `0016`-baseline PostgreSQL migration paths, migration ledger state, idempotent reruns, LDA activity duplicate cleanup, complete source-level activity identity, and activity-scoped lobbyist associations | Production data-volume migration timing and arbitrary historical snapshots |
 | `backend/crates/openfec_api/src/query.rs` | Candidate query cycle, provider-bounded page size, and page-number serialization | Live provider limits and multi-page persistence |
 
 Rust modules also contain focused unit tests for parsing, normalization,
@@ -86,15 +86,28 @@ Five `civiq_client` tests call `civdotiq.org` and are excluded from default/CI
 execution. `test_query_builder` runs deterministically, while
 `cargo test --workspace --tests --no-run` still compiles the full crate target.
 
-`senate_efd.rs` covers paginated discovery/deduplication, PTR and annual
-HTML/text normalization, checked parser failures, exact operator-consent
-semantics, and distinct missing-consent, missing-filing, ambiguous-identity,
-parser-failure, and loaded coverage states. The operator has accepted the site
-terms; live acquisition and measured 2012-present coverage remain separate proof.
+`senate_efd.rs` covers paginated discovery/deduplication, a deterministic
+1,205-row multi-page contract, rejection of missing totals and truncated pages,
+rejection of mixed valid/malformed provider rows and cross-page duplicate
+identities, full-year/current-to-date terminal windows, PTR and annual HTML/text
+normalization, checked parser failures, exact operator-consent semantics, and
+distinct missing-consent, missing-filing, ambiguous-identity, parser-failure,
+and loaded coverage states. These tests make no Senate requests. The operator
+has accepted the site terms; live acquisition and measured 2012-present coverage
+remain separate proof.
+
+`intel_worker/src/main.rs` also runs an asynchronous process-group timeout test.
+It starts a descendant that would write a marker after the parent timeout and
+proves the bounded helper kills and reaps the group before returning.
 
 `intel_worker/src/job_policy.rs` verifies interrupted-job retry exhaustion,
-bounded retry delays, parser-failure cooldowns, 429/503 classification, and
-exact Senate consent gating. `routes/home.rs` verifies fresh, stale, failed,
+bounded retry delays, parser-failure cooldowns, 429/503 classification, exact
+Senate consent gating, bounded/deduplicated LDA refresh scope, and immutable
+page-size continuation identity. The ingest binary tests preserve prior-page
+  progress on failure and distinguish activity lobbyist roles while ignoring name
+corrections for the same stable lobbyist ID. They apply the same stable-ID rule
+to government entities. Worker tests require missing and unexpected correlated
+source-run outcomes to enter retry classification. `routes/home.rs` verifies fresh, stale, failed,
 missing, and missing-key source-run classification. These are deterministic
 policy tests; they do not simulate a killed process or a live provider.
 
@@ -102,7 +115,8 @@ The fresh-database migration test also inserts the same active worker delivery
 twice with `ON CONFLICT DO NOTHING` and requires exactly one queued job. Fresh
 and upgrade paths populate disclosure transactions with null ticker and date
 keys, then require cleanup and retry to leave one semantic row. This proves the
-database uniqueness contracts, not broker-level delivery behavior or a killed
+database uniqueness contracts. They also require repeated equivalent LDA
+activities to leave one semantic row. These tests do not simulate a killed
 worker rollback.
 
 `repository/relationships.rs` rejects heuristic, low-confidence, non-direct,

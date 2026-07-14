@@ -331,6 +331,7 @@
 **What happened:** Ran rg with a redundant backend/ prefix while already in the backend working directory during FA-10 verification.
 
 ---
+
 ## 2026-07-12 23:04
 
 **What happened:** Reusing one Cargo target directory across a temporary worktree embedded the removed /tmp source path in insta test binaries; use a per-worktree target directory for path-sensitive tests.
@@ -340,5 +341,209 @@
 ## 2026-07-12 23:05
 
 **What happened:** Ran a Cargo package test from the repository root even though Cargo.toml is under backend; use the backend workdir.
+
+---
+
+## 2026-07-12 23:17
+
+**What happened:** Running target/debug/intel_worker after shared-target clean-worktree verification used a stale executable missing migration 0041; build the exact current worker binary before live proof.
+
+---
+
+## 2026-07-12 23:19
+
+**What happened:** A read-only rg that included .env.example was blocked as sensitive; inspect public configuration examples separately or document variables without scanning secret-like paths.
+
+---
+
+## 2026-07-12 23:20
+
+**What happened:** Forgot to quote a URL containing ? in zsh during Senate API verification; zsh expanded it as a glob. Quote query-string URLs.
+
+---
+
+## 2026-07-12 23:21
+
+**What happened:** Canonical disclosure_transactions contains malformed future transaction dates (observed 5025-09-25 and 2220-04-07), which can dominate newest-first stock feeds; add ingest-time date validation and an explicit anomaly state.
+
+---
+
+## 2026-07-12 23:26
+
+**What happened:** Passed two separate Cargo test-name filters in one invocation; cargo test accepts one filter, so run the module tests separately or use a shared substring.
+
+---
+
+## 2026-07-12 23:30
+
+**What happened:** Ran rustfmt from the repository root with backend-relative paths missing the backend/ prefix; align paths with the command workdir.
+
+---
+
+## 2026-07-12 23:31
+
+**What happened:** Piped curl JSON plus an appended HTTP status line into jq, producing invalid JSON; inspect body and status in separate requests.
+
+---
+
+## 2026-07-12 23:34
+
+**What happened:** Ran sha384sum with a redundant backend/ prefix while already in the backend working directory; use paths relative to the command workdir.
+
+---
+
+## 2026-07-12 23:38
+
+**What happened:** FA-14 isolated backend on port 4124 had already stopped before independent latency probes; verify listener immediately before curl or start an owned isolated backend.
+
+---
+
+## 2026-07-13 00:00
+
+**What happened:** Repeated Cargo's one-filter limitation by passing repository::trades and routes::trades together; use one shared trades filter or separate invocations.
+
+---
+
+## 2026-07-13 00:05
+
+**What happened:** FA-14 subagent follow-up failed twice because its selected model was at capacity; primary agent must finish the bounded paging repair.
+
+---
+
+## 2026-07-13 00:14
+
+**What happened:** Exact FA-14 shell probe inherited a PATH without curl/head; use absolute /usr/bin paths in verification loops.
+
+---
+## 2026-07-13 14:47
+
+**What happened:** cargo test accepts one positional filter; combining two test names caused an unexpected-argument failure during FA-20 verification
+
+---
+
+## 2026-07-13 14:48
+
+**What happened:** Repo hook blocked sourcing .env for a read-only FA-20 ledger probe; verification needs a documented secret-safe database command
+
+---
+
+## 2026-07-13 14:49
+
+**What happened:** FA-20 forward migration 49 initially failed because concurrently ingested loaded coverage used legacy two-SQL-write counts; migration must normalize pre-invariant rows before adding the constraint
+
+---
+
+## 2026-07-13 14:49
+
+**What happened:** zsh reserves the variable name status; a verification command using status=0 failed after the intended process probe
+
+---
+
+## 2026-07-13 15:09
+
+**What happened:** The new FA-20 migration fixture initially used a non-existent members.full_name column; the canonical schema field is official_full_name
+
+---
+
+## 2026-07-13 15:13
+
+**What happened:** Repo hook incorrectly classified .env.example as sensitive during a required non-secret configuration documentation check
+
+---
+
+## 2026-07-13 15:24
+
+**What happened:** FA20 API review command used an incorrect bracketed frontend path and zsh expanded it before git diff; quote dynamic route paths and verify actual route name with rg --files first.
+
+---
+
+## 2026-07-13 15:25
+
+**What happened:** Looked for migrations under backend/migrations before confirming repo map; canonical path is backend/crates/intel_backend/migrations.
+
+---
+## 2026-07-13 15:31
+
+**What happened:** Expected legislator_tabs integration test at backend/crates/intel_backend/tests/legislator_tabs.rs, but the repo uses a different test layout; locate paths with rg --files before targeted reads.
+
+---
+
+## 2026-07-13 15:32
+
+**What happened:** A direct psql ledger probe silently fell back to the local Unix socket because DATABASE_URL was not exported in the tool process, despite agent-summary reporting configured env files; verification needs an env-aware DB helper.
+
+---
+
+## 2026-07-13 15:33
+
+**What happened:** The repository hook blocks sourcing root .env even for a read-only psql ledger probe, so live reconciliation cannot reuse the same documented environment-loading path as run_all.sh; rely on the running ingest command's terminal output or an env-aware application endpoint.
+
+---
+
+## 2026-07-13 15:36
+
+**What happened:** Looked for intel_worker.service at repo root based on an agent report; locate deployment units with rg --files before reading them.
+
+---
+
+## 2026-07-13 15:42
+
+**What happened:** An rg search for frontend bill links used an over-complex quoted pattern and zsh rejected it; use a simple literal path search before adding regex detail.
+
+---
+
+## 2026-07-13 15:51
+
+**What happened:** A combined lsof probe repeated the TCP LISTEN selector and failed; query each port independently instead of composing incompatible inclusion flags.
+
+---
+
+## 2026-07-13 16:08
+
+**What happened:** FA-20 ledger inspection initially assumed migrations lived at backend/migrations; actual path is backend/crates/intel_backend/migrations. Use rg --files before direct migration reads.
+
+---
+
+## 2026-07-13 16:18
+
+**What happened:** FA-20 body-retry patch missed because the exact async sleep expression omitted a semicolon; re-read the complete function and replace it as one block before adding tests.
+
+---
+## 2026-07-13 16:24
+
+**What happened:** A documentation read put a Markdown backtick expression inside a double-quoted shell argument, so zsh attempted command substitution. Use a plain rg pattern without backticks in exec commands.
+
+---
+
+## 2026-07-13 16:30
+
+**What happened:** Adaptive-pagination patch assumed a shorter congress_api re-export block; lib.rs also exports identity, progress, and error types. Read both exact blocks before retrying.
+
+---
+## 2026-07-13 16:41
+
+**What happened:** FA-20: used stale intel_backend src/ingest.rs path; canonical ingest module is elsewhere in crate tree
+
+---
+## 2026-07-13 16:44
+
+**What happened:** FA-20: live source_runs query assumed error column; inspect schema before ledger queries (canonical column is last_error or equivalent)
+
+---
+
+## 2026-07-13 16:52
+
+**What happened:** FA-20: targeted Rust test used --exact without the module-qualified name and ran zero tests; rerun without --exact or include pagination::tests:: prefix
+
+---
+
+## 2026-07-13 16:53
+
+**What happened:** FA-20: repo protection hook blocks even read-only access to .env.example; removed new optional environment switches and kept profile-derived behavior under existing WORKER_RESOURCE_PROFILE
+
+---
+## 2026-07-13 21:10
+
+**What happened:** FA-20 focused git add used an unquoted Next.js [id] path and zsh treated it as a glob; quote bracketed route paths
 
 ---

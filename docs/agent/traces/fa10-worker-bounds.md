@@ -37,6 +37,11 @@ and explicitly opted-in burst profiles.
   replacement owner and `running` state remained unchanged.
 - Controlled worker shutdown and cleanup: passed; the proof job was returned
   to `pending` with no owner so the exercise did not strand a live lease.
+- Final ledger audit found a second parse job (`31894`) claimed by the same
+  short-lived proof worker before shutdown. With no matching worker process and
+  a lease more than one hour old, it was owner-checked back to `pending`. This
+  is why completion audits inspect every job owned by a stopped test worker,
+  not only the primary injected job.
 - `git diff --check`: passed.
 
 ## Tests added

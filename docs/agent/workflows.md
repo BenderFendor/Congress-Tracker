@@ -66,6 +66,11 @@ The server listens on port `4020` by default (configurable via `PORT` in `.env`)
 | `OPENFEC_API_KEY` | — | No (for API calls) | OpenFEC API key |
 | `INTEL_CACHE_TTL_SECONDS` | `300` | No | Moka cache TTL for GET responses |
 | `SENATE_LDA_API_KEY` | — | No | Senate LDA API key; raises rate limits |
+| `LDA_API_BASE_URL` | `https://lda.gov/api/v1` | No | Official LDA API base URL override |
+| `LDA_REFRESH_SECONDS` | `21600` | No | Worker LDA refresh cadence, clamped to at least one hour |
+| `LDA_REFRESH_YEARS` | current and prior year | No | Comma-separated LDA years; valid 2012-present, at most four per run |
+| `LDA_REFRESH_PAGE_SIZE` | `100` | No | Per-request LDA rows, clamped to 10-100 |
+| `LDA_REFRESH_PAGE_LIMIT` | `50` | No | Pages per scheduled year, clamped to 1-100 |
 | `PORT` | `4020` | No | Server listen port |
 | `RUST_LOG` | — | No | Tracing/log level (e.g. `info`, `debug`) |
 | `WORKER_RESOURCE_PROFILE` | `interactive` | No | Worker bounds: `pi`, `interactive`, or explicit opt-in `burst` |
@@ -204,12 +209,46 @@ cd backend
 SENATE_LDA_API_KEY=your_key cargo run -p intel_backend --bin ingest -- lobbying-filings --year 2025 --page-size 50 --limit-pages 5
 ```
 
+Normal freshness is worker-owned. On startup and at the bounded
+`LDA_REFRESH_SECONDS` cadence, `intel_worker` queues current/prior-year refresh
+jobs, claims each through `ingest_jobs`, and invokes this same deterministic
+ingest path. The command records its provider outcome in `source_runs`; expired
+job leases and abandoned source runs are recovered on the next cadence. A
+provider `next` page creates a page-keyed continuation job; each cadence runs at
+most four chunks so a large backlog cannot monopolize the machine. Continuation
+identity includes the original page size, so an environment change cannot skip
+or overlap records. Each worker subprocess also supplies a UUID correlation ID
+and accepts only that exact `source_runs` outcome. Failed chunks retain counts
+from earlier committed pages. Manual
+invocation, including `--start-page`, remains a diagnostic tool.
+
 ### Ingest Stock Trades
 
 ```bash
 cd backend
 cargo run -p intel_backend --bin ingest -- capitol-trades --limit 100
 ```
+
+### Discover Senate eFD Reports
+
+Senate eFD discovery requires explicit operator acceptance. The default command
+covers January 1, 2012 through the day it runs and exhausts provider pagination;
+`--page-size` controls request size only and cannot cap the discovered rows.
+
+```bash
+cd backend
+SENATE_EFD_ACCEPT_TERMS=1 cargo run -p intel_backend --bin ingest -- senate-efd
+```
+
+`GET /api/senate-disclosures` exposes PTR and annual counts for every year from
+2012 through the current year. A year/form is terminal only when a successful
+exhaustive source run covers that full historical year, or the current year
+through today. Missing totals, changing totals, and short intermediate pages
+fail the source run instead of being recorded as success. Every provider row
+must also resolve to exactly one report identity that remains unique across the
+complete run; one malformed row or cross-page duplicate invalidates discovery.
+Worker timeouts kill and reap the complete ingest process group before releasing
+the Senate advisory lock.
 
 ### Refresh Materialized Views
 
