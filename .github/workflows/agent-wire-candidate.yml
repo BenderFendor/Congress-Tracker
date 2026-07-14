@@ -1,0 +1,66 @@
+name: Wire candidate dossier route
+
+on:
+  push:
+    branches:
+      - agent/refactor-frontend-and-complete-gaps
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/refactor-frontend-and-complete-gaps
+          fetch-depth: 0
+
+      - name: Apply exact route wiring
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          router_path = Path('backend/crates/intel_backend/src/routes/mod.rs')
+          router = router_path.read_text()
+          module_anchor = 'pub mod bills;\n'
+          if 'pub mod candidates;\n' not in router:
+              assert router.count(module_anchor) == 1
+              router = router.replace(module_anchor, module_anchor + 'pub mod candidates;\n', 1)
+
+          list_route = '''        .route(
+                      "/api/elections/candidates",
+                      axum::routing::get(fec::list_candidates),
+                  )'''
+          detail_route = '''        .route(
+                      "/api/elections/candidates/:candidate_id",
+                      axum::routing::get(candidates::get_candidate),
+                  )'''
+          if detail_route not in router:
+              assert router.count(list_route) == 1
+              router = router.replace(list_route, list_route + '\n' + detail_route, 1)
+          router_path.write_text(router)
+
+          coverage_path = Path('backend/crates/intel_backend/tests/cache_control_coverage_test.rs')
+          coverage = coverage_path.read_text()
+          route_anchor = '    "/api/elections/candidates",\n'
+          detail_sample = '    "/api/elections/candidates/Z000000",\n'
+          if detail_sample not in coverage:
+              assert coverage.count(route_anchor) == 1
+              coverage = coverage.replace(route_anchor, route_anchor + detail_sample, 1)
+          coverage_path.write_text(coverage)
+          PY
+
+      - name: Commit route wiring
+        run: |
+          if git diff --quiet; then
+            echo "Candidate route is already wired."
+            exit 0
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add backend/crates/intel_backend/src/routes/mod.rs backend/crates/intel_backend/tests/cache_control_coverage_test.rs
+          git commit -m "feat: register exact-ID candidate dossier route"
+          git push origin HEAD:agent/refactor-frontend-and-complete-gaps
