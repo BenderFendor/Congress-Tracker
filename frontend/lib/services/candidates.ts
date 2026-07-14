@@ -81,7 +81,6 @@ export function principalCommittee(
 
 export async function getCandidateFinanceChannels(
   committee: CandidateCommitteeLink,
-  signal?: AbortSignal,
 ): Promise<CandidateFinanceChannels> {
   const query = {
     committeeId: committee.committee_id,
@@ -91,8 +90,8 @@ export async function getCandidateFinanceChannels(
   }
 
   const [receipts, disbursements] = await Promise.allSettled([
-    getFecReceipts(query, signal),
-    getFecDisbursements(query, signal),
+    getFecReceipts(query),
+    getFecDisbursements(query),
   ])
 
   return {
