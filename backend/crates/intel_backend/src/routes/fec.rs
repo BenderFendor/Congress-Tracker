@@ -173,7 +173,7 @@ pub async fn list_candidates(
     State(state): State<Arc<AppState>>,
     Query(query): Query<CandidateQuery>,
 ) -> Result<Json<Vec<IntelCandidate>>, AppError> {
-    let limit_val = query.limit.unwrap_or(200);
+    let limit_val = query.limit.unwrap_or(200).clamp(1, 500);
     let pool = state.repo.pool();
 
     let name_filter = query.name.unwrap_or_default();
@@ -213,7 +213,7 @@ pub async fn list_committees(
     State(state): State<Arc<AppState>>,
     Query(query): Query<CommitteeQuery>,
 ) -> Result<Json<Vec<IntelCommittee>>, AppError> {
-    let limit_val = query.limit.unwrap_or(200);
+    let limit_val = query.limit.unwrap_or(200).clamp(1, 500);
     let pool = state.repo.pool();
 
     let name_filter = query.name.unwrap_or_default();

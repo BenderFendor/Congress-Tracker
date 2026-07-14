@@ -38,6 +38,7 @@ pub struct SourceFreshness {
     pub display_name: Option<String>,
     pub source_type: Option<String>,
     pub default_ttl_seconds: Option<i32>,
+    pub endpoint: Option<String>,
     pub status: Option<String>,
     pub fetched_at: Option<DateTime<Utc>>,
     pub rows_seen: Option<i64>,
@@ -83,27 +84,27 @@ pub async fn summary(State(state): State<Arc<AppState>>) -> Result<Json<HomeSumm
         sources,
     }))
 }
-
 pub async fn source_freshness(pool: &sqlx::PgPool) -> Result<Vec<SourceFreshness>, AppError> {
     let mut sources: Vec<SourceFreshness> = sqlx::query_as(
-        r#"SELECT ds.source,
+        r#"WITH latest_runs AS (
+             SELECT DISTINCT ON (source, endpoint)
+               source, endpoint, status, finished_at, rows_seen, rows_written, error_message
+             FROM source_runs
+             ORDER BY source, endpoint, started_at DESC
+           )
+           SELECT ds.source,
                   ds.display_name,
                   ds.source_type,
                   ds.default_ttl_seconds,
+                  sr.endpoint,
                   sr.status::text AS status,
                   sr.finished_at AS fetched_at,
                   sr.rows_seen,
                   sr.rows_written,
                   sr.error_message
            FROM data_sources ds
-           LEFT JOIN LATERAL (
-             SELECT status, finished_at, rows_seen, rows_written, error_message
-             FROM source_runs
-             WHERE source = ds.source
-             ORDER BY started_at DESC
-             LIMIT 1
-           ) sr ON true
-           ORDER BY ds.source"#,
+           LEFT JOIN latest_runs sr ON sr.source = ds.source
+           ORDER BY ds.source, sr.endpoint"#,
     )
     .fetch_all(pool)
     .await
@@ -127,14 +128,17 @@ fn classify_source_freshness(
     default_ttl_seconds: Option<i32>,
     now: DateTime<Utc>,
 ) -> String {
-    match (status, fetched_at) {
-        (Some("failed"), _) => "failed".to_string(),
-        (Some("success"), Some(fetched_at)) => {
+    match status {
+        Some("failed") => "failed".to_string(),
+        Some("partial") => "partial".to_string(),
+        Some("success") => {
             let ttl = i64::from(default_ttl_seconds.unwrap_or(86_400));
-            if now.signed_duration_since(fetched_at).num_seconds() <= ttl {
-                "fresh".to_string()
-            } else {
-                "stale".to_string()
+            match fetched_at {
+                Some(fetched_at) if now.signed_duration_since(fetched_at).num_seconds() <= ttl => {
+                    "fresh".to_string()
+                }
+                Some(_) => "stale".to_string(),
+                None => "missing".to_string(),
             }
         }
         _ => "missing".to_string(),
@@ -172,7 +176,15 @@ mod freshness_tests {
             "failed"
         );
         assert_eq!(
+            classify_source_freshness(Some("partial"), Some(now), Some(60), now),
+            "partial"
+        );
+        assert_eq!(
             classify_source_freshness(Some("auth_missing"), Some(now), Some(60), now),
+            "missing"
+        );
+        assert_eq!(
+            classify_source_freshness(Some("rate_limited"), Some(now), Some(60), now),
             "missing"
         );
         assert_eq!(

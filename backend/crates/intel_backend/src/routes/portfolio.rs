@@ -171,7 +171,7 @@ pub async fn members(
     Query(query): Query<MembersQuery>,
 ) -> Result<Json<PortfolioMembersResponse>, AppError> {
     let sort_by = query.sort_by.as_deref().unwrap_or("committees");
-    let limit = query.limit.unwrap_or(50).min(200);
+    let limit = query.limit.unwrap_or(50).clamp(1, 500);
 
     let pool = state.repo.pool();
 

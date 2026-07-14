@@ -21,12 +21,16 @@ pub mod visualizations;
 use crate::cache::CacheLayer;
 use crate::repository::Repository;
 use axum::body::Body;
-use axum::http::{HeaderName, HeaderValue, Request};
+use axum::http::{header, HeaderName, HeaderValue, Request};
 use axum::middleware::Next;
+use axum::Extension;
 use axum::Router;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::Semaphore;
 use tower_http::cors::{Any, CorsLayer};
+use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::{DefaultOnFailure, DefaultOnRequest, DefaultOnResponse, TraceLayer};
 use tracing::Instrument;
 use uuid::Uuid;
@@ -67,7 +71,121 @@ async fn correlation_id_middleware(
     response
 }
 
+/// Middleware that sets Cache-Control headers on public GET responses.
+/// Per ADR 0003, all public GET routes emit cache-control with max-age
+/// based on the route class (health=60s, lists=300s, detail=600s, viz=3600s).
+async fn cache_control_middleware(request: Request<Body>, next: Next) -> axum::response::Response {
+    let path = request.uri().path().to_string();
+    let max_age = classify_cache_max_age(&path);
+
+    let mut response = next.run(request).await;
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_str(&format!("public, max-age={max_age}")).unwrap(),
+    );
+    response
+}
+
+/// Middleware that limits concurrent request processing to 50 permits.
+/// Acquires a permit from the shared semaphore before forwarding the request.
+async fn concurrency_middleware(
+    Extension(semaphore): Extension<Arc<Semaphore>>,
+    request: Request<Body>,
+    next: Next,
+) -> axum::response::Response {
+    let _permit = semaphore
+        .acquire()
+        .await
+        .expect("concurrency semaphore closed");
+    next.run(request).await
+}
+
+fn classify_cache_max_age(path: &str) -> u32 {
+    // Exact match for /api/health
+    if path == "/api/health" {
+        return 60;
+    }
+
+    // System endpoints
+    if path.starts_with("/api/system/") {
+        return 60;
+    }
+
+    // Search
+    if path == "/api/search" {
+        return 60;
+    }
+
+    // Home
+    if path.starts_with("/api/home/") {
+        return 300;
+    }
+
+    // Sources
+    if path.starts_with("/api/sources/") {
+        return 300;
+    }
+
+    // Visualizations (precomputed aggregates)
+    if path.starts_with("/api/visualizations/") {
+        return 3600;
+    }
+
+    // Non-API or root — safe default
+    if !path.starts_with("/api/") {
+        return 300;
+    }
+
+    // Influence: /api/influence/networks (list) vs /api/influence/networks/:slug* (detail)
+    if path == "/api/influence/networks" {
+        return 300;
+    }
+    if path.starts_with("/api/influence/networks/") {
+        return 600;
+    }
+
+    // Fixed list-only paths (no dynamic segment)
+    if path == "/api/financial-snapshots" || path == "/api/senate-disclosures" {
+        return 300;
+    }
+
+    // Known collection list paths (exact match = list, anything deeper = detail)
+    let list_paths = [
+        "/api/members",
+        "/api/legislators",
+        "/api/bills",
+        "/api/committees",
+        "/api/portfolios",
+        "/api/relationships",
+        "/api/lobbying/filings",
+        "/api/lobbying/clients",
+        "/api/lobbying/registrants",
+        "/api/lobbying/lobbyists",
+        "/api/intel/trades",
+    ];
+    if list_paths.contains(&path) {
+        return 300;
+    }
+
+    // FEC and intel sub-paths are always list/collection
+    if path.starts_with("/api/fec/") || path.starts_with("/api/intel/fec/") {
+        return 300;
+    }
+    if path.starts_with("/api/intel/portfolio/") {
+        return 300;
+    }
+
+    // Misc collection aliases
+    if path == "/api/stocks/transactions" || path == "/api/elections/candidates" {
+        return 300;
+    }
+
+    // Remaining /api/ paths are detail → 600
+    600
+}
+
 pub fn build_router(repo: Repository, cache: Arc<CacheLayer>) -> Router {
+    let semaphore = Arc::new(Semaphore::new(50));
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
@@ -295,13 +413,22 @@ pub fn build_router(repo: Repository, cache: Arc<CacheLayer>) -> Router {
                     )
                 }),
         )
+        .layer(TimeoutLayer::new(Duration::from_secs(30)))
         .layer(axum::middleware::from_fn(correlation_id_middleware))
+        .layer(axum::middleware::from_fn(concurrency_middleware))
+        .layer(axum::Extension(semaphore.clone()))
+        .layer(axum::middleware::from_fn(cache_control_middleware))
         .layer(cors)
-        .with_state(Arc::new(AppState { repo, cache }))
+        .with_state(Arc::new(AppState {
+            repo,
+            cache,
+            concurrency: semaphore,
+        }))
 }
 
 #[derive(Clone)]
 pub struct AppState {
     pub repo: Repository,
     pub cache: Arc<CacheLayer>,
+    pub concurrency: Arc<Semaphore>,
 }

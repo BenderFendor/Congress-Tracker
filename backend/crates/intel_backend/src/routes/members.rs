@@ -164,7 +164,7 @@ pub async fn list_members(
 ) -> Result<Json<Vec<MemberProfile>>, crate::models::AppError> {
     let chamber = query.chamber.as_deref();
     let state_param = query.state.as_deref();
-    let limit = query.limit.unwrap_or(100);
+    let limit = query.limit.unwrap_or(100).clamp(1, 500);
 
     let cache_key = format!(
         "members:list:{}:{}:{}",

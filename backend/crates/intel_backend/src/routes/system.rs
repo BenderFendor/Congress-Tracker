@@ -62,13 +62,12 @@ pub async fn coverage(
                 crate::models::AppError::Internal(format!("database error: {error}"))
             })?;
 
-    let docs_parsed: (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM parse_attempts WHERE status = 'success'")
-            .fetch_one(state.repo.pool())
-            .await
-            .map_err(|error| {
-                crate::models::AppError::Internal(format!("database error: {error}"))
-            })?;
+    let docs_parsed: (i64,) = sqlx::query_as(
+        "SELECT COUNT(DISTINCT document_version_id) FROM parse_attempts WHERE status = 'success'",
+    )
+    .fetch_one(state.repo.pool())
+    .await
+    .map_err(|error| crate::models::AppError::Internal(format!("database error: {error}")))?;
 
     let docs_with_issues: (i64,) = sqlx::query_as(
         "SELECT COUNT(DISTINCT parse_attempt_id) FROM parse_issues WHERE resolved = false",

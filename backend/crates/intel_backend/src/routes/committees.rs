@@ -47,7 +47,7 @@ pub async fn list_committees(
     Query(query): Query<ListCommitteesQuery>,
 ) -> Result<Json<Vec<CommitteeInfo>>, crate::models::AppError> {
     let chamber = query.chamber.as_deref();
-    let limit = query.limit.unwrap_or(100);
+    let limit = query.limit.unwrap_or(100).clamp(1, 500);
 
     let cache_key = format!("committees:list:{}:{}", chamber.unwrap_or(""), limit);
 
