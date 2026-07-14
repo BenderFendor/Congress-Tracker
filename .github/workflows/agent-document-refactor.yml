@@ -1,0 +1,82 @@
+name: Document dossier refactor
+
+on:
+  push:
+    branches:
+      - agent/refactor-frontend-and-complete-gaps
+
+permissions:
+  contents: write
+
+jobs:
+  document:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/refactor-frontend-and-complete-gaps
+          fetch-depth: 0
+      - name: Apply exact documentation updates
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          readme = Path('README.md')
+          text = readme.read_text()
+          anchor = '| Elections | `/api/elections/candidates` |\n'
+          detail = '| Candidate dossier | `/api/elections/candidates/:candidate_id` |\n'
+          if detail not in text:
+              assert text.count(anchor) == 1
+              text = text.replace(anchor, anchor + detail, 1)
+              readme.write_text(text)
+
+          log = Path('docs/Log.md')
+          text = log.read_text()
+          anchor = 'the detailed worksheets under `docs/agent/traces/`.\n\n'
+          section = '''## 2026-07-14 - Dossier Refactor, Candidate Detail, And Bounded Parser Corpus
+
+- Replaced the 1,472-line Member route with a five-line composition boundary and focused overview, funding, vote, legislation, trade, relationship, disclosure, biography, state, and UI modules.
+- Split the 1,100-line election map into controller and presentation modules while preserving county geography, search, sharing, tooltips, tables, and explicit result-coverage states.
+- Added exact-ID candidate dossiers with official FEC candidate-committee links, principal-committee identity, separate receipt and disbursement channels, and no name-based Member attachment.
+- Added working JSON and CSV dossier downloads, repository-wide TSX size auditing, exact Oxlint and Rust-test artifacts, and module-boundary regression tests.
+- Added a bounded House PTR, House annual, and malformed disclosure corpus instead of downloading the historical PDF archive. The first annual fixture failure exposed and corrected a misplaced owner column before the final green run.
+- Full implementation and proof details are in `docs/agent/traces/frontend-dossier-refactor-and-bounded-parser-corpus.md`.
+
+'''
+          if section not in text:
+              assert text.count(anchor) == 1
+              text = text.replace(anchor, anchor + section, 1)
+              log.write_text(text)
+
+          catalog = Path('docs/agent/test-catalog.md')
+          text = catalog.read_text()
+          backend_anchor = '- `intel_worker::job_policy` tests cover interruption retry versus terminal failure, parser cooldown, bounded network backoff, HTTP 429/503 retry behavior, exact Senate consent, low-disk parking, and bounded scheduled LDA scope.\n'
+          backend_entry = '- `intel_worker::sample_corpus_tests` runs one modern House PTR, one House annual report, and one malformed disclosure sample through the production parser entry points, preserving owner codes, tickers, ranges, and no-fabrication behavior.\n'
+          if backend_entry not in text:
+              assert text.count(backend_anchor) == 1
+              text = text.replace(backend_anchor, backend_anchor + backend_entry, 1)
+
+          frontend_anchor = '- `frontend/scripts/member-dossier-isolation.test.mjs`: stale-response and member-switch behavior.\n'
+          frontend_entries = '''- `frontend/scripts/member-dossier-utils.test.mjs`: URL-backed tabs, keyboard navigation, safe filenames, and CSV escaping.
+- `frontend/scripts/member-dossier-refactor.test.mjs`: thin Member route, focused module budgets, lazy loading, and truthful missing-state copy.
+- `frontend/scripts/candidate-dossier.test.mjs`: exact candidate-ID contracts, official committee identity, separate finance channels, and directory navigation.
+- `frontend/scripts/election-map-refactor.test.mjs`: election controller/panel boundaries and preserved interactive-map behavior.
+- `frontend/scripts/component-size-budget.test.mjs`: repository-wide TSX monolith limit and generated review report.
+'''
+          if frontend_entries not in text:
+              assert text.count(frontend_anchor) == 1
+              text = text.replace(frontend_anchor, frontend_anchor + frontend_entries, 1)
+          catalog.write_text(text)
+          PY
+      - name: Commit documentation updates
+        run: |
+          if git diff --quiet; then
+            echo "Documentation is already current."
+            exit 0
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add README.md docs/Log.md docs/agent/test-catalog.md
+          git commit -m "docs: catalog dossier refactor and bounded parser proof"
+          git push origin HEAD:agent/refactor-frontend-and-complete-gaps
