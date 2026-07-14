@@ -99,6 +99,15 @@ jobs:
       - name: Deterministic frontend tests
         run: cd frontend && pnpm test:unit
 
+      - name: Upload component size audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: component-size-report
+          path: frontend/reports/verification/component-size-report.md
+          if-no-files-found: error
+          retention-days: 7
+
       - name: TypeScript check
         run: cd frontend && pnpm typecheck
 
