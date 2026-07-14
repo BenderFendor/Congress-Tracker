@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Resolve project root: one level up from this script's directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Parse DATABASE_URL from .env — grep + cut, never source
+if [[ ! -f "$PROJECT_ROOT/.env" ]]; then
+    echo "db-query: .env file not found at $PROJECT_ROOT/.env" >&2
+    exit 1
+fi
+
+DATABASE_URL="$(grep -E '^DATABASE_URL=' "$PROJECT_ROOT/.env" | cut -d= -f2-)"
+
+if [[ -z "$DATABASE_URL" ]]; then
+    echo "db-query: DATABASE_URL not set in $PROJECT_ROOT/.env" >&2
+    exit 1
+fi
+
+if [[ $# -lt 1 ]]; then
+    echo "usage: scripts/db-query <sql>" >&2
+    exit 1
+fi
+
+exec psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "$1"

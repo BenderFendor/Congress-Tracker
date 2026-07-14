@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# freshness-guard — fail when a binary or build dir is older than the newest git commit.
+# Usage: scripts/freshness-guard <path> [--label <name>]
+
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/freshness-guard <path> [--label <name>]
+
+Compare the mtime of <path> against the newest tracked git commit.
+Exits 0 when fresh, 1 when stale, 2 when the path is missing.
+
+Options:
+  --label <name>   Human-readable label to include in output.
+EOF
+  exit 2
+}
+
+# --- args -------------------------------------------------------------
+LABEL=""
+TARGET=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --label)
+      LABEL="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      ;;
+    -*)
+      echo "ERROR: unknown flag $1" >&2
+      usage
+      ;;
+    *)
+      if [[ -z "$TARGET" ]]; then
+        TARGET="$1"
+        shift
+      else
+        echo "ERROR: unexpected extra argument $1" >&2
+        usage
+      fi
+      ;;
+  esac
+done
+
+if [[ -z "$TARGET" ]]; then
+  echo "ERROR: <path> is required" >&2
+  usage
+fi
+
+# --- guard -------------------------------------------------------------
+PREFIX=""
+if [[ -n "$LABEL" ]]; then
+  PREFIX="[$LABEL] "
+fi
+
+if [[ ! -e "$TARGET" ]]; then
+  echo "${PREFIX}MISSING: $TARGET not found"
+  exit 2
+fi
+
+target_mtime=$(stat -c %Y "$TARGET")
+git_mtime=$(git log -1 --format=%ct)
+
+if [[ "$target_mtime" -lt "$git_mtime" ]]; then
+  echo "${PREFIX}STALE: $TARGET ($target_mtime) older than newest commit ($git_mtime)"
+  exit 1
+fi
+
+echo "${PREFIX}FRESH: $TARGET ($target_mtime) >= newest commit ($git_mtime)"
+exit 0

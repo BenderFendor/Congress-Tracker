@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# db-schema — print column_name, data_type, is_nullable, column_default
+# for a public table, sorted by ordinal_position.
+# Requires DATABASE_URL in the environment; delegates queries to scripts/db-query.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [[ $# -ne 1 ]]; then
+  echo "Usage: $(basename "$0") <table>" >&2
+  echo "Print column metadata for a public table from information_schema.columns." >&2
+  exit 1
+fi
+
+TABLE="$1"
+
+# Validate table name — only [a-zA-Z0-9_]
+if [[ ! "$TABLE" =~ ^[a-zA-Z0-9_]+$ ]]; then
+  echo "Error: table name must contain only alphanumeric characters and underscores" >&2
+  exit 1
+fi
+
+"$SCRIPT_DIR/db-query" "SELECT column_name, data_type, is_nullable, column_default
+FROM information_schema.columns
+WHERE table_schema = 'public' AND table_name = '$TABLE'
+ORDER BY ordinal_position;"
