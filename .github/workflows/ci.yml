@@ -106,7 +106,16 @@ jobs:
         run: cd frontend && pnpm lint
 
       - name: Oxlint
-        run: cd frontend && pnpm lint:ox
+        run: cd frontend && pnpm lint:ox:ci
+
+      - name: Upload Oxlint report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oxlint-report
+          path: frontend/reports/verification/oxlint-report.txt
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Build
         run: cd frontend && pnpm build
