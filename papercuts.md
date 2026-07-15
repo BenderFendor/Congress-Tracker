@@ -571,3 +571,9 @@
 
 ---
 
+## 2026-07-14 21:52
+
+**What happened:** Required .agent/traces worksheet was ignored by the repo-wide .gitignore, so normal git add omitted it; worksheet commits require a scoped git add -f.
+
+---
+
