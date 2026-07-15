@@ -577,3 +577,15 @@
 
 ---
 
+## 2026-07-14 22:02
+
+**What happened:** Git push reports that origin repository moved from test-congress-accountability-tracker to Congress-Tracker; remote URL should be refreshed.
+
+---
+
+## 2026-07-14 22:03
+
+**What happened:** Safety hook blocked a force-update of the published integration worksheet tag; preserve immutable published tags and avoid combining tag rewrites with routine pushes.
+
+---
+

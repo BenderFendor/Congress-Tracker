@@ -52,6 +52,7 @@
 - `frontend/scripts/member-dossier-refactor.test.mjs`
 - `frontend/scripts/member-dossier-utils.test.mjs`
 - `frontend/scripts/run-oxlint-ci.mjs`
+- `papercuts.md`
 - `reports/verification/dossier-refactor-ci-artifacts.md`
 - `.agent/traces/merge-all-prs-dependency-drift.json`
 - `.agent/traces/merge-all-prs-pre-edit-context.md`
@@ -65,6 +66,7 @@
 - Dependency drift audit — passed after removal of `frontend/package-lock.json`; no mixed package-manager lockfiles remain.
 - `git diff --check` — passed.
 - `scripts/self-test` — passed on the consolidated integration: Rust formatting, clippy, checks and tests; 84 frontend contract tests; TypeScript 5.9; ESLint/Oxlint; Next production build.
+- `gh pr create` — opened integration PR 10 for remote validation and merge.
 - Browser availability probe — blocked because Chrome/Chromium had no active DevTools endpoint.
 - PostgreSQL/runtime probe — blocked because no local PostgreSQL service was accepting connections; live `source_runs` and `ingest_jobs` state could not be asserted locally.
 
