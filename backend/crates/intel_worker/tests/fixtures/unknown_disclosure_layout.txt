@@ -1,0 +1,3 @@
+SCANNED PUBLIC RECORD PLACEHOLDER
+The source image did not expose a usable text layer.
+No report type, section boundary, transaction date pair, disclosure range, or official row structure is present in this synthetic failure sample.

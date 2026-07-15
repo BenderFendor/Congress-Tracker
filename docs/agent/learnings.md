@@ -191,6 +191,11 @@ What worked:
   duplicates.
 
 Future agents should:
+- In this pnpm-only frontend, do not retain or regenerate `package-lock.json`.
+  A tracked ignored npm lockfile made single-package Dependabot updates rewrite
+  thousands of unrelated lines and refresh unrelated `latest` dependencies.
+  Verify dependency changes from `package.json` plus `pnpm-lock.yaml`, then run
+  the dependency drift doctor and `pnpm verify` against a frozen install.
 - Do not model mixed provider rows as one non-null bill struct.
 - Preserve official amendment and other measure URLs even when the bill fields
   are absent, and expose those records on the Member dossier.

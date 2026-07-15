@@ -86,6 +86,7 @@ const ROUTES: &[&str] = &[
     "/api/fec/disbursements",
     "/api/intel/fec/receipts",
     "/api/elections/candidates",
+    "/api/elections/candidates/Z000000",
 ];
 
 // ── Helpers (mirrors full_api_contract_test.rs) ────────────────────────────

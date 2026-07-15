@@ -547,3 +547,75 @@
 **What happened:** FA-20 focused git add used an unquoted Next.js [id] path and zsh treated it as a glob; quote bracketed route paths
 
 ---
+## 2026-07-14 21:42
+
+**What happened:** Review worktree setup was blocked when attempting to symlink the repo .env; deterministic review checks should avoid touching sensitive env paths.
+
+---
+
+## 2026-07-14 21:45
+
+**What happened:** pnpm dev -- -p 3100 forwarded the separator incorrectly and Next treated -p as a project directory; use pnpm exec next dev -p 3100 for isolated review ports.
+
+---
+
+## 2026-07-14 21:46
+
+**What happened:** The repo docs describe populated verification through pnpm test:live-api/scripts/verify-live-api-flows, not a scripts/run-populated-api command; the deterministic test wording led to the wrong wrapper name.
+
+---
+
+## 2026-07-14 21:47
+
+**What happened:** Chrome DevTools visual verification was unavailable because Chrome was not running and DevToolsActivePort was absent; PR #9 browser proof could not run.
+
+---
+
+## 2026-07-14 21:52
+
+**What happened:** Required .agent/traces worksheet was ignored by the repo-wide .gitignore, so normal git add omitted it; worksheet commits require a scoped git add -f.
+
+---
+
+## 2026-07-14 22:02
+
+**What happened:** Git push reports that origin repository moved from test-congress-accountability-tracker to Congress-Tracker; remote URL should be refreshed.
+
+---
+
+## 2026-07-14 22:03
+
+**What happened:** Safety hook blocked a force-update of the published integration worksheet tag; preserve immutable published tags and avoid combining tag rewrites with routine pushes.
+
+---
+
+## 2026-07-14 22:04
+
+**What happened:** Temporary PostgreSQL setup was blocked because cleanup used rm -rf; use a fresh unique temp data directory instead of pre-deleting it.
+
+---
+
+## 2026-07-14 22:04
+
+**What happened:** Temporary PostgreSQL could not create its default socket lock because /run/postgresql is absent; pass -k /tmp for isolated local clusters.
+
+---
+
+## 2026-07-14 22:05
+
+**What happened:** Database contract tests were first pointed at an unmigrated scratch database after verify-migrations only migrated its disposable child databases; explicitly migrate the contract database before running contract suites.
+
+---
+
+## 2026-07-14 22:06
+
+**What happened:** Manual database probe mistyped fec_linkage_issues as fec_candidate_linkage_issues and briefly produced a false blocker; copy relation names from the reviewed query when probing runtime schemas.
+
+---
+
+## 2026-07-14 22:06
+
+**What happened:** Candidate runtime proof first called /api/candidates/:id, but the canonical route is /api/elections/candidates/:candidate_id; use the router definition for live probes.
+
+---
+
