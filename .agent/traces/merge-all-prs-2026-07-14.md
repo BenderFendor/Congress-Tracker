@@ -71,6 +71,10 @@
 - Ran the canonical backend against the migrated scratch database and requested `/api/elections/candidates/H0PA00001` — HTTP 200; complete `cn26`, `cm26`, and `ccl26` imports plus a successful source run produced `candidate: loaded` and an honest `committee_links: loaded_empty` warning.
 - Inspected scratch `source_runs`, `ingest_jobs`, and unresolved `fec_linkage_issues` after runtime proof — one successful fixture source run, no active ingest jobs, and zero unresolved linkage issues. These are isolated proof fixtures, not claims about production freshness.
 - `gh pr create` — opened integration PR 10 for remote validation and merge.
+- GitHub Actions run `29383313026` on final integration commit `911c8d4` — frontend passed in 1m09s and backend passed in 5m19s, including migrations and database contracts.
+- `gh pr merge 10 --merge --delete-branch` — merged the consolidated integration to `main` as `fd0f1c1` and deleted the remote integration branch.
+- Closed PRs 1 through 8 with supersession comments and deleted their remote Dependabot branches; PR 9 is recorded by GitHub as merged through PR 10.
+- Deleted obsolete local `temp_fix_branch`; it was fully merged and had no unique commits.
 - Browser availability probe — blocked because Chrome/Chromium had no active DevTools endpoint.
 - PostgreSQL/runtime probe — blocked because no local PostgreSQL service was accepting connections; live `source_runs` and `ingest_jobs` state could not be asserted locally.
 
@@ -89,4 +93,4 @@
 
 **Rollback:** Revert the integration merge commit on `main`. The pre-integration review point remains tagged `review-all-prs-and-branches`; this integration is tagged `merge-all-prs-2026-07-14` after commit.
 
-**Status:** done, contingent on the recorded GitHub CI and `main` merge steps being appended before handoff.
+**Status:** done — consolidated integration merged to `main`, remote CI passed, superseded PRs closed, and obsolete branches removed.

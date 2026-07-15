@@ -619,3 +619,9 @@
 
 ---
 
+## 2026-07-14 22:13
+
+**What happened:** gh pr close --delete-branch deleted each remote Dependabot branch but misleadingly warned that the current directory was not a git repository while skipping nonexistent local counterparts.
+
+---
+
