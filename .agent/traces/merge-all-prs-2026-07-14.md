@@ -66,6 +66,10 @@
 - Dependency drift audit — passed after removal of `frontend/package-lock.json`; no mixed package-manager lockfiles remain.
 - `git diff --check` — passed.
 - `scripts/self-test` — passed on the consolidated integration: Rust formatting, clippy, checks and tests; 84 frontend contract tests; TypeScript 5.9; ESLint/Oxlint; Next production build.
+- `DATABASE_URL=postgres://127.0.0.1:55432/congress_tracker scripts/verify-migrations` against an isolated PostgreSQL 18 cluster — fresh and upgrade migration paths passed.
+- Database-backed `fec_bulk_pipeline_test` and `influence_financials_test` — 4 tests passed after applying the full migration suite to the scratch database.
+- Ran the canonical backend against the migrated scratch database and requested `/api/elections/candidates/H0PA00001` — HTTP 200; complete `cn26`, `cm26`, and `ccl26` imports plus a successful source run produced `candidate: loaded` and an honest `committee_links: loaded_empty` warning.
+- Inspected scratch `source_runs`, `ingest_jobs`, and unresolved `fec_linkage_issues` after runtime proof — one successful fixture source run, no active ingest jobs, and zero unresolved linkage issues. These are isolated proof fixtures, not claims about production freshness.
 - `gh pr create` — opened integration PR 10 for remote validation and merge.
 - Browser availability probe — blocked because Chrome/Chromium had no active DevTools endpoint.
 - PostgreSQL/runtime probe — blocked because no local PostgreSQL service was accepting connections; live `source_runs` and `ingest_jobs` state could not be asserted locally.

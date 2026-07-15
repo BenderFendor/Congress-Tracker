@@ -589,3 +589,33 @@
 
 ---
 
+## 2026-07-14 22:04
+
+**What happened:** Temporary PostgreSQL setup was blocked because cleanup used rm -rf; use a fresh unique temp data directory instead of pre-deleting it.
+
+---
+
+## 2026-07-14 22:04
+
+**What happened:** Temporary PostgreSQL could not create its default socket lock because /run/postgresql is absent; pass -k /tmp for isolated local clusters.
+
+---
+
+## 2026-07-14 22:05
+
+**What happened:** Database contract tests were first pointed at an unmigrated scratch database after verify-migrations only migrated its disposable child databases; explicitly migrate the contract database before running contract suites.
+
+---
+
+## 2026-07-14 22:06
+
+**What happened:** Manual database probe mistyped fec_linkage_issues as fec_candidate_linkage_issues and briefly produced a false blocker; copy relation names from the reviewed query when probing runtime schemas.
+
+---
+
+## 2026-07-14 22:06
+
+**What happened:** Candidate runtime proof first called /api/candidates/:id, but the canonical route is /api/elections/candidates/:candidate_id; use the router definition for live probes.
+
+---
+
