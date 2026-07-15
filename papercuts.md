@@ -547,3 +547,27 @@
 **What happened:** FA-20 focused git add used an unquoted Next.js [id] path and zsh treated it as a glob; quote bracketed route paths
 
 ---
+## 2026-07-14 21:42
+
+**What happened:** Review worktree setup was blocked when attempting to symlink the repo .env; deterministic review checks should avoid touching sensitive env paths.
+
+---
+
+## 2026-07-14 21:45
+
+**What happened:** pnpm dev -- -p 3100 forwarded the separator incorrectly and Next treated -p as a project directory; use pnpm exec next dev -p 3100 for isolated review ports.
+
+---
+
+## 2026-07-14 21:46
+
+**What happened:** The repo docs describe populated verification through pnpm test:live-api/scripts/verify-live-api-flows, not a scripts/run-populated-api command; the deterministic test wording led to the wrong wrapper name.
+
+---
+
+## 2026-07-14 21:47
+
+**What happened:** Chrome DevTools visual verification was unavailable because Chrome was not running and DevToolsActivePort was absent; PR #9 browser proof could not run.
+
+---
+
