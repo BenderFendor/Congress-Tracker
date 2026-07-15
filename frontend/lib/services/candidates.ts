@@ -32,9 +32,11 @@ export type CandidateDetailResponse = {
   candidate: CandidateDetail
   committees: CandidateCommitteeLink[]
   coverage: {
-    candidate: "loaded"
-    committee_links: "loaded" | "not_loaded"
-    requested_cycle?: number | null
+    candidate: "loaded" | "partial" | "not_loaded"
+    committee_links: "loaded" | "loaded_empty" | "partial" | "not_loaded"
+    cycle?: number | null
+    source_run_status?: string | null
+    source_updated_at?: string | null
     warnings: string[]
   }
   provenance: {

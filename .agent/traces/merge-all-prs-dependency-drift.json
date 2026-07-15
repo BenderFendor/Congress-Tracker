@@ -1,0 +1,33 @@
+{
+  "cargo_packages": [],
+  "files": {
+    "Cargo.lock": false,
+    "Cargo.toml": false,
+    "go.mod": false,
+    "go.sum": false,
+    "package-lock.json": true,
+    "package.json": false,
+    "pnpm-lock.yaml": false,
+    "pyproject.toml": false,
+    "requirements.txt": false,
+    "uv.lock": false,
+    "yarn.lock": false
+  },
+  "issues": [],
+  "package_manager": "npm",
+  "package_scripts": [],
+  "python_project": false,
+  "root": "/home/bender/classwork/congress-tracker",
+  "tools": {
+    "cargo": true,
+    "go": false,
+    "node": true,
+    "npm": true,
+    "pnpm": true,
+    "python": true,
+    "python3": true,
+    "rustc": true,
+    "uv": true,
+    "yarn": false
+  }
+}

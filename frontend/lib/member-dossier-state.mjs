@@ -9,12 +9,18 @@ export const MEMBER_TAB_IDS = [
   "biography",
 ]
 
+const MEMBER_TAB_ALIASES = {
+  donations: "funding",
+  voting: "votes",
+}
+
 /**
  * @param {string | null | undefined} value
  * @returns {string}
  */
 export function normalizeMemberTab(value) {
-  return MEMBER_TAB_IDS.includes(value ?? "") ? value : "overview"
+  const normalized = MEMBER_TAB_ALIASES[value] ?? value
+  return MEMBER_TAB_IDS.includes(normalized ?? "") ? normalized : "overview"
 }
 
 /**

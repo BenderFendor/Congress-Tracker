@@ -16,4 +16,5 @@ backend/rustc-ice-*.txt
 package-lock.json
 
 /reports/verification/*
+/frontend/reports/verification/*
 *.snap.new

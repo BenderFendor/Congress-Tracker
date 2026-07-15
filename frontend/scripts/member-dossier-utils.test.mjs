@@ -14,6 +14,8 @@ import {
 
 test("member dossier tabs reject unknown URL state", () => {
   assert.equal(normalizeMemberTab("votes"), "votes")
+  assert.equal(normalizeMemberTab("donations"), "funding")
+  assert.equal(normalizeMemberTab("voting"), "votes")
   assert.equal(normalizeMemberTab("unknown"), "overview")
   assert.equal(normalizeMemberTab(null), "overview")
 })

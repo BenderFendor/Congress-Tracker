@@ -3,6 +3,10 @@ export function canonicalBioguideId(value) {
   return /^[A-Z]\d{6}$/.test(normalized) ? normalized : ""
 }
 
+/**
+ * @param {unknown} value
+ * @returns {value is string}
+ */
 export function isUsablePortraitUrl(value) {
   if (typeof value !== "string" || !value.trim()) return false
   try {
@@ -23,6 +27,10 @@ export function officialBioguidePortrait(value) {
   return id ? `https://bioguide.congress.gov/bioguide/photo/${id[0]}/${id}.jpg` : ""
 }
 
+/**
+ * @param {{ bioguideId?: unknown, suppliedUrls?: (string | null | undefined)[] }} input
+ * @returns {string[]}
+ */
 export function memberPortraitCandidates({ bioguideId, suppliedUrls = [] }) {
   const official = officialBioguidePortrait(bioguideId)
   return [...new Set([...suppliedUrls.filter(isUsablePortraitUrl), official].filter(Boolean))]

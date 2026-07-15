@@ -4,6 +4,22 @@ This log records changes to public behavior, developer workflows, data
 contracts, and verification requirements. It does not replace Git history or
 the detailed worksheets under `docs/agent/traces/`.
 
+## 2026-07-14 - Pull Request Integration And Dependency Normalization
+
+- Integrated the dossier/election refactor and exact-ID candidate route, while
+  preserving legacy `?tab=donations` and `?tab=voting` member links as aliases
+  for the renamed Funding and Votes tabs.
+- Made candidate detail coverage cycle-scoped and source-ledger-aware. The API
+  now requires canonical candidate, committee, and linkage archives, a terminal
+  successful FEC source run, and zero unresolved linkage rows before reporting
+  loaded coverage; complete empty, partial, and not-loaded states stay distinct.
+- Consolidated the queued GitHub Actions, TypeScript, Tailwind, Oxlint, and
+  tailwind-merge updates into one tested dependency set. React and its types now
+  satisfy Next 14's declared peer floor, and portrait URL filtering exposes a
+  TypeScript type predicate that passes TypeScript 5.9.3.
+- Removed the stale tracked npm lockfile. The frontend remains pnpm-only with one
+  coherent `pnpm-lock.yaml`, eliminating unrelated Dependabot lockfile rewrites.
+
 ## 2026-07-14 - Measurable Master Plan And Plan Lint
 
 - Reconciled the finding-ledger table with the closure checkpoint: FA-02, FA-03,

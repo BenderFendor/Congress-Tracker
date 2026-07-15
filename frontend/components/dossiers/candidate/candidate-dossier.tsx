@@ -140,8 +140,8 @@ export function CandidateDossier({ candidateId }: { candidateId: string }) {
             <EvidenceSpine
               identifier={candidate.candidate_id}
               source={response.provenance.source}
-              status={response.coverage.candidate === "loaded" ? "Exact candidate identity loaded" : "Candidate coverage unavailable"}
-              coverage={`${response.committees.length} official candidate–committee link${response.committees.length === 1 ? "" : "s"}`}
+              status={response.coverage.candidate === "loaded" ? "Exact candidate identity loaded" : `Candidate identity coverage ${response.coverage.candidate}`}
+              coverage={`${response.coverage.committee_links} · ${response.committees.length} official candidate–committee link${response.committees.length === 1 ? "" : "s"}`}
               sourceUrl={response.provenance.source_url}
             >
               <p className="mt-4 text-sm leading-6 text-muted-foreground">This dossier uses the exact FEC candidate ID. It does not attach congressional records through candidate-name similarity.</p>
