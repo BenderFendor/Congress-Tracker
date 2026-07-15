@@ -43,6 +43,7 @@ The frontend reads from `http://localhost:4020` by default.
 | Financial snapshots | `/api/financial-snapshots` |
 | Senate disclosure audit | `/api/senate-disclosures` |
 | Elections | `/api/elections/candidates` |
+| Candidate dossier | `/api/elections/candidates/:candidate_id` |
 | Search | `/api/search` |
 
 ## Local Run

@@ -1,4 +1,5 @@
 pub mod bills;
+pub mod candidates;
 pub mod chambers;
 pub mod committees;
 pub mod fec;
@@ -388,6 +389,10 @@ pub fn build_router(repo: Repository, cache: Arc<CacheLayer>) -> Router {
         .route(
             "/api/elections/candidates",
             axum::routing::get(fec::list_candidates),
+        )
+        .route(
+            "/api/elections/candidates/:candidate_id",
+            axum::routing::get(candidates::get_candidate),
         )
         // Layers
         .layer(

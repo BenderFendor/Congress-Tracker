@@ -1,0 +1,7 @@
+PERIODIC TRANSACTION REPORT
+Filer: Representative Sample Member
+Owner  Asset                                      Type  Transaction Date  Notification Date  Amount
+SP     Accenture plc Class A Ordinary Shares      P     08/07/2024        05/19/2025         $1,001 - $15,000
+       Accenture plc Class A Ordinary Shares (ACN) [ST]
+JT     Apple Inc. - Common Stock (AAPL)            S     01/30/2024        05/19/2025         $15,001 - $50,000
+Certification: This fixture is a synthetic layout sample and contains no live filing claim.

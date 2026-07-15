@@ -58,9 +58,22 @@ jobs:
 
       - name: Deterministic Rust tests
         run: |
-          cd backend
-          cargo test --workspace --exclude civiq_client --lib --bins
-          cargo test -p civiq_client test_query_builder
+          set -o pipefail
+          mkdir -p reports/verification
+          (
+            cd backend
+            cargo test --workspace --exclude civiq_client --lib --bins
+            cargo test -p civiq_client test_query_builder
+          ) 2>&1 | tee reports/verification/rust-deterministic-tests.txt
+
+      - name: Upload deterministic Rust test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-deterministic-test-report
+          path: reports/verification/rust-deterministic-tests.txt
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Compile integration tests
         run: cd backend && cargo test --workspace --tests --no-run
@@ -99,6 +112,15 @@ jobs:
       - name: Deterministic frontend tests
         run: cd frontend && pnpm test:unit
 
+      - name: Upload component size audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: component-size-report
+          path: frontend/reports/verification/component-size-report.md
+          if-no-files-found: error
+          retention-days: 7
+
       - name: TypeScript check
         run: cd frontend && pnpm typecheck
 
@@ -106,7 +128,16 @@ jobs:
         run: cd frontend && pnpm lint
 
       - name: Oxlint
-        run: cd frontend && pnpm lint:ox
+        run: cd frontend && pnpm lint:ox:ci
+
+      - name: Upload Oxlint report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oxlint-report
+          path: frontend/reports/verification/oxlint-report.txt
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Build
         run: cd frontend && pnpm build

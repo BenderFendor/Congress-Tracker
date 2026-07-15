@@ -183,9 +183,9 @@ test("public county API reads prepared data without provider calls or writes", a
   assert.doesNotMatch(routeSource, /writeFile|rename|mkdir/)
   assert.doesNotMatch(routeSource, /new Date\(/)
 
-  const mapSource = await readFile(
-    path.join(process.cwd(), "components", "elections", "election-map.tsx"),
+  const panelSource = await readFile(
+    path.join(process.cwd(), "components", "elections", "election-map-panels.tsx"),
     "utf8",
   )
-  assert.match(mapSource, /toLocaleDateString\(undefined, \{ timeZone: "UTC" \}\)/)
+  assert.match(panelSource, /toLocaleDateString\(undefined, \{ timeZone: "UTC" \}\)/)
 })
