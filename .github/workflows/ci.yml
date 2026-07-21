@@ -68,7 +68,7 @@ jobs:
 
       - name: Upload deterministic Rust test report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: rust-deterministic-test-report
           path: reports/verification/rust-deterministic-tests.txt
@@ -114,7 +114,7 @@ jobs:
 
       - name: Upload component size audit
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: component-size-report
           path: frontend/reports/verification/component-size-report.md
@@ -132,7 +132,7 @@ jobs:
 
       - name: Upload Oxlint report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: oxlint-report
           path: frontend/reports/verification/oxlint-report.txt
